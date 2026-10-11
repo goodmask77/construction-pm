@@ -174,6 +174,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-social" onclick="socialLoad()" title="FB/IG 貼文內容與成效">📣 行銷大師</button>
     <button id="tab-cust" onclick="custLoad()" title="inline 顧客資料庫＋營運洞察">👥 inline</button>
+    <button id="tab-inbox" onclick="inboxLoad()" title="收件匣：三個官方帳號的客人對話集中在這裡回">收件匣</button> <!-- v4.70.47 溝通中樞第三部 統一收件匣 -->
     <button id="tab-chat" onclick="chatLoad()" title="聊天室：全體／你與主管／自建群，@DD 叫 AI">聊天室</button> <!-- v4.70.45 溝通中樞項目 3a 個人聊天室 -->
     <button id="tab-lib" onclick="libLoad()" title="文件庫（雲端硬碟：資料夾/上傳/權限）">📁 文件庫</button>
     <button id="tab-hrm" onclick="hrmLoad()" title="夥伴名冊（主管限定）">🪪 夥伴名冊</button>
@@ -199,18 +200,19 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
 <script src="/ops/js/p13-onboard.js?v=45612"></script>
 <script src="/ops/js/p13-abmod.js?v=4483"></script>
 <script src="/ops/js/p08-menu-misc.js?v=4743"></script>
-<script src="/ops/js/p09-ntf-crew.js?v=4746"></script><!-- v4.70.41 DD 健康頁加「查不到資料」＋資料覆蓋自檢 --><!-- v4.70.39 DD 健康頁（溝通中樞項目 1：回應秒數／失敗／截斷／備援／驗簽／重送） --><!-- v4.70.38 DD 自動訊息與群組設定一個面板：全部群可選＋每群回話模式／日誌／翻譯＋回話紀錄（張良 2026-10-10） -->
+<script src="/ops/js/p09-ntf-crew.js?v=4747"></script><!-- v4.70.41 DD 健康頁加「查不到資料」＋資料覆蓋自檢 --><!-- v4.70.39 DD 健康頁（溝通中樞項目 1：回應秒數／失敗／截斷／備援／驗簽／重送） --><!-- v4.70.38 DD 自動訊息與群組設定一個面板：全部群可選＋每群回話模式／日誌／翻譯＋回話紀錄（張良 2026-10-10） -->
 <script src="/ops/js/p14-social.js?v=4736"></script><!-- v4.70.32 成長曲線可切互動／觸及／收藏／瀏覽（張良 2026-10-10） --><!-- v4.70.31 成長曲線加 XY 軸刻度＋滑鼠浮標（張良 2026-10-10） --><!-- v4.70.29 AI 中樞：設定頁「AI 模型」三家各功能選用＋素材庫 AI 生圖（張良 2026-10-10） --><!-- 行銷大師（原「社群」）發文＋成效（張良 2026-10-09 v4.70.18 側邊欄＋頁面標題改名「社群」→「行銷大師」，真正生效處在 p09 TAB_DEF） -->
 <script src="/ops/js/p15-library.js?v=4702"></script><!-- 📁 通用文件庫（雲端硬碟：資料夾/上傳/權限/DD歸檔撈檔 張良 2026-10-08 v4.70.2：預覽改App內嵌不開分頁） -->
 <script src="/ops/js/p16-matlib.js?v=4737"></script><!-- v4.70.42 叫貨單兩店（GD 也列） -->
-<script src="/ops/js/p23-chat.js?v=4746"></script><!-- 💬 聊天室 v4.70.45（溝通中樞項目 3a：全體／個人與主管／自建群／@DD） -->
+<script src="/ops/js/p23-chat.js?v=4747"></script>
+<script src="/ops/js/p24-inbox.js?v=4747"></script><!-- 📥 統一收件匣 v4.70.47（三個官方帳號只收＋從 app 回覆） --><!-- v4.70.46 中文選字按 Enter 不送出（isComposing／keyCode 229） --><!-- 💬 聊天室 v4.70.45（溝通中樞項目 3a：全體／個人與主管／自建群／@DD） -->
 <script src="/ops/js/p17-costtodo.js?v=4733"></script>
 <script src="/ops/js/p19-matcard.js?v=4736"></script>
 <script src="/ops/js/p20-recipe.js?v=4736"></script>
 <script src="/ops/js/p22-pricing.js?v=4735"></script><!-- 💲 成本模組批次5：菜單與定價＋批次4 GD 五款（v4.70.35 2026-10-10） --><!-- 🍳 成本模組批次3：食譜庫＋製作模式（v4.70.34 2026-10-10） --><!-- 成本模組批次2：物料卡（物料庫子分頁「物料卡」，v4.70.33 2026-10-10） --><!-- 成本模組批次1：偵錯與待處理中心（物料庫子分頁「待處理」＋導覽徽章，v4.70.31 2026-10-10） --><!-- 🧾 物料庫（A Beach 叫貨物料/進價波動分析，資料來自 boss-api 張良 2026-10-08 v4.70.6：全面下鑽KPI/廠商/日期/品項互跳） -->
 <script src="/ops/js/p21-costdash.js?v=4734"></script><!-- 📊 成本模組批次5a：成本總覽（首頁）＋廠商與月帳（v4.70.34 2026-10-10） -->
 <script src="/ops/js/p18-waste.js?v=4733"></script><!-- 🧪 耗損紀錄 v1（批次 1b：拍照 AI 讀秤＋人確認入帳＋耗損頁統計，v4.70.32 2026-10-10） --><!-- 成本模組批次1：偵錯與待處理中心（物料庫子分頁「待處理」＋導覽徽章，v4.70.31 2026-10-10） --><!-- 🧾 物料庫（A Beach 叫貨物料/進價波動分析，資料來自 boss-api 張良 2026-10-08 v4.70.6：全面下鑽KPI/廠商/日期/品項互跳） -->
-<script src="/ops/js/p10-perm-init.js?v=4524"></script>
+<script src="/ops/js/p10-perm-init.js?v=4525"></script>
 <script src="/ops/tier-effects.js?v=4479"></script> <!-- v2.0(mythic-motion-v2) 特效註冊表（tasks.js 共用；務必在 tasks.js 之前） -->
 <script src="/ops/tasks.js?v=4726"></script> <!-- v4.70.29 積分收合(只有權限者按編輯才展開分數)＋級距說明欄完整顯示；v4.70.28 定期提醒/跳位/兩欄/積分權限（張良 2026-10-10）；v=4726 破快取 -->
 <div id="favbar"></div> <!-- ⭐ v4.39.1 個人常用捷徑列（手機限定；favRender 畫） -->

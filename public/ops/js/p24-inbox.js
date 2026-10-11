@@ -1,0 +1,251 @@
+// 📥 統一收件匣 v4.70.47（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
+const IB_ICON = {
+  back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>',
+  gear: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  tpl: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>',
+  file: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+}
+const IB_ST = { new: '新', open: '處理中', done: '已完成' }
+let _ibD = null, _ibCur = null, _ibConv = null, _ibMsgs = [], _ibTimer = null, _ibListTimer = null, _ibBusy = false, _ibAcct = '', _ibFilter = 'todo', _ibReplyLeft = 0, _ibTick = null
+const ibEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+const ibT = t => { try { const d = new Date(t); const now = new Date(); const same = d.toDateString() === now.toDateString(); return (same ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') } catch (_) { return '' } }
+async function ibGet(q) { try { const r = await fetch('/api/mail-sync?inbox=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&' + q + '&r=' + Date.now()); return await r.json() } catch (e) { return null } }
+async function ibPost(body) { try { const r = await fetch('/api/mail-sync?inbox=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }); return await r.json() } catch (e) { return null } }
+function ibStop() { [_ibTimer, _ibListTimer, _ibTick].forEach(t => t && clearInterval(t)); _ibTimer = _ibListTimer = _ibTick = null }
+const ibAcct = k => ((_ibD && _ibD.accounts) || []).find(a => a.key === k) || { name: k, color: '#888' }
+const ibTag = k => { const a = ibAcct(k); return `<span style="font-size:10.5px;padding:1px 6px;border-radius:999px;border:1px solid ${a.color};color:${a.color};white-space:nowrap">${ibEsc(a.name)}</span>` }
+
+async function inboxLoad(convId) {
+  ibStop()
+  curStore = 'inbox'; setTabs('inbox')
+  const b = document.getElementById('tab-inbox'); if (b) b.className = 'on'
+  document.getElementById('upd').textContent = '收件匣'
+  if (!_ibD) app.innerHTML = '<section><h2>收件匣</h2><div class="hint">讀取中…</div></section>'
+  const d = await ibGet('op=list')
+  if (!d || !d.ok) { app.innerHTML = '<section><h2>收件匣</h2><div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px">' + ibEsc((d && d.error) || '讀不到收件匣') + '</div></section>'; return }
+  _ibD = d
+  if (convId) _ibCur = convId
+  ibRender()
+  _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000)
+  if (_ibCur) ibOpen(_ibCur, true)
+}
+function ibUnreadTotal() { return ((_ibD && _ibD.convs) || []).reduce((t, c) => t + (c.unread || 0), 0) }
+function ibRender() {
+  const mobile = window.innerWidth < 760
+  app.innerHTML = `<section style="padding:0;overflow:hidden">
+    <div id="ibWrap" style="display:flex;height:calc(100vh - ${mobile ? 232 : 150}px);min-height:360px">
+      <div id="ibList" style="width:${mobile ? '100%' : '300px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;${mobile && _ibCur ? 'display:none' : ''}"></div>
+      <div id="ibPane" style="flex:1;display:${mobile && !_ibCur ? 'none' : 'flex'};flex-direction:column;min-width:0"></div>
+    </div></section>`
+  ibRenderList(); ibRenderPane()
+}
+function ibRenderList() {
+  const el = document.getElementById('ibList'); if (!el) return
+  const d = _ibD || { accounts: [], convs: [] }
+  const convs = (d.convs || []).filter(c => (!_ibAcct || c.acct === _ibAcct) && (_ibFilter === 'all' || c.status !== 'done' || c.unread))
+  const chip = (k, label, on) => `<button class="mini${on ? ' on' : ''}" style="padding:4px 9px;font-size:12px" onclick="${k}">${label}</button>`
+  const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line)">${chip("_ibAcct='';ibRenderList()", '全部', !_ibAcct)}${(d.accounts || []).map(a => chip(`_ibAcct='${a.key}';ibRenderList()`, ibEsc(a.name) + (a.configured ? '' : ' ·未接'), _ibAcct === a.key)).join('')}
+    <span style="flex:1"></span>${chip("_ibFilter='todo';ibRenderList()", '待處理', _ibFilter === 'todo')}${chip("_ibFilter='all';ibRenderList()", '含已完成', _ibFilter === 'all')}</div>`
+  const row = c => `<div onclick="ibOpen('${ibEsc(c.id)}')" style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;${_ibCur === c.id ? 'background:var(--card)' : ''}">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--card) center/cover;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;${c.pic ? `background-image:url('${ibEsc(c.pic)}')` : ''}">${c.pic ? '' : ibEsc((c.name || '?').slice(0, 1))}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><b style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ibEsc(c.name || '客人')}</b><span class="hint" style="font-size:11px;flex:none">${c.lastT ? ibT(c.lastT) : ''}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="hint" style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.last ? ibEsc((c.last.dir === 'out' ? '↩ ' : '') + c.last.text) : ''}</span>${c.unread ? `<span style="background:#2563eb;color:#fff;border-radius:999px;font-size:11px;padding:0 7px;line-height:18px;flex:none">${c.unread}</span>` : ''}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ibTag(c.acct)}<span class="hint" style="font-size:11px">${IB_ST[c.status] || ''}${c.assignee ? ' · ' + ibEsc(c.assignee) : ''}${c.follow === false ? ' · 已封鎖' : ''}</span></div>
+      </div></div>`
+  const notCfg = (d.accounts || []).filter(a => !a.configured)
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)"><b style="font-size:16px;flex:1">收件匣</b>${d.me && d.me.mgr ? `<button class="mini" style="padding:6px 8px" title="收件匣設定：帳號連線／權限／範本" onclick="ibSettings()">${IB_ICON.gear}</button>` : ''}</div>
+    ${chips}
+    ${convs.length ? convs.map(row).join('') : `<div class="hint" style="padding:22px 14px;text-align:center;font-size:13.5px">${(d.accounts || []).length === 0 ? '你沒有任何官方帳號的收件匣權限，請主管在設定裡加你。' : notCfg.length === (d.accounts || []).length ? '官方帳號還沒接上。主管按右上齒輪看要怎麼接。' : _ibFilter === 'todo' ? '沒有待處理的對話' : '還沒有對話'}</div>`}`
+  const tb = document.getElementById('tab-inbox'); if (tb) { const n = ibUnreadTotal(); let bd = tb.querySelector('.chBadge'); if (n) { if (!bd) { bd = document.createElement('span'); bd.className = 'chBadge'; bd.style.cssText = 'background:#2563eb;color:#fff;border-radius:999px;font-size:11px;padding:0 6px;margin-left:6px;line-height:16px;display:inline-block'; tb.appendChild(bd) } bd.textContent = n } else if (bd) bd.remove() }
+}
+function ibRenderPane() {
+  const el = document.getElementById('ibPane'); if (!el) return
+  const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur) || _ibConv
+  if (!c) { el.innerHTML = '<div class="hint" style="margin:auto;text-align:center;padding:30px">左邊選一個對話。<br>客人從官方帳號傳來的訊息都在這裡，回覆直接從這裡送。</div>'; return }
+  const mobile = window.innerWidth < 760
+  const cv = _ibConv || c
+  const people = (_ibD && _ibD.people) || []
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      ${mobile ? `<button class="mini" style="padding:6px 8px" onclick="ibBack()">${IB_ICON.back}</button>` : ''}
+      <div style="flex:1;min-width:140px"><b style="font-size:16px">${ibEsc(cv.alias || cv.name || '客人')}</b> ${ibTag(cv.acct)}<div class="hint" style="font-size:12px">${cv.alias && cv.name ? 'LINE 名稱：' + ibEsc(cv.name) + ' · ' : ''}${cv.follow === false ? '已封鎖官方帳號 · ' : ''}<span id="ibQuota"></span></div></div>
+      <select class="mini" style="padding:5px 8px;font-size:12.5px" onchange="ibOp('status',this.value)" title="狀態">${['new', 'open', 'done'].map(s => `<option value="${s}"${cv.status === s ? ' selected' : ''}>${IB_ST[s]}</option>`).join('')}</select>
+      <select class="mini" style="padding:5px 8px;font-size:12.5px;max-width:120px" onchange="ibOp('assign',this.value)" title="負責人"><option value="">未指派</option>${people.map(p => `<option${cv.assignee === p ? ' selected' : ''}>${ibEsc(p)}</option>`).join('')}</select>
+      <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibNote()" title="內部備註（客人看不到）">備註${cv.note ? ' ●' : ''}</button>
+    </div>
+    <div id="ibMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
+    <div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
+    <div style="display:flex;gap:8px;padding:6px 12px 10px;align-items:flex-end">
+      <textarea id="ibInput" rows="1" placeholder="回覆客人…（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}"></textarea>
+      <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="ibSend()">${IB_ICON.send}</button>
+    </div>`
+  ibModeLine()
+}
+function ibModeLine() {
+  const m = document.getElementById('ibMode'); if (!m) return
+  const q = (_ibConv && _ibConv.quota) || {}
+  const quotaTxt = q.used != null ? `本月已用 ${q.used}${q.limit != null ? ' / ' + q.limit : ''} 則` : ''
+  const qEl = document.getElementById('ibQuota'); if (qEl) qEl.textContent = quotaTxt
+  if (_ibReplyLeft > 0) m.innerHTML = `<span style="color:#16a34a;font-weight:700">免費回覆</span> 還有 ${_ibReplyLeft} 秒`
+  else m.innerHTML = `<span style="color:#d97706;font-weight:700">會扣額度</span>（客人傳來超過 50 秒，改用推播，算 1 則）`
+}
+function ibRenderMsgs(scroll) {
+  const box = document.getElementById('ibMsgs'); if (!box) return
+  if (!_ibMsgs.length) { box.innerHTML = '<div class="hint" style="text-align:center;padding:20px">還沒有訊息</div>'; return }
+  let lastDay = ''
+  box.innerHTML = _ibMsgs.map(m => {
+    const day = (() => { try { const d = new Date(m.t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') } catch (_) { return String(m.t || '').slice(0, 10) } })(); let sep = ''
+    if (day !== lastDay) { lastDay = day; sep = `<div class="hint" style="text-align:center;font-size:11px;margin:6px 0">${ibEsc(day)}</div>` }
+    if (m.dir === 'sys') return sep + `<div class="hint" style="text-align:center;font-size:12px">${ibEsc(m.text)} · ${ibT(m.t)}</div>`
+    const out = m.dir === 'out'
+    let body = ''
+    if (m.type === 'sticker' && m.sticker) body = `<img src="https://stickershop.line-scdn.net/stickershop/v1/sticker/${ibEsc(m.sticker.id)}/android/sticker.png" style="width:110px;height:110px;object-fit:contain" alt="貼圖" onerror="this.outerHTML='（貼圖）'">`
+    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener"><img src="${ibEsc(m.url || m.ext)}" style="max-width:min(260px,100%);border-radius:10px;display:block" alt="圖片"></a>`
+    else if (m.type === 'video' && (m.url || m.ext)) body = `<video src="${ibEsc(m.url || m.ext)}" controls style="max-width:min(260px,100%);border-radius:10px;display:block"></video>`
+    else if (m.type === 'audio' && (m.url || m.ext)) body = `<audio src="${ibEsc(m.url || m.ext)}" controls style="max-width:240px"></audio>`
+    else if (m.type === 'file') body = (m.url || m.ext) ? `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}${m.size ? ` <span class="hint" style="font-size:11px">${Math.round(m.size / 1024)} KB</span>` : ''}</a>` : `${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}（沒抓到內容）`
+    else if (m.type === 'location' && m.loc) body = `<a href="https://maps.google.com/?q=${m.loc.lat},${m.loc.lng}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.pin} ${ibEsc(m.text || '位置')}</a>`
+    else if (['image', 'video', 'audio'].includes(m.type)) body = `（${{ image: '圖片', video: '影片', audio: '語音' }[m.type]}沒抓到內容）`
+    else body = ibEsc(m.text || '')
+    return sep + `<div style="display:flex;flex-direction:column;align-items:${out ? 'flex-end' : 'flex-start'};max-width:100%">
+      ${out ? `<div class="hint" style="font-size:11.5px;margin:0 6px 2px 0">${ibEsc(m.by || '')}${m.mode === 'push' ? ' · 推播' : ''}</div>` : ''}
+      <div style="max-width:78%;background:${out ? '#2563eb' : 'var(--card)'};color:${out ? '#fff' : 'inherit'};border:1px solid ${out ? '#2563eb' : 'var(--line)'};border-radius:${out ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};padding:8px 12px;font-size:15px;white-space:pre-wrap;word-break:break-word">${body}</div>
+      <div class="hint" style="font-size:10.5px;margin:2px 6px 0">${ibT(m.t)}</div></div>`
+  }).join('')
+  if (scroll !== false) box.scrollTop = box.scrollHeight
+}
+async function ibOpen(id, keep) {
+  _ibCur = id; _ibMsgs = []; _ibConv = null
+  if (!keep) { const c = ((_ibD && _ibD.convs) || []).find(x => x.id === id); if (c) c.unread = 0 }
+  if (window.innerWidth < 760) { const l = document.getElementById('ibList'), p = document.getElementById('ibPane'); if (l) l.style.display = 'none'; if (p) p.style.display = 'flex' } else ibRenderList()
+  ibRenderPane()
+  const d = await ibGet('op=conv&id=' + encodeURIComponent(id) + '&read=1')
+  if (!d || !d.ok) { const box = document.getElementById('ibMsgs'); if (box) box.innerHTML = '<div class="err">' + ibEsc((d && d.error) || '讀不到對話') + '</div>'; return }
+  _ibConv = d.conv; _ibConv.quota = d.quota; _ibMsgs = d.list || []; _ibReplyLeft = d.replyLeft || 0
+  ibRenderPane(); ibRenderMsgs(); ibRenderList()
+  if (_ibTimer) clearInterval(_ibTimer); if (_ibTick) clearInterval(_ibTick)
+  _ibTimer = setInterval(ibPoll, 6000)
+  _ibTick = setInterval(() => { if (_ibReplyLeft > 0) { _ibReplyLeft--; ibModeLine() } }, 1000)
+  try { history.replaceState(null, '', '#inbox=' + encodeURIComponent(id)) } catch (_) {}
+}
+async function ibPoll() {
+  if (curStore !== 'inbox' || !_ibCur) return ibStop()
+  const d = await ibGet('op=conv&id=' + encodeURIComponent(_ibCur) + '&read=1')
+  if (!d || !d.ok) return
+  const have = new Set(_ibMsgs.map(m => m.id)); const add = (d.list || []).filter(m => !have.has(m.id))
+  if (add.length) { _ibMsgs.push(...add); ibRenderMsgs() }
+  if (d.replyLeft > _ibReplyLeft) _ibReplyLeft = d.replyLeft
+  if (_ibConv) { _ibConv.quota = d.quota; _ibConv.status = d.conv.status; _ibConv.assignee = d.conv.assignee }
+  ibModeLine()
+}
+function ibBack() { _ibCur = null; _ibConv = null; ibStop(); _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000); ibRender(); try { history.replaceState(null, '', '#inbox') } catch (_) {} }
+async function ibSend() {
+  const ta = document.getElementById('ibInput'); if (!ta || _ibBusy) return
+  const text = ta.value.trim(); if (!text) return
+  _ibBusy = true; ta.value = ''; ta.style.height = 'auto'
+  const tmp = { id: 'tmp' + Date.now(), dir: 'out', type: 'text', text, by: (_ibD.me || {}).name, t: new Date().toISOString() }
+  _ibMsgs.push(tmp); ibRenderMsgs()
+  const d = await ibPost({ op: 'send', id: _ibCur, text })
+  _ibBusy = false
+  if (!d || !d.ok) { _ibMsgs = _ibMsgs.filter(m => m.id !== tmp.id); ibRenderMsgs(); ta.value = text; libToast((d && d.error) || '送出失敗，再試一次', true); return }
+  const i = _ibMsgs.findIndex(m => m.id === tmp.id); if (i >= 0) _ibMsgs[i] = d.msg
+  _ibReplyLeft = 0; if (_ibConv) { _ibConv.status = d.conv.status; _ibConv.assignee = d.conv.assignee }
+  ibRenderMsgs(); ibModeLine()
+  libToast(d.mode === 'reply' ? '已回覆（免費）' : '已推播（扣 1 則）')
+  const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: text.slice(0, 60), dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; c.status = d.conv.status; c.assignee = d.conv.assignee; ibRenderList() }
+  ta.focus()
+}
+async function ibOp(op, value) {
+  const d = await ibPost({ op, id: _ibCur, value })
+  if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
+  if (_ibConv) Object.assign(_ibConv, d.conv)
+  const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.status = d.conv.status; c.assignee = d.conv.assignee }
+  ibRenderList(); if (op !== 'status' && op !== 'assign') ibRenderPane()
+  libToast('已更新')
+}
+function ibModal(inner) {
+  const ov = document.createElement('div'); ov.id = 'ibOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:80;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.onclick = () => ov.remove()
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:560px;max-height:90vh;overflow:auto;padding:16px">${inner}</div>`
+  document.body.appendChild(ov); return ov
+}
+function ibNote() {
+  const cv = _ibConv || {}
+  ibModal(`<b style="font-size:16px">內部備註</b><div class="hint" style="font-size:12px">只有同事看得到，客人看不到。也可以幫這位客人取個備註名。</div>
+    <input id="ibAlias" value="${ibEsc(cv.alias || '')}" placeholder="備註名（例：常客王小姐、10/20 訂位）" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px;margin-top:10px;background:var(--card);color:inherit">
+    <textarea id="ibNoteTa" rows="5" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px;margin-top:8px;background:var(--card);color:inherit;font-family:inherit">${ibEsc(cv.note || '')}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" onclick="document.getElementById('ibOv').remove()">取消</button><button class="mini on" onclick="ibNoteSave()">儲存</button></div>`)
+}
+async function ibNoteSave() {
+  const note = (document.getElementById('ibNoteTa') || {}).value || '', alias = (document.getElementById('ibAlias') || {}).value || ''
+  const d1 = await ibPost({ op: 'note', id: _ibCur, value: note }); const d2 = await ibPost({ op: 'rename', id: _ibCur, value: alias })
+  if (!d1 || !d1.ok || !d2 || !d2.ok) { libToast('沒存到', true); return }
+  if (_ibConv) { _ibConv.note = note; _ibConv.alias = alias }
+  document.getElementById('ibOv').remove(); ibRenderPane(); ibRenderMsgs(false); libToast('已儲存')
+}
+function ibTplPick() {
+  const tp = (_ibD && _ibD.templates) || []
+  if (!tp.length) { libToast((_ibD.me || {}).mgr ? '還沒有範本，到右上齒輪「設定」新增' : '還沒有範本，請主管在設定裡新增', true); return }
+  ibModal(`<b style="font-size:16px">常用回覆</b>${tp.map((t, i) => `<div onclick="ibTplUse(${i})" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;cursor:pointer"><b style="font-size:14px">${ibEsc(t.title || '範本 ' + (i + 1))}</b><div class="hint" style="font-size:13px;white-space:pre-wrap">${ibEsc(t.text)}</div></div>`).join('')}`)
+}
+function ibTplUse(i) { const t = ((_ibD && _ibD.templates) || [])[i]; const ta = document.getElementById('ibInput'); if (t && ta) { ta.value = (ta.value ? ta.value + '\n' : '') + t.text; ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; ta.focus() } const ov = document.getElementById('ibOv'); if (ov) ov.remove() }
+
+// ── 設定（主管）：帳號連線／權限／範本／提醒 ──
+let _ibSet = null
+async function ibSettings() {
+  const ov = ibModal('<b style="font-size:16px">收件匣設定</b><div class="hint" style="margin-top:8px">讀取中…</div>')
+  const d = await ibGet('op=settings'); if (!d || !d.ok) { ov.querySelector('.hint').textContent = (d && d.error) || '讀不到設定'; return }
+  _ibSet = d; ibSetRender()
+}
+function ibSetRender() {
+  const d = _ibSet; const ov = document.getElementById('ibOv'); if (!ov || !d) return
+  const box = ov.firstElementChild
+  const acc = (d.accounts || []).map(a => {
+    const st = !a.configured ? '<span style="color:#d97706;font-weight:700">未設金鑰</span>' : a.hookOk ? '<span style="color:#16a34a;font-weight:700">已接上</span>' : (a.hook && a.hook.endpoint) ? `<span style="color:#d97706;font-weight:700">webhook 指到別處</span>` : '<span style="color:#d97706;font-weight:700">webhook 未設</span>'
+    const info = a.info && !a.info.error ? `${ibEsc(a.info.displayName || '')} ${a.info.basicId ? '(' + ibEsc(a.info.basicId) + ')' : ''} · 模式 ${a.info.chatMode === 'bot' ? '機器人' : '聊天'}` : (a.configured ? '金鑰無效或讀不到帳號資訊' : '')
+    const q = a.quota && a.quota.used != null ? `本月 ${a.quota.used}${a.quota.limit != null ? ' / ' + a.quota.limit : ''} 則` : ''
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:${a.color}">${ibEsc(a.name)}</b>${st}<span style="flex:1"></span>${a.configured && !a.hookOk ? `<button class="mini on" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">接到收件匣</button>` : ''}${a.configured && a.hookOk ? `<button class="mini" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">重測</button>` : ''}</div>
+      <div class="hint" style="font-size:12.5px;margin-top:4px">${info}${q ? ' · ' + q : ''}${a.lastEventT ? ' · 最近收到 ' + ibT(a.lastEventT) : ''}</div>
+      ${a.hook && a.hook.endpoint && !a.hookOk ? `<div class="hint" style="font-size:12px;word-break:break-all">目前 webhook：${ibEsc(a.hook.endpoint)}${a.hook.active === false ? '（未啟用）' : ''}</div>` : ''}
+      ${!a.configured ? `<div class="hint" style="font-size:12px">要給 CC 的環境變數：${a.envSecret}、${a.envToken}</div>` : ''}
+    </div>`
+  }).join('')
+  const people = d.people || []
+  const perm = (d.cfg && d.cfg.perm) || {}
+  const permHtml = (d.accounts || []).map(a => `<div style="margin-top:8px"><b style="font-size:13.5px;color:${a.color}">${ibEsc(a.name)}</b><div class="hint" style="font-size:11.5px">主管永遠看得到；勾的人也看得到並會收到通知</div><div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px">${people.map(p => `<label style="display:flex;gap:4px;align-items:center;font-size:13.5px"><input type="checkbox" class="ibPerm" data-acct="${a.key}" value="${ibEsc(p)}"${(perm[a.key] || []).includes(p) ? ' checked' : ''}>${ibEsc(p)}</label>`).join('')}</div></div>`).join('')
+  const tpl = (d.cfg && d.cfg.templates) || []
+  const tplHtml = `<div id="ibTplList">${tpl.map((t, i) => ibTplRow(t, i)).join('')}</div><button class="mini" style="margin-top:6px;padding:5px 10px;font-size:12.5px" onclick="ibTplAdd()">＋ 新增範本</button>`
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">收件匣設定</b><button class="mini" onclick="document.getElementById('ibOv').remove()">關閉</button></div>
+    <div class="hint" style="font-size:12px;margin-top:6px">驗簽失敗 ${(d.sigfail || {}).n || 0} 次${(d.sigfail || {}).lastT ? '（最近 ' + ibT(d.sigfail.lastT) + '）' : ''} · 三個帳號 webhook 都填同一個網址：<span style="word-break:break-all">${ibEsc(((d.accounts || [])[0] || {}).wantHook || '')}</span></div>
+    <h3 style="font-size:14px;margin:14px 0 0">帳號連線</h3>${acc}
+    <h3 style="font-size:14px;margin:16px 0 0">誰看得到哪個帳號</h3>${permHtml}
+    <h3 style="font-size:14px;margin:16px 0 0">常用回覆範本</h3>${tplHtml}
+    <h3 style="font-size:14px;margin:16px 0 0">沒人回覆提醒</h3><div style="display:flex;gap:8px;align-items:center;font-size:14px">超過 <input id="ibRemind" type="number" min="5" max="1440" value="${(d.cfg && d.cfg.remindMin) || 30}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 分鐘沒回 → 再推播一次＋LINE 私訊審核人（每小時檢查）</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="mini on" onclick="ibSetSave()">儲存設定</button></div>`
+}
+function ibTplRow(t, i) { return `<div class="ibTpl" style="display:flex;gap:6px;margin-top:6px;align-items:flex-start"><input class="ibTplTitle" value="${ibEsc(t.title || '')}" placeholder="標題" style="width:110px;border:1px solid var(--line);border-radius:8px;padding:7px;background:var(--card);color:inherit;font-size:13px"><textarea class="ibTplText" rows="2" placeholder="內容" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px;background:var(--card);color:inherit;font-size:13px;font-family:inherit">${ibEsc(t.text || '')}</textarea><button class="mini" style="padding:5px 8px" onclick="this.parentNode.remove()">刪</button></div>` }
+function ibTplAdd() { const l = document.getElementById('ibTplList'); if (l) l.insertAdjacentHTML('beforeend', ibTplRow({}, 0)) }
+async function ibSetSave() {
+  const perm = {}; document.querySelectorAll('#ibOv .ibPerm:checked').forEach(x => { (perm[x.dataset.acct] = perm[x.dataset.acct] || []).push(x.value) })
+  for (const a of (_ibSet.accounts || [])) perm[a.key] = perm[a.key] || []
+  const templates = [...document.querySelectorAll('#ibOv .ibTpl')].map(r => ({ title: r.querySelector('.ibTplTitle').value, text: r.querySelector('.ibTplText').value })).filter(t => t.text.trim())
+  const remindMin = +((document.getElementById('ibRemind') || {}).value || 30)
+  const d = await ibPost({ op: 'cfg', cfg: { perm, templates, remindMin } })
+  if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
+  libToast('設定已儲存'); document.getElementById('ibOv').remove()
+  const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() }
+}
+async function ibConnect(key, force) {
+  const d = await ibPost({ op: 'connect', acct: key, force })
+  if (d && d.needConfirm) { if (confirm(d.error + '\n\n確定改接？原本接的系統會收不到訊息。')) return ibConnect(key, true); return }
+  if (!d || !d.ok) { libToast((d && d.error) || '接不上', true); return }
+  const t = d.test || {}
+  libToast(t.success ? '已接上，LINE 測試通過' : '已設定，但 LINE 測試回：' + (t.reason || t.detail || JSON.stringify(t)).slice(0, 80), !t.success)
+  const d2 = await ibGet('op=settings'); if (d2 && d2.ok) { _ibSet = d2; ibSetRender() }
+}
+window.addEventListener('resize', () => { if (curStore === 'inbox' && _ibD) { ibRender(); if (_ibCur) ibRenderMsgs(false) } })

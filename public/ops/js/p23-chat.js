@@ -1,4 +1,4 @@
-// 💬 聊天室 v4.70.45（溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
+// 💬 聊天室 v4.70.46（溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
 // 這版先輪詢（開著的聊天室每 6 秒、清單每 25 秒）；UI 單色 stroke SVG（10-04 規則）；手機＝清單→聊天室兩層，桌機＝左右雙欄
 const CH_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -61,7 +61,7 @@ function chRenderPane() {
     </div>
     <div id="chMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
     <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);align-items:flex-end">
-      <textarea id="chInput" rows="1" placeholder="輸入訊息… 打 @DD 叫 AI 回答（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chSend()}"></textarea>
+      <textarea id="chInput" rows="1" placeholder="輸入訊息… 打 @DD 叫 AI 回答（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();chSend()}"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="chSend()">${CH_ICON.send}</button>
     </div>`
 }
