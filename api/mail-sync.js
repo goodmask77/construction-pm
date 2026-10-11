@@ -1511,8 +1511,8 @@ export default async function handler(req, res) {
       const byMoH = {}
       for (const e of entries) {
         const mo9 = e.date.slice(0, 7)
-        const o = byMoH[mo9] = byMoH[mo9] || { month: mo9, revenue: 0, bills: 0, customers: 0, days: 0 }
-        o.revenue += Number(e.revenue) || 0; o.bills += Number(e.txCount) || 0; o.customers += Number(e.guests) || 0; o.days++
+        const o = byMoH[mo9] = byMoH[mo9] || { month: mo9, revenue: 0, bills: 0, customers: 0, days: 0, uber: 0 }
+        o.revenue += Number(e.revenue) || 0; o.bills += Number(e.txCount) || 0; o.customers += Number(e.guests) || 0; o.days++; o.uber += Number(e.uber) || 0 // uber=月 Uber Eats 合計（KPI 第四卡，張良 2026-10-12；與每日數據 Uber 欄同源）
       }
       if (storeQ === 'abeach') {
         const revmD = (await kvGet('sp_finance_pm_boss_revm')) || {}

@@ -217,22 +217,33 @@ function renderBoard(d, store, view){
     const hA = d.hist || []
     const tp9 = todayTpe()
     const curM9 = tp9.slice(0,7), curY9 = tp9.slice(0,4)
-    const moH9 = hA.find(m=>m.month===curM9) || {}
-    const yrM9 = hA.filter(m=>String(m.month).slice(0,4)===curY9)
+    // v4.70.67（張良 2026-10-12「直接顯示我選的月份：本月就顯示10月、上月就顯示9月」）：KPI 跟著下面的期間鈕走；選年＝整年大字；歷史／其他＝本月
+    const perK = window._dayPeriod || 'tm'
+    let kM9 = curM9, kY9 = curY9, yearOnly9 = false
+    if (perK === 'lm') { const t9 = new Date(curM9 + '-15'); t9.setMonth(t9.getMonth() - 1); kM9 = t9.toISOString().slice(0,7) }
+    else if (perK.startsWith('m:')) kM9 = perK.slice(2)
+    else if (perK.startsWith('y:')) { yearOnly9 = true; kY9 = perK.slice(2) }
+    if (!yearOnly9) kY9 = kM9.slice(0,4)
+    const moH9 = hA.find(m=>m.month===kM9) || {}
+    const yrM9 = hA.filter(m=>String(m.month).slice(0,4)===kY9)
     const sum9 = (list,f) => list.reduce((t,m)=>t+(Number(f(m))||0),0)
     const mRev = Number(moH9.revenue)||0, yRev = sum9(yrM9,m=>m.revenue)
     const mTx = Number(moH9.bills)||0, yTx = sum9(yrM9,m=>m.bills)
+    const mUber = Number(moH9.uber)||0, yUber = sum9(yrM9,m=>m.uber) // Uber Eats（每日數據 Uber 欄同源；GD 接上前都是 0）
     const mDays = Number(moH9.days)||0
     const yDaysArr = yrM9.filter(m=>Number(m.days))
     const yDays = yDaysArr.reduce((t,m)=>t+Number(m.days),0)
     const mAvg = mDays ? Math.round(mRev/mDays) : 0
     const yAvg = yDays ? Math.round(sum9(yDaysArr,m=>m.revenue)/yDays) : 0
     const kv9 = n => n >= 1e6 ? Math.round(n/1e4).toLocaleString()+'<span style="font-size:.62em;font-weight:700"> 萬</span>' : Math.round(n||0).toLocaleString()
-    const card9 = (label,big,small) => `<div class="kpi"><div class="l">${label} <span class="hint" style="font-weight:700">本月</span></div><div class="v">${kv9(big)}</div><div class="sub2">今年 ${kv9(small)}</div></div>`
-    h += `<div class="kpis">
+    const bigLbl9 = yearOnly9 ? `${kY9}年` : `${parseInt(kM9.slice(5),10)}月`
+    const subLbl9 = kY9 === curY9 ? '今年' : `${kY9}年`
+    const card9 = (label,big,small) => `<div class="kpi"><div class="l">${label} <span class="hint" style="font-weight:700">${bigLbl9}</span></div><div class="v">${kv9(yearOnly9 ? small : big)}</div>${yearOnly9 ? '' : `<div class="sub2">${subLbl9} ${kv9(small)}</div>`}</div>`
+    h += `<div class="kpis four">
       ${card9('總營收', mRev, yRev)}
       ${card9('日均營收', mAvg, yAvg)}
       ${card9('總單數', mTx, yTx)}
+      ${card9('Uber Eats', mUber, yUber)}
     </div>`
   }
   // 日表（張良 2026-09-22 v3：去NT簡化版面、日期欄凍結、至14:00=14點前營收、總營收、表頭下平均列、高低於平均用色階（綠=高於、紅=低於，深淺=差多少））

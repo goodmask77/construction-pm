@@ -67,6 +67,7 @@
   .favchip.on{border-color:transparent;background:var(--grad);color:#fff}
   .favchip .fno{position:absolute;top:-7px;right:-7px;background:#fff;color:#0D63C9;border-radius:999px;min-width:19px;height:19px;line-height:19px;font-size:12px;font-weight:900;text-align:center}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
+  .kpis.four{grid-template-columns:repeat(4,1fr)} @media(max-width:480px){ .kpis.four{grid-template-columns:repeat(2,1fr)} } /* v4.70.67 四卡（＋Uber Eats）；手機 2×2 */
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;min-width:0} /* v4.41.1 min-width:0=長數字不把三卡撐出螢幕 */
   .kpi{text-align:center} /* v4.41.2 張良「置中」 */
   .kpi .l{font-size:15.5px;font-weight:700;color:var(--text)}
@@ -189,7 +190,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <!-- v4.40.0 拆檔（張良「現在先拆好」）：原單一大 script 依原順序切 10 塊，共用全域、順序＝執行順序，新增功能寫新檔別再疊回大檔 -->
-<script src="/ops/js/p01-core.js?v=4766"></script><!-- v4.70.66 AB 熱力圖：每格小字 Uber 時段金額＋「其中 Uber」合計列；今日列改開單時間口徑（張良 2026-10-12） --><!-- v4.70.58 離開收件匣／聊天室清網址 hash：重新整理留在原分頁（張良 2026-10-11） --><!-- v4.70.36 全站共用曲線圖 lineChart：XY 軸數字＋滑過浮窗（張良 2026-10-10） -->
+<script src="/ops/js/p01-core.js?v=4767"></script><!-- v4.70.67 KPI 四卡＋Uber Eats、跟著期間鈕顯示 10月／9月（張良 2026-10-12） --><!-- v4.70.66 AB 熱力圖：每格小字 Uber 時段金額＋「其中 Uber」合計列；今日列改開單時間口徑（張良 2026-10-12） --><!-- v4.70.58 離開收件匣／聊天室清網址 hash：重新整理留在原分頁（張良 2026-10-11） --><!-- v4.70.36 全站共用曲線圖 lineChart：XY 軸數字＋滑過浮窗（張良 2026-10-10） -->
 <script src="/ops/js/p02-sop.js?v=4765"></script><!-- v4.70.65 /ops/?preview=1#tab=xxx 帶登入身分跳固定預覽網址 ground-pm-preview.vercel.app -->
 <script src="/ops/js/p03-sopedit.js?v=4660"></script>
 <script src="/ops/js/p04-inv-meet.js?v=4560"></script>
