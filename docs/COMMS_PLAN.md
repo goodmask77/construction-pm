@@ -242,8 +242,8 @@ DD 與 AI 會議室共用同一個後台與決策帳本;LINE 是夥伴最常用�
 
 | 管道 | 類型 | 方式 |
 | --- | --- | --- |
-| A Beach 客服 | 官方帳號 1:1 | Messaging API webhook |
-| GROUN:D 客服 | 官方帳號 1:1 | Messaging API webhook |
+| A Beach | 官方帳號 1:1 | Messaging API webhook |
+| GROUN:D | 官方帳號 1:1 | Messaging API webhook |
 | 人才招募(104 導流) | 官方帳號 1:1 | Messaging API webhook;可與 `docs/` 招募流程連動 |
 | 廠商 | LINE 群組(DD 在群內) | 沿用 DD webhook 與廠商綁定群 `lineGroupId` |
 | 內部:夥伴與 DD/AI 助理的對話 | DD 私訊、群組、app AI 助理 | 見「內部對話」 |
