@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.59（側欄／常用列待處理數字徽章；清單重排：帳號列／狀態列分段、狀態實色標籤；狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.61（+DD 帳號：DD 私訊自動進來、DD 答過算已完成、設定頁不給改接；側欄／常用列待處理數字徽章；清單重排：帳號列／狀態列分段、狀態實色標籤；狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -9,7 +9,7 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4759' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4761' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 const IB_STC = { new: '#2563eb', open: '#d97706', done: '#16a34a' } // 狀態色：新＝藍、處理中＝橘、已完成＝綠（張良 10-11「底色標籤直覺辨識」）
@@ -309,11 +309,12 @@ function ibSetRender() {
   const d = _ibSet; const ov = document.getElementById('ibOv'); if (!ov || !d) return
   const box = ov.firstElementChild
   const acc = (d.accounts || []).map(a => {
-    const st = !a.configured ? '<span style="color:#d97706;font-weight:700">未設金鑰</span>' : a.hookOk ? '<span style="color:#16a34a;font-weight:700">已接上</span>' : (a.hook && a.hook.endpoint) ? `<span style="color:#d97706;font-weight:700">webhook 指到別處</span>` : '<span style="color:#d97706;font-weight:700">webhook 未設</span>'
+    const st = a.relay ? (a.hookOk ? '<span style="color:#16a34a;font-weight:700">DD 自己接・私訊自動進收件匣</span>' : '<span style="color:#d97706;font-weight:700">DD 的 webhook 沒指在正式站</span>') : !a.configured ? '<span style="color:#d97706;font-weight:700">未設金鑰</span>' : a.hookOk ? '<span style="color:#16a34a;font-weight:700">已接上</span>' : (a.hook && a.hook.endpoint) ? `<span style="color:#d97706;font-weight:700">webhook 指到別處</span>` : '<span style="color:#d97706;font-weight:700">webhook 未設</span>'
     const info = a.info && !a.info.error ? `${ibEsc(a.info.displayName || '')} ${a.info.basicId ? '(' + ibEsc(a.info.basicId) + ')' : ''} · 模式 ${a.info.chatMode === 'bot' ? '機器人' : '聊天'}` : (a.configured ? '金鑰無效或讀不到帳號資訊' : '')
     const q = a.quota && a.quota.used != null ? `本月 ${a.quota.used}${a.quota.limit != null ? ' / ' + a.quota.limit : ''} 則` : ''
     return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:${a.color}">${ibEsc(a.name)}</b>${st}<span style="flex:1"></span>${a.configured && !a.hookOk ? `<button class="mini on" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">接到收件匣</button>` : ''}${a.configured && a.hookOk ? `<button class="mini" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">重測</button>` : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:${a.color}">${ibEsc(a.name)}</b>${st}<span style="flex:1"></span>${a.configured && !a.hookOk && !a.relay ? `<button class="mini on" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">接到收件匣</button>` : ''}${a.configured && a.hookOk && !a.relay ? `<button class="mini" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">重測</button>` : ''}</div>
+      ${a.relay ? '<div class="hint" style="font-size:12px">只收 DD 的一對一私訊（群組不收）。DD 自己答過的對話直接算「已完成」、不推播不提醒；你要插手就在那個對話直接回，會用 DD 的名義發出。</div>' : ''}
       <div class="hint" style="font-size:12.5px;margin-top:4px">${info}${q ? ' · ' + q : ''}${a.lastEventT ? ' · 最近收到 ' + ibT(a.lastEventT) : ''}</div>
       ${a.hook && a.hook.endpoint && !a.hookOk ? `<div class="hint" style="font-size:12px;word-break:break-all">目前 webhook：${ibEsc(a.hook.endpoint)}${a.hook.active === false ? '（未啟用）' : ''}</div>` : ''}
       ${!a.configured ? `<div class="hint" style="font-size:12px">要給 CC 的環境變數：${a.envSecret}、${a.envToken}</div>` : ''}
@@ -340,7 +341,7 @@ function ibSetRender() {
   const tpl = (d.cfg && d.cfg.templates) || []
   const tplHtml = `<div id="ibTplList">${tpl.map((t, i) => ibTplRow(t, i)).join('')}</div><button class="mini" style="margin-top:6px;padding:5px 10px;font-size:12.5px" onclick="ibTplAdd()">＋ 新增範本</button>`
   box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">收件匣設定</b><button class="mini" onclick="document.getElementById('ibOv').remove()">關閉</button></div>
-    <div class="hint" style="font-size:12px;margin-top:6px">驗簽失敗 ${(d.sigfail || {}).n || 0} 次${(d.sigfail || {}).lastT ? '（最近 ' + ibT(d.sigfail.lastT) + '）' : ''} · 三個帳號 webhook 都填同一個網址：<span style="word-break:break-all">${ibEsc(((d.accounts || [])[0] || {}).wantHook || '')}</span></div>
+    <div class="hint" style="font-size:12px;margin-top:6px">驗簽失敗 ${(d.sigfail || {}).n || 0} 次${(d.sigfail || {}).lastT ? '（最近 ' + ibT(d.sigfail.lastT) + '）' : ''} · 官方帳號（A Beach／GROUN:D／104招募）webhook 都填同一個網址：<span style="word-break:break-all">${ibEsc(((d.accounts || [])[0] || {}).wantHook || '')}</span></div>
     <h3 style="font-size:14px;margin:14px 0 0">帳號連線</h3>${acc}
     <h3 style="font-size:14px;margin:16px 0 0">誰看得到哪個帳號</h3>${permHtml}
     <h3 style="font-size:14px;margin:16px 0 0">常用回覆範本</h3>${tplHtml}

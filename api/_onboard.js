@@ -37,6 +37,7 @@ export async function linePush(to, text) {
       body: JSON.stringify({ to, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }),
     })
     if (r.ok) { try { await logBotPush(to, text) } catch (_) {} } // v4.22.0 主動推播進對話脈絡（張良：DD 要認得自己剛發的通知、接得上追問）
+    if (r.ok) import('./_inbox.js').then(m => m.ddInboxOut(text, to, 'push')).catch(() => {}) // v4.70.61 正在處理的私訊對象＝同一人才會記進收件匣（動態載入避免循環匯入）
     return r.ok
   } catch (_) { return false }
 }
@@ -159,7 +160,7 @@ export async function handleOnboardEvent(ev) {
   if (ev.source?.type !== 'user' || ev.message?.type !== 'text') return false
   const uid = ev.source.userId
   const text = (ev.message.text || '').trim()
-  const reply = async (t) => { try { await fetch('https://api.line.me/v2/bot/message/reply', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LINE_TOKEN}` }, body: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text', text: String(t).slice(0, 4900) }] }) }) } catch (_) {} }
+  const reply = async (t) => { try { const r9 = await fetch('https://api.line.me/v2/bot/message/reply', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LINE_TOKEN}` }, body: JSON.stringify({ replyToken: ev.replyToken, messages: [{ type: 'text', text: String(t).slice(0, 4900) }] }) }); if (r9.ok) import('./_inbox.js').then(m => m.ddInboxOut(t, uid, 'reply')).catch(() => {}) } catch (_) {} } // v4.70.61 入職回話也進收件匣
 
   // 「登入」→ 已綁定者補發連結
   if (/^(登入|登入連結|再給我連結)$/.test(text)) {

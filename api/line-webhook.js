@@ -13,6 +13,7 @@ import { handleOnboardEvent } from './_onboard.js'
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
+import { ddInboxBegin, ddInboxOut, ddInboxFlush } from './_inbox.js' // v4.70.61 DD 的一對一私訊同步進統一收件匣（張良 10-11「增加DD」）：每個事件 Begin、每次回話 Out、回 200 前 Flush
 import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -365,13 +366,14 @@ async function lineReply(replyToken, text, extra, fallbackTo) {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ replyToken, messages }),
     })
-    if (r.ok) { console.log('LINE reply OK'); _lastSend = { replyOk: true }; return true }
+    if (r.ok) { console.log('LINE reply OK'); _lastSend = { replyOk: true }; ddInboxOut(text, fallbackTo, 'reply'); return true }
     const d = await r.text().catch(() => '')
     console.log('LINE reply FAILED', r.status, d.slice(0, 300))
     _lastSend = { replyOk: false, status: r.status, err: d.slice(0, 120) }
     if (fallbackTo && r.status === 400) {
       const p = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: fallbackTo, messages }) })
       _lastSend.pushed = p.ok ? 1 : 0
+      if (p.ok) ddInboxOut(text, fallbackTo, 'push')
       if (!p.ok) _lastSend.pushErr = (await p.text().catch(() => '')).slice(0, 120)
       console.log('LINE reply→push fallback', p.ok)
       return p.ok
@@ -2225,6 +2227,7 @@ export default async function handler(req, res) {
         if (firstX === false || (firstX === null && redelivX)) { console.log('dup event skip', evIdX, redelivX ? 'redelivery' : ''); ddHealthLog({ kind: 'dup', redelivery: redelivX ? 1 : 0, type: ev.type }).catch(() => {}); continue }
         if (redelivX) ddHealthLog({ kind: 'redelivery_ok', type: ev.type }).catch(() => {})
       } else if (redelivX) { console.log('skip redelivery (no id)'); continue }
+      ddInboxBegin(ev, body.destination) // v4.70.61 一對一私訊（訊息／加好友／按鈕）存進收件匣 DD 帳號，跟下面 DD 自己的處理並行；群組事件不收
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
       // v4.70.38 DD 被加進群（join）就登記到群組清單（不用等有人講話）；被踢出／離開（leave）標 gone（設定頁顯示「DD 已不在這個群」）
@@ -2984,5 +2987,6 @@ export default async function handler(req, res) {
       }
     } catch (e) { console.log('event error', e?.message); ddHealthLog({ kind: 'error', err: String(e?.message || '').slice(0, 160), ms: Date.now() - tEv, type: ev.type, ai: _aiAgg && _aiAgg.calls ? _aiAgg : null }).catch(() => {}) }
   }
+  try { await ddInboxFlush() } catch (_) {} // v4.70.61 收件匣寫入要在回 200 前完成（serverless 回應後就凍結）
   return res.status(200).json({ ok: true })
 }
