@@ -125,6 +125,19 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
+  // 🥬 v4.70.68 菜商報價自動同步（張良 2026-10-12「他們每個月會在試算表更新報價」）：每天台灣 08:00 那一輪直接讀上展／尚太的 Google 試算表，有變動才私訊張良摘要；?vegsync=1 可手動跑（只跑這段）
+  const tpeH0 = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
+  if (req.query?.vegsync === '1' || tpeH0 === 8) {
+    let vegR = null
+    try {
+      const { syncFromSheets, syncSummaryText } = await import('./_vegquote.js')
+      vegR = await syncFromSheets({ kvGet, kvPut: kvSave, who: { name: '每日自動' } })
+      const txt = syncSummaryText(vegR)
+      if (txt && TOKEN && BOSS && req.query?.dry !== '1') { const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: BOSS, messages: [{ type: 'text', text: txt.slice(0, 4900) }] }) }); vegR.pushed = pr.ok }
+      console.log('vegsync', JSON.stringify((vegR.vendors || []).map(x => ({ v: x.vendor, ok: x.ok, ch: (x.changes || []).length, err: x.error }))))
+    } catch (e) { console.log('vegsync err', e?.message); vegR = { ok: false, error: e?.message } }
+    if (req.query?.vegsync === '1') return res.status(200).json({ ok: true, veg: vegR })
+  }
   try { const { ddHealthCleanup } = await import('./_ddhealth.js'); console.log('ddhealth cleanup', JSON.stringify(await ddHealthCleanup())) } catch (e) { console.log('ddhealth cleanup err', e?.message) } // v4.70.39 去重列
   try { const { ddCoverageCheck } = await import('./_ddcoverage.js'); console.log('ddcoverage', JSON.stringify(await ddCoverageCheck({ force: req.query?.covforce === '1' }))) } catch (e) { console.log('ddcoverage err', e?.message) } // v4.70.41 DD 資料覆蓋自檢（同日只跑一次，新資料家族私訊審核人）留 2 天、健康紀錄留 30 天
   // 一次性補建（已於 2026-09-12 使用完畢；防重複所以留著也無害，佔位待清）

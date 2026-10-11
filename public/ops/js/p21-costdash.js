@@ -1,4 +1,4 @@
-// 📊 /prep 第 21 塊（v4.70.34，2026-10-10）：產品與成本模組｜批次 5a「成本總覽（首頁）」＋「廠商與月帳」
+// 📊 /prep 第 21 塊（v4.70.67，2026-10-12）：產品與成本模組｜批次 5a「成本總覽（首頁）」＋「廠商與月帳」
 // 規格 docs/COST_MODULE_SPEC.md §1、§6。資料 ?costdash=（api/_costdash.js；數字口徑沿用待處理中心 buildTodo／物料卡 buildCards）。
 // UI 慣例：單色線條圖示、不用彩色 emoji、不用 prompt、編輯卡片要 ✓ 完成鈕；表格 .scroll + table.tight。
 ;(function () {
@@ -40,8 +40,8 @@
   }
   function render () {
     let h = `<h1 style="display:flex;align-items:center;gap:8px">${IC.chart} 成本總覽</h1><div class="sub">一眼看到哪裡有問題、影響多大；數字跟「物料庫 → 待處理／物料卡」同一套算法</div>`
-    h += `<div style="display:flex;gap:8px;margin:14px 0 4px;flex-wrap:wrap"><button class="mini ${sub === 'dash' ? 'on' : ''}" onclick="_cdSub('dash')">${IC.chart} 總覽</button><button class="mini ${sub === 'vendors' ? 'on' : ''}" onclick="_cdSub('vendors')">${IC.truck} 廠商與月帳</button><button class="mini" style="margin-left:auto" onclick="costdashLoad()">${IC.undo} 重新整理</button></div>`
-    h += '<div id="cdBody">' + (sub === 'dash' ? dash() : vendors()) + '</div>'
+    h += `<div style="display:flex;gap:8px;margin:14px 0 4px;flex-wrap:wrap"><button class="mini ${sub === 'dash' ? 'on' : ''}" onclick="_cdSub('dash')">${IC.chart} 總覽</button><button class="mini ${sub === 'vendors' ? 'on' : ''}" onclick="_cdSub('vendors')">${IC.truck} 廠商與月帳</button><button class="mini ${sub === 'veg' ? 'on' : ''}" onclick="_cdSub('veg')">${IC.chart} 菜商比價</button><button class="mini" style="margin-left:auto" onclick="costdashLoad()">${IC.undo} 重新整理</button></div>`
+    h += '<div id="cdBody">' + (sub === 'dash' ? dash() : sub === 'veg' ? (typeof vegView === 'function' ? vegView() : '<section><div class="err">菜商比價模組沒載入</div></section>') : vendors()) + '</div>' // v4.70.67 菜商比價（p21b-vegcmp.js）
     app.innerHTML = h
   }
   window._cdSub = function (s) { sub = s; render() } // 整頁重畫＝子分頁按鈕亮燈跟著換
