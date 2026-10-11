@@ -15,12 +15,15 @@ export const CON_TAGS = ['可多主動溝通', '記得多確認細節', '建議�
 const ALL_TAGS = [...POS_TAGS, ...CON_TAGS]
 
 // ── LINE 傳送（文字/Flex 通用）──
+const ibTxt = (ms) => (Array.isArray(ms) ? ms : []).map(m => m && m.type === 'text' ? m.text : (m && m.altText ? '（卡片）' + m.altText : '')).filter(Boolean).join('\n') // v4.70.61 進收件匣的文字版（Flex 卡片記 altText）
+const ibOut = (ms, to, mode) => { try { import('./_inbox.js').then(m => m.ddInboxOut(ibTxt(ms), to, mode)).catch(() => {}) } catch (_) {} }
 async function lineSend(replyToken, messages) {
   try {
     const r = await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LINE_TOKEN}` },
       body: JSON.stringify({ replyToken, messages }),
     })
+    if (r.ok) ibOut(messages, null, 'reply')
     return r.ok
   } catch (_) { return false }
 }
@@ -30,6 +33,7 @@ export async function pushMessages(to, messages) {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LINE_TOKEN}` },
       body: JSON.stringify({ to, messages }),
     })
+    if (r.ok) ibOut(messages, to, 'push')
     return r.ok
   } catch (_) { return false }
 }

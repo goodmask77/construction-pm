@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.55（舊版前端自動重新整理；沒人回提醒可設通知誰／LINE 群；帳號顯示名改 A Beach／GROUN:D／104招募；溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
+// 📥 統一收件匣 v4.70.61（+DD 帳號：DD 的一對一私訊自動進收件匣、DD 自己答過算已完成、可從收件匣用 DD 名義插手回；張良 2026-10-11「增加DD」）（舊版前端自動重新整理；沒人回提醒可設通知誰／LINE 群；帳號顯示名改 A Beach／GROUN:D／104招募；溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
 // 設計：
 //  - 三個官方帳號（A Beach 客服／GROUN:D 客服／招募）共用一個接收端點 api/inbox-webhook.js；每個請求用「哪個帳號的 channel secret 驗得過」決定是哪個帳號（不用先知道 destination）
 //  - 金鑰只在環境變數：LINE_OA_<KEY>_SECRET／LINE_OA_<KEY>_TOKEN（KEY=AB／GD／HR）；前端永遠看不到
@@ -11,14 +11,16 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4759' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4761' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
   { key: 'hr', name: '104招募', env: 'LINE_OA_HR', color: '#16a34a' }, // v4.70.53 名稱照張良 10-11：A Beach／GROUN:D／104招募
+  // v4.70.61 DD 本尊（@425pmzor）：relay＝webhook 留在 api/line-webhook（一個帳號只能有一個 webhook，DD 要照常回話），私訊由 line-webhook 轉進來（ddInboxBegin／ddInboxOut）；鑰匙沒設 LINE_OA_DD_* 就退回 DD 原本的 LINE_CHANNEL_*
+  { key: 'dd', name: 'DD', env: 'LINE_OA_DD', color: '#7c3aed', relay: true, fallback: { secret: 'LINE_CHANNEL_SECRET', token: 'LINE_CHANNEL_ACCESS_TOKEN' } },
 ]
 export const acctOf = (key) => ACCOUNTS.find(a => a.key === key) || null
-export const creds = (a) => ({ secret: clean(process.env[a.env + '_SECRET']), token: clean(process.env[a.env + '_TOKEN']) })
+export const creds = (a) => ({ secret: clean(process.env[a.env + '_SECRET']) || (a.fallback ? clean(process.env[a.fallback.secret]) : ''), token: clean(process.env[a.env + '_TOKEN']) || (a.fallback ? clean(process.env[a.fallback.token]) : '') })
 export const configured = (a) => { const c = creds(a); return !!(c.secret && c.token) }
 
 const H = () => ({ apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' })
@@ -166,9 +168,40 @@ export async function ingestEvent(a, ev, destination) {
   conv.lastT = msg.t
   await Promise.all([kvInsert(mk, msg), kvSet(ck, conv)])
   bumpStat(a.key, { lastEventT: nowIso(), destination: destination || undefined, lastEventType: ev.type }).catch(() => {})
-  if (msg.dir === 'in' || ev.type === 'follow') notifyNew(a, conv, text).catch(() => {})
+  if ((msg.dir === 'in' || ev.type === 'follow') && !a.relay) notifyNew(a, conv, text).catch(() => {}) // relay 帳號（DD）不推播：DD 私訊量大且 DD 自己會答，有要插手的人自己到收件匣看
   return { conv, msg }
 }
+
+// ── v4.70.61 DD 私訊轉進收件匣：line-webhook 每個事件先 ddInboxBegin(ev)；DD 回話處（lineReply／linePush／卡片）呼叫 ddInboxOut(text, to)；回 200 前 ddInboxFlush() 等寫完 ──
+// 存 DD（或系統）主動／自動發出的一則：dir=out、by=DD；relay 帳號 DD 答過＝這個對話算「已完成」且不留未讀（人要插手再從收件匣回，會變處理中）
+export async function noteOut(a, uid, text, by, mode) {
+  if (!a || !uid) return null
+  const ck = convKey(a.key, uid); const conv = await kvGet(ck); if (!conv) return null
+  const t = Date.now(); const mk = msgKey(a.key, uid, t)
+  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: by || 'DD', mode: mode || 'reply', type: 'text', text: String(text || '').slice(0, 5000), auto: 1 }
+  if (msg.mode === 'reply') conv.replyUsed = true
+  conv.last = { text: msg.text.slice(0, 80), t: msg.t, dir: 'out', by: msg.by }; conv.lastT = msg.t; conv.lastOutT = msg.t
+  if (a.relay) { conv.status = 'done'; conv.unread = 0 }
+  await Promise.all([kvInsert(mk, msg), kvSet(ck, conv)])
+  return msg
+}
+const _dd = { ev: null, p: null, pend: [] } // 目前正在處理的 DD 一對一事件（跟 line-webhook 的 _lastSend 一樣是模組層狀態，一個事件處理完就清）
+export function ddInboxBegin(ev, destination) {
+  _dd.ev = null; _dd.p = null
+  if (!ev || (ev.source || {}).type !== 'user' || !['message', 'follow', 'unfollow', 'postback'].includes(ev.type)) return
+  const a = acctOf('dd'); if (!a || !configured(a)) return
+  _dd.ev = ev
+  _dd.p = ingestEvent(a, ev, destination).catch(e => { console.log('[inbox] dd ingest err', e?.message); return null })
+  _dd.pend.push(_dd.p)
+}
+export function ddInboxOut(text, to, mode) {
+  const ev = _dd.ev, p0 = _dd.p; if (!ev || !p0) return
+  if (to && to !== ev.source.userId) return // 推給別人（老闆私訊、群組）不是這個對話
+  const t = String(text || '').trim(); if (!t) return
+  const p = p0.then(() => noteOut(acctOf('dd'), ev.source.userId, t, 'DD', mode || 'reply')).catch(e => console.log('[inbox] dd out err', e?.message))
+  _dd.pend.push(p)
+}
+export async function ddInboxFlush() { const ps = _dd.pend.splice(0); _dd.ev = null; _dd.p = null; if (ps.length) await Promise.allSettled(ps) }
 
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──
 async function permRids(acct, forRemind) {
@@ -294,8 +327,8 @@ export async function settings({ origin }) {
     const ok = configured(a); const st = (await kvGet(statKey(a.key))) || {}
     let info = null, hook = null, quota = null
     if (ok) { const [i, w, q] = await Promise.all([botInfo(a), webhookInfo(a), quotaOf(a)]); info = i.ok ? i.data : { error: i.data?.message || i.status }; hook = w.ok ? w.data : { error: w.data?.message || w.status }; quota = q }
-    const want = origin + '/api/inbox-webhook'
-    return { key: a.key, name: a.name, color: a.color, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
+    const want = origin + (a.relay ? '/api/line-webhook' : '/api/inbox-webhook') // relay（DD）＝webhook 應該指在 DD 自己的接收端
+    return { key: a.key, name: a.name, color: a.color, relay: !!a.relay, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
   }))
   return { ok: true, accounts, cfg: { perm: cfg.perm, reply: cfg.reply, remind: cfg.remind, templates: cfg.templates, remindMin: cfg.remindMin }, sigfail: sig, groups }
 }
@@ -314,6 +347,7 @@ export async function saveCfg(patch, who) {
 // 把這個帳號的 webhook 指到我們這裡（先看現在指哪裡；指著別的系統就不硬改，回報給人決定）
 export async function connectAcct({ key, origin, force }) {
   const a = acctOf(key); if (!a) return { ok: false, error: '沒有這個帳號' }
+  if (a.relay) return { ok: false, error: `${a.name} 的 webhook 要留在 DD 自己的接收端（/api/line-webhook），私訊會自動轉進收件匣，不用改接` }
   if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰（${a.env}_SECRET／${a.env}_TOKEN）` }
   const want = origin + '/api/inbox-webhook'
   const cur = await webhookInfo(a)
@@ -338,7 +372,7 @@ export async function inboxRemind() {
     const age = Date.now() - new Date(c.lastInT).getTime()
     if (age < cfg.remindMin * 60e3) continue
     if (c.remindT && Date.now() - new Date(c.remindT).getTime() < 55 * 60e3) continue
-    const a = acctOf(c.acct); if (!a) continue
+    const a = acctOf(c.acct); if (!a || a.relay) continue // relay（DD）不提醒：DD 自己會答，沒答的留在待處理給人看就好
     const { rids, names, group } = await permRids(c.acct, true)
     const mins = Math.round(age / 60e3)
     const body = `${a.name}「${c.name}」${mins >= 60 ? Math.floor(mins / 60) + ' 小時' : mins + ' 分鐘'}沒人回：${(c.last && c.last.text) || ''}`
