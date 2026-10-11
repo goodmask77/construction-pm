@@ -52,7 +52,8 @@ const convId = (acct, uid) => `${acct}:${uid}`
 const splitId = (id) => { const i = String(id).indexOf(':'); return i > 0 ? [id.slice(0, i), id.slice(i + 1)] : [null, null] }
 const msgKey = (acct, uid, t) => `pm_inbox_m_${acct}_${uid}_${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const statKey = (acct) => `pm_inbox_acct_${acct}`
-export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, ...c } }
+export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {} } } // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
+export const maskUrl = (u) => String(u || '').replace(/([?&][^=&]+=)[^&]{4,}/g, (m, k) => k + '••••')
 export const isMgr = (who, apr, pm) => !!who && (apr.includes(who.name) || who.name === '張良瑋' || who.role === '主管' || (((pm || {}).users || {})[who.rid || who.uid] || {}).admin)
 export const canSeeAcct = (cfg, who, mgr, acct) => mgr || ((cfg.perm || {})[acct] || []).includes(who.name)
 
@@ -104,6 +105,19 @@ async function bumpStat(acct, patch) {
   try { const s = (await kvGet(statKey(acct))) || {}; await kvSet(statKey(acct), { ...s, ...patch }, '收件匣狀態') } catch (_) {}
 }
 export async function noteSigFail() { try { const s = (await kvGet('pm_inbox_acct__sigfail')) || { n: 0 }; await kvSet('pm_inbox_acct__sigfail', { n: (s.n || 0) + 1, lastT: nowIso() }, '收件匣狀態') } catch (_) {} }
+
+// ── 轉發：原封不動（同 body、同簽章）送給原本接著的系統；失敗記在帳號狀態，不影響我們自己的存檔 ──
+export async function forwardRaw(a, raw, sig) {
+  const cfg = await loadCfg(); const url = cfg.forward[a.key]; if (!url) return null
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000)
+  let out
+  try { const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-line-signature': sig, 'user-agent': 'LineBotWebhook/2.0 (via ground-pm inbox relay)' }, body: raw, signal: ctl.signal }); out = { ok: r.ok, status: r.status, t: nowIso() } }
+  catch (e) { out = { ok: false, status: 0, err: String(e?.name === 'AbortError' ? 'timeout' : e?.message || e).slice(0, 80), t: nowIso() } }
+  clearTimeout(tm)
+  bumpStat(a.key, { lastFwd: out }).catch(() => {})
+  if (!out.ok) console.log('[inbox] forward fail', a.key, JSON.stringify(out))
+  return out
+}
 
 // ── 收訊：一個 webhook 事件 → 存訊息＋更新對話＋通知 ──
 export async function ingestEvent(a, ev, destination) {
@@ -250,7 +264,7 @@ export async function settings({ origin }) {
     let info = null, hook = null, quota = null
     if (ok) { const [i, w, q] = await Promise.all([botInfo(a), webhookInfo(a), quotaOf(a)]); info = i.ok ? i.data : { error: i.data?.message || i.status }; hook = w.ok ? w.data : { error: w.data?.message || w.status }; quota = q }
     const want = origin + '/api/inbox-webhook'
-    return { key: a.key, name: a.name, color: a.color, configured: ok, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
+    return { key: a.key, name: a.name, color: a.color, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
   }))
   return { ok: true, accounts, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin }, sigfail: sig }
 }
@@ -259,6 +273,7 @@ export async function saveCfg(patch, who) {
   if (patch.perm && typeof patch.perm === 'object') { cfg.perm = {}; for (const a of ACCOUNTS) cfg.perm[a.key] = Array.isArray(patch.perm[a.key]) ? patch.perm[a.key].map(String).slice(0, 50) : [] }
   if (Array.isArray(patch.templates)) cfg.templates = patch.templates.filter(x => x && (x.text || '').trim()).map((x, i) => ({ id: x.id || ('t' + Date.now().toString(36) + i), title: String(x.title || '').slice(0, 30), text: String(x.text || '').slice(0, 1000) })).slice(0, 60)
   if (patch.remindMin != null) cfg.remindMin = Math.max(5, Math.min(1440, +patch.remindMin || 30))
+  if (patch.forward && typeof patch.forward === 'object') { for (const [k, v] of Object.entries(patch.forward)) { if (!acctOf(k)) continue; const u = String(v || '').trim(); if (!u) delete cfg.forward[k]; else if (/^https:\/\//.test(u)) cfg.forward[k] = u.slice(0, 500) } }
   cfg.updatedBy = who.name; cfg.updatedT = nowIso()
   await kvSet(CFG_KEY, cfg, who.name)
   return { ok: true, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin } }
@@ -270,11 +285,13 @@ export async function connectAcct({ key, origin, force }) {
   const want = origin + '/api/inbox-webhook'
   const cur = await webhookInfo(a)
   const curEp = cur.ok ? (cur.data.endpoint || '') : ''
-  if (curEp && curEp !== want && !force) return { ok: false, needConfirm: true, current: curEp, error: `這個帳號的 webhook 目前指到別的地方：${curEp}。要改過來請按「確定改接」` }
+  if (curEp && curEp !== want && !force) return { ok: false, needConfirm: true, current: maskUrl(curEp), error: `這個帳號的 webhook 目前指到別的系統：${maskUrl(curEp)}。改接後我們會把每一則原封轉發給它，它照常運作；確定要改接嗎？` }
+  // 改接時把原本的系統記成「轉發對象」：原系統不會斷（可在設定頁停止轉發）
+  if (curEp && curEp !== want) { const cfg = await loadCfg(); cfg.forward[a.key] = curEp; await kvSet(CFG_KEY, cfg, '收件匣改接') }
   const s = await webhookSet(a, want); if (!s.ok) return { ok: false, error: `LINE 不讓設定（${s.status}）：${String(s.data?.message || '').slice(0, 100)}` }
   const t = await webhookTest(a, want)
   await bumpStat(a.key, { connectedT: nowIso(), prevHook: curEp && curEp !== want ? curEp : undefined })
-  return { ok: true, endpoint: want, test: t.data, previous: curEp }
+  return { ok: true, endpoint: want, test: t.data, previous: curEp && curEp !== want ? maskUrl(curEp) : '', forwarding: !!(curEp && curEp !== want) }
 }
 
 // ── 未回覆提醒（每小時 cron 呼叫）：超過 remindMin 分鐘沒人回且還沒完成 → 再推一次＋LINE 私訊審核人 ──

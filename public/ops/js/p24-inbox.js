@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.47（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.48（+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -213,6 +213,7 @@ function ibSetRender() {
       <div class="hint" style="font-size:12.5px;margin-top:4px">${info}${q ? ' · ' + q : ''}${a.lastEventT ? ' · 最近收到 ' + ibT(a.lastEventT) : ''}</div>
       ${a.hook && a.hook.endpoint && !a.hookOk ? `<div class="hint" style="font-size:12px;word-break:break-all">目前 webhook：${ibEsc(a.hook.endpoint)}${a.hook.active === false ? '（未啟用）' : ''}</div>` : ''}
       ${!a.configured ? `<div class="hint" style="font-size:12px">要給 CC 的環境變數：${a.envSecret}、${a.envToken}</div>` : ''}
+      ${a.forwardSet ? `<div class="hint" style="font-size:12px;word-break:break-all">同時轉發給原本的系統：${ibEsc(a.forward)}${a.lastFwd ? (a.lastFwd.ok ? ' · 最近轉發成功 ' + ibT(a.lastFwd.t) : ' · <span style="color:#d97706">最近轉發失敗 ' + ibEsc(a.lastFwd.err || a.lastFwd.status) + '</span>') : ''} <button class="mini" style="padding:2px 8px;font-size:11.5px" onclick="ibForwardStop('${a.key}')">停止轉發</button></div>` : ''}
     </div>`
   }).join('')
   const people = d.people || []
@@ -242,10 +243,15 @@ async function ibSetSave() {
 }
 async function ibConnect(key, force) {
   const d = await ibPost({ op: 'connect', acct: key, force })
-  if (d && d.needConfirm) { if (confirm(d.error + '\n\n確定改接？原本接的系統會收不到訊息。')) return ibConnect(key, true); return }
+  if (d && d.needConfirm) { if (confirm(d.error)) return ibConnect(key, true); return }
   if (!d || !d.ok) { libToast((d && d.error) || '接不上', true); return }
   const t = d.test || {}
-  libToast(t.success ? '已接上，LINE 測試通過' : '已設定，但 LINE 測試回：' + (t.reason || t.detail || JSON.stringify(t)).slice(0, 80), !t.success)
+  libToast((t.success ? '已接上，LINE 測試通過' : '已設定，但 LINE 測試回：' + (t.reason || t.detail || JSON.stringify(t)).slice(0, 80)) + (d.forwarding ? '；原本的系統改成轉發' : ''), !t.success)
   const d2 = await ibGet('op=settings'); if (d2 && d2.ok) { _ibSet = d2; ibSetRender() }
+}
+async function ibForwardStop(key) {
+  if (!confirm('停止轉發後，原本接著這個帳號的系統就收不到訊息了。確定？')) return
+  const d = await ibPost({ op: 'cfg', cfg: { forward: { [key]: '' } } }); if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
+  libToast('已停止轉發'); const d2 = await ibGet('op=settings'); if (d2 && d2.ok) { _ibSet = d2; ibSetRender() }
 }
 window.addEventListener('resize', () => { if (curStore === 'inbox' && _ibD) { ibRender(); if (_ibCur) ibRenderMsgs(false) } })
