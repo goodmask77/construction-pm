@@ -22,7 +22,7 @@
 
 | 帳號 | Channel secret | Channel access token |
 | --- | --- | --- |
-| A Beach | ✅ 已給（10-11） | ☐ 等小夏給現用 token |
+| A Beach | ✅ 已給（10-11） | ✅ 已給並進 Vercel（10-11 晚，已驗證是 A Beach 101&Pizza @383rnpqv）；webhook 目前指到阿桑的 em-abeach 系統，等張良在收件匣設定頁按「接到收件匣」（會自動轉發給原系統不中斷） |
 | GROUN:D | ✅ 已接通（10-11） | ✅ |
 | 104招募 | ✅ 已接通（10-11） | ✅ |
 
