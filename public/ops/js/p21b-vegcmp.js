@@ -92,7 +92,7 @@
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">` + [['all', '全部'], ...CATS.map(c => [c, c])].map(([v, l]) => `<button class="mini ${f.cat === v ? 'on' : ''}" onclick="_vgF('cat','${v}')">${l}<span style="margin-left:4px;font-size:11px;opacity:.8">${cnt(v)}</span></button>`).join('')
       + `<span style="width:1px;height:20px;background:var(--line)"></span><button class="mini ${f.both ? 'on' : ''}" onclick="_vgF('both')">只看兩家都有</button>`
       + (pins.size ? `<span class="hint" style="font-size:12px">${IC.pin} 已釘 ${pins.size} 項（置頂）</span>` : '')
-      + `</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="hint" style="font-size:12px">叫貨量／金額／可省 看哪個月：</span>` + ['l3', ...(D.ordMonths || [])].map(ym => `<button class="mini ${f.ym === ym ? 'on' : ''}" onclick="_vgF('ym','${ym}')">${ymLabel(ym)}</button>`).join('') + totalsLine()
+      + `</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="hint" style="font-size:12px">叫貨量／金額／可省 看哪個月：</span>` + ['l3', ...(D.ordMonths || []).filter(ym => D.totals && D.totals[ym])].map(ym => `<button class="mini ${f.ym === ym ? 'on' : ''}" onclick="_vgF('ym','${ym}')">${ymLabel(ym)}</button>`).join('') + totalsLine()
       + `<input value="${esc(f.q)}" oninput="_vgQ(this.value)" placeholder="搜尋品項…" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>`
   }
   function totalsLine () { // 選的月份兩家總叫貨金額（含報價表沒有的品項；AB＋GD）
