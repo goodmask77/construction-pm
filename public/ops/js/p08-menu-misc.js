@@ -752,6 +752,11 @@ function mnImgGrid(){ mnImgView(null,true) }
 async function mnImgDownloadAll(){
   const d=window._menuD||{}, tv=(d.imgs||[]).filter(Boolean), btn=document.getElementById('mnDlAll'); if(!tv.length) return
   const say=t=>{ if(btn){ btn.textContent=t; btn.disabled=true } }
+  const seqDl=async(files)=>{ for(let i=0;i<files.length;i++){ say('下載中 '+(i+1)+'/'+files.length+'…'); const a=document.createElement('a'); a.href=URL.createObjectURL(files[i]); a.download=files[i].name; document.body.appendChild(a); a.click(); a.remove(); await new Promise(r=>setTimeout(r,600)); URL.revokeObjectURL(a.href) } }
+  // 第二下：圖已備好 → 立刻叫系統分享（分享一定要在按下的當下，所以不能等下載完才叫）
+  if(window._mnFiles&&window._mnFiles.length){ const files=window._mnFiles; window._mnFiles=null
+    try{ await navigator.share({files,title:'GROUN:D 菜單圖'}) }catch(e){ if(e&&e.name!=='AbortError'){ try{ await seqDl(files) }catch(_){ alert('存相簿失敗：'+(e.message||e)) } } }
+    finally{ if(btn){ btn.textContent='⬇ 下載 6 張到相簿'; btn.disabled=false } } return }
   try{
     const day=todayTpe(), files=[]
     const fetchBlob=async(u)=>{ const r=await fetch(u,{cache:'force-cache'}); if(!r.ok) throw new Error('下載失敗 '+r.status); return await r.blob() }
@@ -761,10 +766,11 @@ async function mnImgDownloadAll(){
       ims.forEach((im,k)=>x.drawImage(im,(k%2)*(W+g),Math.floor(k/2)*(H+g),W,H))
       const bl=await new Promise(r=>c.toBlob(r,'image/jpeg',.92)); files.push(new File([bl],`GROUND電視_四張合一_${day}.jpg`,{type:'image/jpeg'})) }
     if(d.posterImg&&d.posterImg.url){ say('準備直式…'); files.push(new File([await fetchBlob(d.posterImg.url)],`GROUND菜單_直式_${day}.png`,{type:'image/png'})) }
-    if(navigator.canShare&&navigator.canShare({files})){ say('開啟分享…'); try{ await navigator.share({files,title:'GROUN:D 菜單圖'}) }catch(e){ if(e&&e.name!=='AbortError') throw e } }
-    else { for(let i=0;i<files.length;i++){ say('下載中 '+(i+1)+'/'+files.length+'…'); const a=document.createElement('a'); a.href=URL.createObjectURL(files[i]); a.download=files[i].name; document.body.appendChild(a); a.click(); a.remove(); await new Promise(r=>setTimeout(r,600)); URL.revokeObjectURL(a.href) } }
+    const mobile=!!(navigator.canShare&&navigator.canShare({files})&&(/iPhone|iPad|Android/i.test(navigator.userAgent)||matchMedia('(pointer:coarse)').matches))
+    if(mobile){ window._mnFiles=files; if(btn){ btn.textContent='📤 '+files.length+' 張備好了，再按一次存到相簿'; btn.disabled=false; btn.style.background='var(--primary)'; btn.style.color='#fff' } return }
+    await seqDl(files)
   }catch(e){ alert('下載失敗，再試一次：'+(e.message||e)) }
-  finally{ if(btn){ btn.textContent='⬇ 下載 6 張到相簿'; btn.disabled=false } }
+  finally{ if(btn&&!window._mnFiles){ btn.textContent='⬇ 下載 6 張到相簿'; btn.disabled=false } }
 }
 function mnImgView(u,grid){
   const list=((window._menuD||{}).imgs||[]).filter(Boolean); let i=Math.max(0,list.indexOf(u)); if(!list.length) list.push(u); let G=!!grid // G=四張一起看（2×2，電視牆實際擺法）
