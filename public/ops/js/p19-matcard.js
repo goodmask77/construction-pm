@@ -1,4 +1,4 @@
-// 🗂 /prep 第 19 塊（v4.70.33，2026-10-10）：產品與成本模組｜批次 2「物料庫＋物料卡」
+// 🗂 /prep 第 19 塊（v4.70.63，2026-10-12）：產品與成本模組｜批次 2「物料庫＋物料卡」
 // 規格 §3：列表（照片/料號/品名/類型/分類/主要廠商/成本基準價/完整狀態；篩選 品牌/類型/分類/存放/廠商/狀態/缺換算/缺價；搜尋含舊代碼；包材照片牆）
 //          物料卡五分頁：基本資料／供應品與價格（每代碼一列、主要來源、走勢、查當時價）／單位換算／被使用於／紀錄
 // 資料 ?matcard=（api/_matcard.js）：供應品＝阿桑即時主檔；本頁只寫「人做的決定」。UI 慣例：單色線條圖示、不用 prompt。
@@ -13,15 +13,20 @@
   const SRC = { confirmed: '已確認價', order: '最近叫貨', master: '主檔現價', none: '無價', quote: '報價' }
   let MC = null, f = { brand: 'all', type: 'all', cat: 'all', store: 'all', sup: 'all', status: '啟用', gap: 'all', q: '', wall: false }, openId = null, cTab = 'basic', sel = new Set(), form = null, asOfDate = '', loading = false
 
-  window.matcardFetch = async function () {
-    if (loading) return; loading = true
-    try { const meQ = TK() ? '&me=' + encodeURIComponent(TK()) : ''; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K) + meQ + '&r=' + Date.now()); MC = await r.json() } catch (e) { MC = { ok: false, error: '連線問題' } }
-    loading = false; paint()
+  let fetchP = null // v4.70.63：同一次載入共用一個 promise，別頁（食譜庫）直接開卡時可等它載完
+  window.matcardFetch = function () {
+    if (fetchP) return fetchP
+    loading = true
+    fetchP = (async () => {
+      try { const meQ = TK() ? '&me=' + encodeURIComponent(TK()) : ''; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K) + meQ + '&r=' + Date.now()); MC = await r.json() } catch (e) { MC = { ok: false, error: '連線問題' } }
+      loading = false; fetchP = null; paint()
+    })()
+    return fetchP
   }
   window.matcardView = function () { if (!MC) { matcardFetch(); return '<section><div class="hint" style="padding:22px">載入物料卡中…</div></section>' } return render() }
   function paint () { const el = document.getElementById('matBody'); if (el && window._mSubIs && _mSubIs('card')) el.innerHTML = render(); if (openId) { const c = card(openId); if (c) { drawer(c, true); loadDetail(openId) } } }
   window.matcardRefresh = function () { MC = null; matcardFetch() }
-  const card = id => (MC.cards || []).find(c => c.id === id)
+  const card = id => ((MC && MC.cards) || []).find(c => c.id === id)
   const sup = k => (MC.supplies || {})[k]
 
   function filt () {
@@ -102,7 +107,23 @@
   window._mcSelClear = function () { sel.clear(); repaintList() }
 
   // ── 物料卡 drawer ──
-  window._mcOpen = async function (id) { const c = card(id); if (!c) return; openId = id; cTab = 'basic'; form = null; drawer(c); await loadDetail(id) }
+  // v4.70.63：別頁（食譜庫材料行／成本總覽）也能直接開卡：物料卡沒載過就先載整包再開，回傳 true/false 給呼叫端決定要不要提示
+  window._mcOpen = async function (id) {
+    if (!MC || !MC.cards) {
+      openId = id; cTab = 'basic'; form = null
+      const ov = mcOverlay(); ov.innerHTML = '<div class="hint" style="padding:22px;background:var(--card);border:1px solid var(--line);border-radius:16px">載入物料卡中…</div>'
+      await matcardFetch() // 載完 paint() 會依 openId 自動開抽屜
+      if (!card(id)) { ov.remove(); openId = null; return false }
+      return true
+    }
+    const c = card(id); if (!c) return false; openId = id; cTab = 'basic'; form = null; drawer(c); await loadDetail(id); return true
+  }
+  function mcOverlay () { // 遮罩每次都移到 body 最後，疊在食譜抽屜（同 z-index 80）上面
+    let ov = document.getElementById('mcOv')
+    if (!ov) { ov = document.createElement('div'); ov.id = 'mcOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => { ov.remove(); openId = null } }
+    document.body.appendChild(ov)
+    return ov
+  }
   async function loadDetail (id) { // 開卡才抓價格紀錄／換算／紀錄（列表不帶，省流量）
     try { const meQ = TK() ? '&me=' + encodeURIComponent(TK()) : ''; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K) + meQ + '&card=' + encodeURIComponent(id) + '&r=' + Date.now()); const j = await r.json(); if (!j.ok) return
       Object.assign(MC.supplies, j.supplies || {}); MC.log = [...(j.log || []), ...(MC.log || []).filter(l => !(j.log || []).some(x => x.at === l.at && x.op === l.op))]
@@ -110,8 +131,7 @@
     } catch (_) {}
   }
   function drawer (c, keep) {
-    let ov = document.getElementById('mcOv')
-    if (!ov) { ov = document.createElement('div'); ov.id = 'mcOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => { ov.remove(); openId = null }; document.body.appendChild(ov) }
+    const ov = mcOverlay()
     const can = MC.me && MC.me.canEdit
     const pri = sup(c.primary) || {}
     const tabs = [['basic', '基本資料'], ['supply', `供應品與價格 ${c.supplies.length}`], ['conv', '單位換算'], ['use', `被使用於 ${c.usedRecipes.length + c.usedMenus.length}`], ['log', '紀錄']]
