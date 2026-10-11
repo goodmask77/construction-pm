@@ -319,3 +319,55 @@ export async function togglePin ({ kvGet, kvPut, who, key, on }) {
   await kvPut(VQ_KEY, doc, '菜商比價釘選(' + who.name + ')')
   return { ok: true, pins: doc.pins }
 }
+
+// ── 員餐分析（v4.70.75，2026-10-12；張良「AB 班表有多少人上班吃飯、平均花在哪，做成頁面放菜商比價」）──
+//   員餐支出＝AB 叫貨單所有帳號名含「員餐」的廠商（上展＿員餐、尚太＿員餐、映菘-員餐、美食家-員餐；不含退回單、補單）；人次＝NUEiP 班表（sp_crew_pm_hr_sched_）有上班時段的（日期×人）
+//   餐次＝班跨午餐（12:30 前上、13:30 後下）算 1、跨晚餐（18:00 前上、19:00 後下）算 1，至少 1；出勤人次＝NUEiP 出勤月檔有工時的 AB 人員
+export const MEAL_BENCH = { low: 40, high: 60 } // 一般餐飲業員餐「食材」基準（元／餐）；張良說法：食材×3＝售價，80 元食材＝240 元便當
+const MEAL_CAT = [['肉類', /豬|雞|牛|羊|絞肉|排|香腸|培根|肉|魚|蝦|花枝|肋|鴨/], ['蛋豆', /蛋|豆腐|豆干|豆皮|豆漿/], ['米麵', /米|麵|飯|冬粉|水餃|餛飩|吐司|饅頭/], ['加工／調味', /醬|油|醋|鹽|糖|粉|罐|泡菜|醃|丸|餃|甜不辣|天婦羅|飲|可樂|茶/]]
+const mealCat = n => { for (const [c, re] of MEAL_CAT) if (re.test(n)) return c; return '蔬菜' }
+const hm2m = t => { const a = String(t || '').split(':'); return (+a[0] || 0) * 60 + (+a[1] || 0) }
+export async function mealStats ({ kvGet, months }) {
+  const mos = months.slice(0, 6)
+  const [scheds, atts, ordis] = await Promise.all([
+    Promise.all(mos.map(m => kvGet('sp_crew_pm_hr_sched_' + m))), Promise.all(mos.map(m => kvGet('sp_crew_pm_hr_att_' + m))), Promise.all(mos.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', ''))))])
+  const tpe = s => { const t = Date.parse(String(s || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
+  const out = []
+  mos.forEach((ym, i) => {
+    // 班表
+    const shiftKeys = new Set(), mealKeys = new Map(), people = new Set(), ptKeys = new Set(), dept = {}, days = new Set()
+    for (const [d, list] of Object.entries(((scheds[i] || {}).days) || {})) {
+      if (!d.startsWith(ym)) continue
+      for (const x of (Array.isArray(list) ? list : [])) {
+        if (!x.start || !x.end || /休|例|⚫|⚪|🔴|off/i.test(String(x.code || ''))) continue
+        const k = d + '|' + x.name; shiftKeys.add(k); people.add(x.name); days.add(d); if (x.pt) ptKeys.add(k); dept[x.dept || '?'] = (dept[x.dept || '?'] || 0) + 1
+        let st = hm2m(x.start), en = hm2m(x.end); if (en <= st) en += 1440
+        let meals = (st <= 12 * 60 + 30 && en >= 13 * 60 + 30 ? 1 : 0) + (st <= 18 * 60 && en >= 19 * 60 ? 1 : 0); if (!meals) meals = 1
+        mealKeys.set(k, Math.max(mealKeys.get(k) || 0, meals))
+      }
+    }
+    const attKeys = new Set()
+    for (const [d, users] of Object.entries(((atts[i] || {}).days) || {})) { if (!d.startsWith(ym)) continue; for (const r of Object.values(users || {})) { if (!/AB/.test(r.dept || '')) continue; const h = (Number(r.durmin) || 0) / 60 || (((r.on || []).length && (r.off || []).length) ? 1 : 0); if (h > 0) attKeys.add(d + '|' + String(r.name || '').replace(/\s+[A-Za-z].*$/, '')) } }
+    // 員餐叫貨
+    let total = 0, lastDay = ''; const byItem = {}, byCat = {}, byDay = {}
+    for (const r of Object.values(((ordis[i] || {}).rows) || {})) {
+      if (!/員餐/.test(r.supplier || '')) continue; if (r.is_backfill || /reject|cancel|退回|取消/i.test(r.order_status || '')) continue
+      const d = tpe(r.ordered_at); if (!d.startsWith(ym)) continue
+      const amt = (Number(r.price) || 0) * (Number(r.qty) || 0); if (!amt) continue
+      total += amt; if (d > lastDay) lastDay = d; byDay[d] = (byDay[d] || 0) + amt
+      const nm = r.name || r.item || '?'; const it = byItem[nm] = byItem[nm] || { name: nm, amt: 0, qty: 0, unit: r.unit || '', sup: String(r.supplier).replace(/[＿_]?員餐$/, ''), n: 0 }; it.amt += amt; it.qty += Number(r.qty) || 0; it.n++
+      const c = mealCat(nm); byCat[c] = (byCat[c] || 0) + amt
+    }
+    // 月未結束（例如本月）：人次只算到最後一張員餐單那天，不然平均被稀釋
+    const cut = lastDay || ym + '-31'
+    const shiftsCut = [...shiftKeys].filter(k => k.slice(0, 10) <= cut).length, mealsCut = [...mealKeys.entries()].filter(([k]) => k.slice(0, 10) <= cut).reduce((t, [, v]) => t + v, 0), attCut = [...attKeys].filter(k => k.slice(0, 10) <= cut).length, daysCut = [...days].filter(d => d <= cut).length
+    total = Math.round(total)
+    out.push({ ym, shifts: shiftKeys.size, meals: [...mealKeys.values()].reduce((a, b) => a + b, 0), att: attKeys.size, people: people.size, pt: ptKeys.size, dept, days: days.size, avgPeople: days.size ? Math.round(shiftKeys.size / days.size * 10) / 10 : 0,
+      total, lastDay, cut: { shifts: shiftsCut, meals: mealsCut, att: attCut, days: daysCut },
+      perShift: shiftsCut ? Math.round(total / shiftsCut) : null, perMeal: mealsCut ? Math.round(total / mealsCut) : null, perAtt: attCut ? Math.round(total / attCut) : null, perDay: daysCut ? Math.round(total / daysCut) : null,
+      cats: Object.entries(byCat).map(([c, a]) => ({ cat: c, amt: Math.round(a), pct: total ? Math.round(a / total * 100) : 0 })).sort((x, y) => y.amt - x.amt),
+      items: Object.values(byItem).map(x => ({ ...x, amt: Math.round(x.amt), qty: Math.round(x.qty * 10) / 10, pct: total ? Math.round(x.amt / total * 1000) / 10 : 0, cat: mealCat(x.name) })).sort((x, y) => y.amt - x.amt).slice(0, 40),
+      bench: { low: MEAL_BENCH.low * mealsCut, high: MEAL_BENCH.high * mealsCut } })
+  })
+  return { ok: true, months: out.filter(m => m.total || m.shifts), bench: MEAL_BENCH }
+}
