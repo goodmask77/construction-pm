@@ -5083,6 +5083,9 @@ export default async function handler(req, res) {
     const canEditR = !probeR && !!(await permWho(meTk, 'rcp'))
     if (req.method === 'POST') {
       if (!canEditR) return res.status(403).json({ ok: false, error: '沒有編輯食譜的權限（食譜分頁權限）' })
+      if (bR.op === 'import') { // v4.70.66 AI 匯入：截圖／文字／連結 → 結構＋對應（只讀不寫；確認後前端再走 create／edit）
+        try { const { importRecipe } = await import('./_rcpimport.js'); return res.status(200).json(await importRecipe({ kvGet, months: mosR, body: bR, who: meW })) } catch (e) { return res.status(400).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+      }
       const { uploadPrivate } = await import('./_onboard.js')
       const r = await rcpApply({ kvGet, kvPut, who: meW, body: bR, uploadPrivate, months: mosR })
       if (r.ok) await announceChanged()

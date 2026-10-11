@@ -1,4 +1,4 @@
-// 🍳 /prep 第 20 塊（v4.70.64，2026-10-12）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
+// 🍳 /prep 第 20 塊（v4.70.66，2026-10-12）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
 // 規格 §4：列表照片為主（工作站／半成品或餐點／版本／產量／每單位成本／完整狀態／內容完整度 材料✓步驟✗照片✗）；
 //   詳情：材料（每行完整換算鏈、半成品可展開樹）／步驟（順序、標題、說明、相關材料、照片、計時，可拖曳）／成本（走勢＋差異標記）／版本（草稿→發布，不可覆寫）；
 //   製作模式：桌面左材料右步驟、手機上步驟＋材料抽屜＋上一步/下一步/計時；倍率只影響顯示；計時切頁後恢復。
@@ -11,7 +11,7 @@
   const IC = { pot: I('<path d="M12 3a7 7 0 0 0-7 7v1h14v-1a7 7 0 0 0-7-7z"/><path d="M4 14h16v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-2z"/>'), check: I('<polyline points="20 6 9 17 4 12"/>'), x: I('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'), img: I('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'), play: I('<polygon points="5 3 19 12 5 21 5 3"/>'), cam: I('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'), clock: I('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'), plus: I('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'), up: I('<polyline points="18 15 12 9 6 15"/>'), dn: I('<polyline points="6 9 12 15 18 9"/>'), trash: I('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>'), left: I('<polyline points="15 18 9 12 15 6"/>'), right: I('<polyline points="9 18 15 12 9 6"/>'), list: I('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'), undo: I('<polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/>'), tree: I('<polyline points="9 18 15 12 9 6"/>') }
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373', m: '#8C98A8' }
   const LST = { ok: ['', COL.g], noprice: ['缺價格', COL.r], noconv: ['缺換算', COL.r], conv_unconfirmed: ['換算未確認', COL.o], noyield: ['缺產量', COL.r], sub_gap: ['子食譜缺口', COL.o], nomatch: ['對不到物料', COL.r], nocost_unlisted: ['白名單外不計成本', COL.o] }
-  let RD = null, mode = 'prep', fSt = 'all', fCat = 'all', fOk = 'all', q = '', openKey = null, dTab = 'items', editing = null, loading = false, mult = 1, cook = null, timerTick = null
+  let RD = null, mode = 'prep', fSt = 'all', fCat = 'all', fOk = 'all', fBrand = 'all', q = '', openKey = null, dTab = 'items', editing = null, loading = false, mult = 1, cook = null, timerTick = null
 
   window.rcpLoad = async function () {
     curStore = 'rcp'; try { setTabs('rcp') } catch (_) {}
@@ -37,6 +37,7 @@
     const src = mode === 'prep' ? (RD.recipes || []) : (RD.dishes || [])
     const qq = q.toLowerCase()
     return src.filter(r => {
+      if (fBrand !== 'all' && brandOf(r) !== fBrand) return false
       if (!ignoreSt && mode === 'prep' && fSt !== 'all' && (r.station || '未分站') !== fSt) return false
       if (!ignoreSt && mode === 'dish' && fCat !== 'all' && (r.category || '未分類') !== fCat) return false
       if (qq && !([r.name, r.code, r.station, r.category, ...(r.items || []).map(i => i.name)].join(' ').toLowerCase().includes(qq))) return false
@@ -44,6 +45,8 @@
     })
   }
   function filt () { return base().filter(OKF[fOk] || OKF.all) }
+  const brandOf = r => r.brand || 'A Beach' // 阿桑 /recipes 與菜單快照都是 A Beach；自建食譜才有 brand 欄
+  const BRANDS = ['GROUN:D', 'A Beach'] // v4.70.66 品牌快速鈕（張良 2026-10-12「直接給我選取按鈕 快速找到要的食譜」）
   const numTag = n => `<span style="margin-left:5px;font-size:11.5px;opacity:.8;font-variant-numeric:tabular-nums">${n}</span>`
   function render () {
     if (!RD.ok) return '<section><div class="err">' + esc(RD.error || '讀不到食譜') + '</div>' + (/綁定|登入|身分/.test(RD.error || '') ? '<div class="hint" style="margin-top:10px">食譜成本是內部資料，要先登入。私訊 DD「登入碼」拿 4 位數 → 右上「登入」。</div>' : '') + '</section>'
@@ -54,6 +57,7 @@
       + kpi('有步驟', ps.filter(r => r.content.steps).length + ds.filter(r => r.content.steps).length, `還沒步驟 ${ps.filter(r => !r.content.steps).length + ds.filter(r => !r.content.steps).length}・點看`, COL.g, "_rcpOk('steps')") + kpi('有照片', ps.filter(r => r.content.photo).length + ds.filter(r => r.content.photo).length, `沒照片 ${ps.filter(r => !r.content.photo).length + ds.filter(r => !r.content.photo).length}・點看`, COL.y, "_rcpOk('photo')") + `</div>`
     h += `<section style="padding:12px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">`
       + `<button class="mini ${mode === 'prep' ? 'on' : ''}" onclick="_rcpMode('prep')">備料（半成品）</button><button class="mini ${mode === 'dish' ? 'on' : ''}" onclick="_rcpMode('dish')">出餐（在賣菜）</button>`
+      + (() => { const all = mode === 'prep' ? ps : ds; return `<span style="width:1px;height:22px;background:var(--line)"></span>` + [['all', '全部品牌', all.length], ...BRANDS.map(b => [b, b, all.filter(r => brandOf(r) === b).length])].map(([v, l, n]) => `<button class="mini ${fBrand === v ? 'on' : ''}" onclick="_rcpBrand('${v}')">${l}${numTag(n)}</button>`).join('') })()
       + `<input value="${esc(q)}" oninput="_rcpQ(this.value)" placeholder="搜尋食譜／材料…" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:10px;padding:8px 12px">`
       + (can() ? `<button class="mini" onclick="_rcpNew()">${IC.plus} 新增食譜</button>` : '') + `<button class="mini" onclick="rcpRefresh()">${IC.undo}</button></div>`
     const B0 = base(true), B1 = base() // B0 算站／品類鈕數字（不含站條件）；B1 算內容鈕數字（含目前站／品類）
@@ -69,6 +73,7 @@
   window._rcpSt = function (v) { fSt = v; app.innerHTML = render() }
   window._rcpCat = function (v) { fCat = v; app.innerHTML = render() }
   window._rcpOk = function (v) { fOk = v; app.innerHTML = render() }
+  window._rcpBrand = function (v) { fBrand = v; app.innerHTML = render() }
   const okBadge = r => r.ok ? `<span style="color:${COL.g};font-weight:800">完整</span>` : `<span style="color:${COL.o};font-weight:800">${esc(r.status)}</span>`
   const contentBadge = r => `<span class="hint" style="font-size:11.5px">材料${r.content.items ? '✓' : '✗'} 步驟${r.content.steps ? '✓' : '✗'} 照片${r.content.photo ? '✓' : '✗'}</span>`
   function grid () {
