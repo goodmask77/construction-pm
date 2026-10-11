@@ -9,13 +9,13 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4757' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4759' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 const IB_STC = { new: '#2563eb', open: '#d97706', done: '#16a34a' } // 狀態色：新＝藍、處理中＝橘、已完成＝綠（張良 10-11「底色標籤直覺辨識」）
 const ibStBadge = (st) => `<span style="background:${IB_STC[st] || IB_STC.new};color:#fff;border-radius:6px;font-size:11px;font-weight:700;padding:2px 7px;line-height:16px;white-space:nowrap">${IB_ST[st] || '新'}</span>`
 const IB_CSS = `<style id="ibCss">
-.ibSeg{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:3px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.ibSeg{display:flex;gap:4px;flex-wrap:wrap;padding:3px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .ibSeg::-webkit-scrollbar{display:none}
 .ibSeg button{flex:0 0 auto;border:0;background:transparent;color:#C3CEDC;font-size:13px;font-weight:700;padding:6px 11px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit}
 @media(max-width:430px){.ibSeg button{font-size:12.5px;padding:6px 8px;gap:5px}.ibSeg .nc{display:none}}
@@ -98,7 +98,7 @@ function ibRender() {
   const mobile = window.innerWidth < 760
   app.innerHTML = `<section style="padding:0;overflow:hidden">
     <div id="ibWrap" style="display:flex;height:60vh">
-      <div id="ibList" style="width:${mobile ? '100%' : '300px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;overscroll-behavior:contain;${mobile && _ibCur ? 'display:none' : ''}"></div>
+      <div id="ibList" style="width:${mobile ? '100%' : '390px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;overscroll-behavior:contain;${mobile && _ibCur ? 'display:none' : ''}"></div>
       <div id="ibPane" style="flex:1;display:${mobile && !_ibCur ? 'none' : 'flex'};flex-direction:column;min-width:0"></div>
     </div></section>`
   paneFit('ibWrap'); ibRenderList(); ibRenderPane()
