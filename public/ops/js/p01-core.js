@@ -13,6 +13,13 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
+  // v4.70.58 治本（張良 10-11「強制重新整理怎麼都在收件匣」）：收件匣／聊天室瀏覽時會把網址寫成 #inbox／#chat=…／#tab=chat，
+  // 離開那頁沒清掉→重新整理時「深層連結優先於上次分頁」又被帶回收件匣。這裡一律檢查：網址 hash 指向的分頁≠現在這頁就把 hash 清掉
+  try { const cur = k || curStore || ''; const hs = location.hash || ''
+    const tgt = (hs.match(/tab=([a-z]+)/)||[])[1] || (/(?:^|#|&)inbox(?:=|&|$)/.test(hs) ? 'inbox' : /chat=/.test(hs) ? 'chat' : /meet=/.test(hs) ? 'meet' : /sop=/.test(hs) ? 'sop' : /task=/.test(hs) ? 'task' : /vio=/.test(hs) ? 'shift' : null)
+    const tg2 = tgt === 'taskx' ? 'task' : tgt
+    if (tg2 && tg2 !== cur) history.replaceState(null, '', location.pathname + location.search)
+  } catch(_) {}
   try { document.documentElement.classList.toggle('paneLock', k === 'inbox' || k === 'chat') } catch(_) {} // v4.70.52 對話視窗（收件匣／聊天室）固定撐滿、頁面不捲動；離開就解鎖（張良 10-11「不要上下滑彈來彈去」）
   // v4.41.2 治本（張良「切到設定了人員名冊還是藍色」）：原本寫死清單＝新分頁(hrm/inline…)漏清不退藍；改抓全部 tab- 按鈕一律清
   document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { b.className = (b.id === 'tab-' + k) ? 'on' : '' })
