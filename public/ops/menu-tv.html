@@ -157,7 +157,7 @@ function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins
 function itemHTML(sec,it,side){
   const {nm,ih}=splitIH(it.name); const tag=comboTag(Number(sec.combo)||0,Number(it.price)||0); const decaf=/無咖啡因/.test(it.note||'')?'無咖啡因':'';
   const hasPr=Number(it.price)>0, tagH=(tag&&hasPr)?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''; // v4.70.76 即將上線：反灰＋標籤；沒定價就不印價格
-  return `<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1"><span class="nm">${nm.replace(/｜/g,'｜<wbr>')}</span>`+(it.soon?`<span class="soonb">即將上線</span>`:``)+(ih?`<span class="ih">冰 / 熱</span>`:``)
+  return `<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1"><span class="nm">${nm}</span>`+(it.soon?`<span class="soonb">即將上線</span>`:``)+(ih?`<span class="ih">冰 / 熱</span>`:``)
     +`<span class="lead"></span>`+(hasPr?`<span class="pr">${it.price}</span>`:``)
     +(side?`<span class="tagc">${tagH}</span>`:tagH)
     +`</div>`+(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)+`</div>`;
@@ -196,13 +196,13 @@ function fitNames(){ roots().forEach(fitNamesIn); }
 function fitNamesIn(root){ // v1.4 品名縮字三段（張良 2026-10-12「炸雞字體比較小」）：①先收字距 ②縮字不低於「品名縮字下限」 ③還塞不下才換行（優先斷在空格／｜）
   const idx=QUAD?+root.dataset.idx:screenIdx; const min=Number(effAt(idx,'nmmin'))||24;
   root.querySelectorAll('.item .row1').forEach(row=>{
-    const nm=row.querySelector('.nm'); if(!nm) return; nm.style.fontSize=''; nm.style.letterSpacing=''; nm.style.whiteSpace=''; nm.style.flex=''; nm.style.minWidth=''; nm.style.wordBreak='';
+    const nm=row.querySelector('.nm'); if(!nm) return; nm.style.fontSize=''; nm.style.letterSpacing=''; nm.style.whiteSpace=''; nm.style.flex=''; nm.style.minWidth=''; nm.style.wordBreak=''; if(nm.querySelector('wbr')) nm.innerHTML=nm.innerHTML.replace(/<wbr>/g,'');
     let size=parseFloat(getComputedStyle(nm).fontSize)||38, guard=0; const floor=Math.min(size,min);
     const avail=row.clientWidth-10;
     const sum=()=>{ let w=0; row.childNodes.forEach(c=>{ if(c.classList&&!c.classList.contains('lead')) w+=c.offsetWidth+12; }); return w; };
     if(sum()>avail) nm.style.letterSpacing='0';
     while(sum()>avail && size>floor && guard<28){ size--; nm.style.fontSize=size+'px'; guard++; }
-    if(sum()>avail){ nm.style.whiteSpace='normal'; nm.style.flex='0 1 auto'; nm.style.minWidth='0'; nm.style.wordBreak='keep-all'; if(nm.scrollWidth>nm.clientWidth+2) nm.style.wordBreak='normal'; }
+    if(sum()>avail){ nm.innerHTML=nm.innerHTML.replace(/｜/g,'｜<wbr>'); nm.style.whiteSpace='normal'; nm.style.flex='0 1 auto'; nm.style.minWidth='0'; nm.style.wordBreak='keep-all'; if(nm.scrollWidth>nm.clientWidth+2) nm.style.wordBreak='normal'; }
   });
 }
 // ── 套用設定：區塊參數→CSS 變數；照片→位移/縮放（照片永遠是每頁各自的） ──
