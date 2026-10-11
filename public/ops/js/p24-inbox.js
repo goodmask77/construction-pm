@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.55（舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.56（狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -9,7 +9,7 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4755' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4756' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 // 對話視窗撐滿（收件匣／聊天室共用，v4.70.52）：頁面鎖住不捲，視窗高＝螢幕高－視窗頂－手機底部捷徑列；只有訊息區會捲
@@ -84,8 +84,8 @@ function ibRenderPane() {
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       ${mobile ? `<button class="mini" style="padding:6px 8px" onclick="ibBack()">${IB_ICON.back}</button>` : ''}
       <div style="flex:1;min-width:140px"><b style="font-size:16px">${ibEsc(cv.alias || cv.name || '客人')}</b> ${ibTag(cv.acct)}<div class="hint" style="font-size:12px">${cv.alias && cv.name ? 'LINE 名稱：' + ibEsc(cv.name) + ' · ' : ''}${cv.follow === false ? '已封鎖官方帳號 · ' : ''}<span id="ibQuota"></span></div></div>
-      <select class="mini" style="padding:5px 8px;font-size:12.5px" onchange="ibOp('status',this.value)" title="狀態">${['new', 'open', 'done'].map(s => `<option value="${s}"${cv.status === s ? ' selected' : ''}>${IB_ST[s]}</option>`).join('')}</select>
-      <select class="mini" style="padding:5px 8px;font-size:12.5px;max-width:120px" onchange="ibOp('assign',this.value)" title="負責人"><option value="">未指派</option>${people.map(p => `<option${cv.assignee === p ? ' selected' : ''}>${ibEsc(p)}</option>`).join('')}</select>
+      <span id="ibStBtns" style="display:flex;gap:4px">${ibStBtns(cv.status)}</span>
+      <select id="ibAssign" class="mini" style="padding:5px 8px;font-size:12.5px;max-width:120px" onchange="ibOp('assign',this.value)" title="負責人"><option value="">未指派</option>${people.map(p => `<option${cv.assignee === p ? ' selected' : ''}>${ibEsc(p)}</option>`).join('')}</select>
       <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibNote()" title="內部備註（客人看不到）">備註${cv.note ? ' ●' : ''}</button>
     </div>
     <div id="ibMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
@@ -170,10 +170,12 @@ async function ibSend() {
   const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: text.slice(0, 60), dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; c.status = d.conv.status; c.assignee = d.conv.assignee; ibRenderList() }
   ta.focus()
 }
+// 狀態用兩顆按鈕直接按（張良 10-11「不用選單，不然忘記按我就會收到通知」）：亮的＝目前狀態；都不亮＝新
+function ibStBtns(st) { return ['open', 'done'].map(k => `<button class="mini${st === k ? ' on' : ''}" style="padding:5px 10px;font-size:12.5px" onclick="ibOp('status','${k}')">${IB_ST[k]}</button>`).join('') }
 function ibApplyConv(c) { // 回覆後對話狀態變了→表頭的下拉與清單一起更新（v4.70.49 修：之前表頭還停在「新」）
   if (!c) return
   if (_ibConv) { _ibConv.status = c.status; _ibConv.assignee = c.assignee }
-  const sels = document.querySelectorAll('#ibPane select'); if (sels[0]) sels[0].value = c.status || 'new'; if (sels[1]) sels[1].value = c.assignee || ''
+  const sb = document.getElementById('ibStBtns'); if (sb) sb.innerHTML = ibStBtns(c.status || 'new'); const as = document.getElementById('ibAssign'); if (as) as.value = c.assignee || ''
   const r = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (r) { r.status = c.status; r.assignee = c.assignee }
 }
 function ibPaste(ev) {
@@ -212,7 +214,7 @@ async function ibOp(op, value) {
   const d = await ibPost({ op, id: _ibCur, value })
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   if (_ibConv) Object.assign(_ibConv, d.conv)
-  const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.status = d.conv.status; c.assignee = d.conv.assignee }
+  ibApplyConv(d.conv)
   ibRenderList(); if (op !== 'status' && op !== 'assign') ibRenderPane()
   libToast('已更新')
 }
