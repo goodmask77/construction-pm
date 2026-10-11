@@ -1,4 +1,4 @@
-// 🥬 /prep 第 21b 塊（v4.70.69，2026-10-12）：成本總覽 → 「菜商比價」子分頁
+// 🥬 /prep 第 21b 塊（v4.70.71，2026-10-12）：成本總覽 → 「菜商比價」子分頁
 //   張良 2026-10-12：上展／尚太每月報價騰上系統、兩家並排看差異、對照市場行情（台北一市批發月均）看歷史波動、
 //   核對偵錯中心價格異常（對上就一鍵確認不再出現，對不上留給他）、抓 ops 叫貨單價格沒更新。
 //   資料口 ?vegcmp（api/_vegquote.js）；曲線一律 lineChart（p01-core）；單色線條圖示、不用 prompt。
@@ -12,9 +12,14 @@
   const TKf = () => (typeof TK === 'function' ? TK() : '')
   let D = null, view = 'cmp', f = { cat: '營運', both: true, q: '', sort: 'pct', dir: 'desc' }, open = new Set(), busy = false, msg = '', pins = new Set()
 
-  async function load (force) {
-    if (D && !force) return D
-    try { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K) + (TKf() ? '&me=' + encodeURIComponent(TKf()) : '') + '&r=' + Date.now()); D = await r.json() } catch (_) { D = { ok: false, error: '連線問題' } }
+  // v4.70.70 不要卡：①先用上次快取的畫面秒開，背景抓最新 ②核對那包（偵錯中心，慢 5 秒）分開載，進核對頁或背景補
+  const CK = 'vegCmpCache'
+  let chkLoading = false
+  async function load (force, chk) {
+    if (D && !force && !chk) return D
+    if (!D && !force) { try { const c = JSON.parse(localStorage.getItem(CK) || 'null'); if (c && c.ok && c.items) { D = c; D._stale = true; pins = new Set(D.pins || []) } } catch (_) {} }
+    try { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K) + (TKf() ? '&me=' + encodeURIComponent(TKf()) : '') + (chk ? '&chk=1' : '') + '&r=' + Date.now()); const j = await r.json(); if (j.ok && !chk && D && D.chkLoaded) { j.anomalies = D.anomalies; j.anomSummary = D.anomSummary; j.chkLoaded = true } D = j } catch (_) { if (!D || !D.ok) D = { ok: false, error: '連線問題' } }
+    if (D && D.ok) { try { const { anomalies, ...slim } = D; localStorage.setItem(CK, JSON.stringify({ ...slim, chkLoaded: false, _savedAt: Date.now() })) } catch (_) {} }
     if (D && D.ok) { pins = new Set(D.pins || []); try { if (!(D.me && D.me.canDecide)) pins = new Set(JSON.parse(localStorage.getItem('vegPins') || '[]')) } catch (_) {} } // 有採購權限＝共用釘選；沒有＝存自己這台
     return D
   }
@@ -23,7 +28,11 @@
   async function post (body) { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) }); return r.json().catch(() => ({ ok: false, error: '連線問題' })) }
   const paint = () => { const el = document.getElementById('cdBody'); if (el) el.innerHTML = render() }
 
-  window.vegView = function () { if (!D) { load().then(() => { paint(); if (D.ok && D.me && D.me.canDecide && mktStale() && !autoMkt) { autoMkt = true; _vgMarket() } }); return '<section><div class="hint" style="padding:22px">載入菜商報價…</div></section>' } return render() }
+  async function loadChk () { if (chkLoading || (D && D.chkLoaded)) return; chkLoading = true; await load(true, true); chkLoading = false; paint() }
+  window.vegView = function () {
+    if (!D || D._stale) { const had = !!D; load().then(() => { paint(); if (D.ok && D.me && D.me.canDecide && mktStale() && !autoMkt) { autoMkt = true; _vgMarket() } if (D.ok && !D.chkLoaded) loadChk() }); if (had) return render(); return '<section><div class="hint" style="padding:22px">載入菜商報價…</div></section>' }
+    return render()
+  }
   window._vgView = v => { view = v; paint() }
   window._vgF = (k, v) => { f[k] = (k === 'both') ? !f.both : v; paint() }
   window._vgQ = v => { f.q = v; const el = document.getElementById('vgTbl'); if (el) el.innerHTML = table() }
@@ -39,9 +48,10 @@
     if (!D.ok) return `<section><div class="err">${esc(D.error || '讀不到菜商報價')}</div></section>`
     const imp = D.imported || {}
     let h = `<section style="padding:12px 14px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">${IC.leaf} 菜商比價</b>`
-      + ['cmp', '比價表', 'ana', '走勢分析', 'chk', '核對'].reduce((s, v, i, a) => i % 2 ? s : s + `<button class="mini ${view === v ? 'on' : ''}" onclick="_vgView('${v}')">${a[i + 1]}${v === 'chk' && (D.anomSummary || {}).hit ? ` <span style="background:${COL.g};color:#000;border-radius:8px;padding:0 6px;font-size:11px">${D.anomSummary.hit}</span>` : ''}</button>`, '')
+      + ['cmp', '比價表', 'ana', '走勢分析', 'chk', '核對'].reduce((s, v, i, a) => i % 2 ? s : s + `<button class="mini ${view === v ? 'on' : ''}" onclick="_vgView('${v}')">${a[i + 1]}${v === 'chk' && D.chkLoaded && (D.anomSummary || {}).hit ? ` <span style="background:${COL.g};color:#000;border-radius:8px;padding:0 6px;font-size:11px">${D.anomSummary.hit}</span>` : ''}</button>`, '')
       + `<span style="margin-left:auto"></span><button class="mini" onclick="_vgReload()">${IC.undo}</button></div>`
     h += `<div class="hint" style="margin-top:6px;line-height:1.7">報價：${D.vendors.map(v => `<b style="color:${VC[v]}">${v}</b> ${imp[v] && imp[v].n ? imp[v].n + ` 項（${esc(String(imp[v].at || '').slice(0, 10))} 匯入）` : '<span style="color:' + COL.r + '">尚未匯入</span>'}`).join('・')}；市場行情＝農業部「${esc(D.market.market)}」批發月均（${D.market.fetchedAt ? esc(String(D.market.fetchedAt).slice(0, 16).replace('T', ' ')) : '未抓'}，${D.market.nCrops} 種作物）${D.me && D.me.canDecide ? ` <span onclick="_vgMarket()" style="text-decoration:underline;cursor:pointer">重抓行情</span>` : ''}。單位都是元／公斤（報價＝到店價、行情＝批發價，看走勢不比絕對值）。<br>報價來源＝兩家的 Google 試算表，每天早上 8 點自動讀一次，有變動 DD 私訊你${D.sync ? `（上次讀取 ${esc(String(D.sync.at).slice(0, 16).replace('T', ' '))}：${esc((D.sync.summary || []).join('、'))}）` : ''}${D.me && D.me.canDecide ? ` <button class="mini" ${busy ? 'disabled' : ''} onclick="_vgSync()">${IC.undo} 現在重新讀取報價單</button>` : ''}${msg ? `<div style="color:${COL.y}">${esc(msg)}</div>` : ''}</div></section>`
+    if (D._stale) h += `<div class="hint" style="padding:0 14px 6px;font-size:12px">⚡ 先顯示上次的畫面，最新資料背景更新中…</div>`
     h += view === 'cmp' ? cmp() : view === 'ana' ? ana() : chk()
     return h
   }
@@ -88,15 +98,18 @@
   function table () {
     const rs = rows(); if (!rs.length) return '<div class="hint" style="padding:16px;text-align:center">沒有符合的品項</div>'
     const mos = D.months.slice(-12)
-    let h = `<div class="hint" style="margin-bottom:6px">${rs.length} 項・點欄位名稱排序（再點一次反向）・點 ${IC.pin} 釘選置頂・點品項展開逐月價格、叫貨量與走勢圖。「差」＝尚太 − 上展（紅＝尚太貴、綠＝尚太便宜）；叫貨量＝近 3 個月兩店合計；「叫便宜的可省」＝近 3 個月若都跟便宜那家叫，省多少。</div><div class="scroll"><table class="tight" style="min-width:1180px"><thead><tr><th style="width:26px"></th>${th('name', '品項', 'style="text-align:left"')}<th>規格</th>${th('ym', '最新月')}${th('a', '尚太', `style="color:${VC.尚太}"`)}${th('b', '上展', `style="color:${VC.上展}"`)}${th('diff', '差')}${th('cheap', '便宜')}${th('recent', '近期誰便宜')}${th('qa', '叫貨 尚太', `style="color:${VC.尚太}"`)}${th('qb', '叫貨 上展', `style="color:${VC.上展}"`)}${th('save', '叫便宜的可省')}${th('vola', '波動 尚太')}${th('volb', '波動 上展')}${th('mkt', '市場月均')}</tr></thead><tbody>`
+    let h = `<div class="hint" style="margin-bottom:6px">${rs.length} 項・點欄位名稱排序（再點一次反向）・點 ${IC.pin} 釘選置頂・點品項展開逐月價格、叫貨量與走勢圖。「差」＝尚太 − 上展（紅＝尚太貴、綠＝尚太便宜）；叫貨量＝近 3 個月兩店合計；「叫便宜的可省」＝近 3 個月若都跟便宜那家叫，省多少。</div><div class="scroll"><table class="tight" style="min-width:1180px"><thead><tr><th style="width:26px;position:sticky;left:0;background:var(--card);z-index:2"></th>${th('name', '品項', 'style="text-align:left;position:sticky;left:26px;background:var(--card);z-index:2;min-width:110px"')}<th>規格</th>${th('ym', '最新月')}${th('a', '尚太', `style="color:${VC.尚太}"`)}${th('b', '上展', `style="color:${VC.上展}"`)}${th('diff', '差')}${th('cheap', '便宜')}${th('recent', '近期誰便宜')}${th('qa', '叫貨 尚太', `style="color:${VC.尚太}"`)}${th('qb', '叫貨 上展', `style="color:${VC.上展}"`)}${th('save', '叫便宜的可省')}${th('vola', '波動 尚太')}${th('volb', '波動 上展')}${th('mkt', '市場月均')}</tr></thead><tbody>`
     for (const r of rs) {
       const L = r.latest || {}, st = r.stat, mkv = latestMkt(r), mkYm = r.mkt ? Object.keys(r.mkt).sort().pop() : null
       const o = open.has(r.key), pinned = pins.has(r.key), sv = r.save || {}
-      h += `<tr style="cursor:pointer${pinned ? ';background:var(--psoft)' : ''}" onclick="_vgOpen('${esc(r.key)}')"><td><span onclick="_vgPin('${esc(r.key)}',event)" title="${pinned ? '取消釘選' : '釘選置頂'}" style="color:${pinned ? COL.y : 'var(--muted)'};cursor:pointer">${pinned ? IC.pinOn : IC.pin}</span></td><td style="text-align:left"><b>${esc(r.name)}</b>${r.both ? '' : ` <span class="hint" style="font-size:11px">只有${r.s.尚太 ? '尚太' : '上展'}</span>`}${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}</td><td class="mut">${esc(r.spec || '')} ${esc(r.unit || '')}</td><td>${L.ym ? esc(L.ym.slice(2).replace('-', '/')) : '—'}</td><td style="color:${VC.尚太};font-weight:800">${r.s.尚太 ? nf(L.尚太 != null ? L.尚太 : lastOf(r.s.尚太)) : '—'}</td><td style="color:${VC.上展};font-weight:800">${r.s.上展 ? nf(L.上展 != null ? L.上展 : lastOf(r.s.上展)) : '—'}</td><td>${L.diff != null ? (L.diff > 0 ? '+' : '') + nf(L.diff) + ' ' + pctTag(L.pct) : '—'}</td><td>${cheapTag(L.cheaper)}</td><td class="hint" style="font-size:12px">${st ? `<span style="color:${VC.尚太}">尚太 ${st.尚太便宜}</span>／<span style="color:${VC.上展}">上展 ${st.上展便宜}</span>${st.一樣 ? '／同 ' + st.一樣 : ''} 月` : '—'}</td><td style="color:${VC.尚太}">${r.qty3 && r.qty3.尚太 ? nf(r.qty3.尚太) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td style="color:${VC.上展}">${r.qty3 && r.qty3.上展 ? nf(r.qty3.上展) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td>${sv.total ? `<b style="color:${COL.g}">${sv.total.toLocaleString()} 元</b> <span class="hint" style="font-size:11px">改叫${esc(sv.to)}</span>` : (r.both ? '<span class="mut">0</span>' : '<span class="mut">—</span>')}</td><td class="hint" style="font-size:12px">${volTag(r.vol尚太)}</td><td class="hint" style="font-size:12px">${volTag(r.vol上展)}</td><td>${mkv != null ? nf(mkv) + ` <span class="hint" style="font-size:11px">${mkYm.slice(5)}月</span>` : '<span class="mut">—</span>'}</td></tr>`
+      const stk = `position:sticky;background:${pinned ? 'var(--psoft)' : 'var(--card)'};z-index:1`
+      h += `<tr style="cursor:pointer${pinned ? ';background:var(--psoft)' : ''}" onclick="_vgOpen('${esc(r.key)}')"><td style="${stk};left:0"><span onclick="_vgPin('${esc(r.key)}',event)" title="${pinned ? '取消釘選' : '釘選置頂'}" style="color:${pinned ? COL.y : 'var(--muted)'};cursor:pointer">${pinned ? IC.pinOn : IC.pin}</span></td><td style="text-align:left;${stk};left:26px;min-width:110px"><b>${esc(r.name)}</b>${r.both ? '' : ` <span class="hint" style="font-size:11px">只有${r.s.尚太 ? '尚太' : '上展'}</span>`}${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}</td><td class="mut">${esc(r.spec || '')} ${esc(r.unit || '')}</td><td>${L.ym ? esc(L.ym.slice(2).replace('-', '/')) : '—'}</td>${priceCell('尚太', r)}${priceCell('上展', r)}<td>${L.diff != null ? (L.diff > 0 ? '+' : '') + nf(L.diff) + ' ' + pctTag(L.pct) : '—'}</td><td>${cheapTag(L.cheaper)}</td><td class="hint" style="font-size:12px">${st ? `<span style="color:${VC.尚太}">尚太 ${st.尚太便宜}</span>／<span style="color:${VC.上展}">上展 ${st.上展便宜}</span>${st.一樣 ? '／同 ' + st.一樣 : ''} 月` : '—'}</td><td style="color:${VC.尚太}">${r.qty3 && r.qty3.尚太 ? nf(r.qty3.尚太) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td style="color:${VC.上展}">${r.qty3 && r.qty3.上展 ? nf(r.qty3.上展) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td>${sv.total ? `<b style="color:${COL.g}">${sv.total.toLocaleString()} 元</b> <span class="hint" style="font-size:11px">改叫${esc(sv.to)}</span>` : (r.both ? '<span class="mut">0</span>' : '<span class="mut">—</span>')}</td><td class="hint" style="font-size:12px">${volTag(r.vol尚太)}</td><td class="hint" style="font-size:12px">${volTag(r.vol上展)}</td><td>${mkv != null ? nf(mkv) + ` <span class="hint" style="font-size:11px">${mkYm.slice(5)}月</span>` : '<span class="mut">—</span>'}</td></tr>`
       if (o) h += `<tr><td colspan="15" style="padding:8px 10px;background:var(--soft)">${detail(r)}</td></tr>`
     }
     return h + '</tbody></table></div>'
   }
+  // v4.70.71 便宜的直接標（張良 2026-10-12）：便宜那家綠底＋勾、貴的淡；一樣就兩邊普通
+  const priceCell = (v, r) => { const L = r.latest || {}; const val = r.s[v] ? (L[v] != null ? L[v] : lastOf(r.s[v])) : null; if (val == null) return '<td class="mut">—</td>'; const win = L.cheaper === v, lose = L.cheaper && L.cheaper !== '一樣' && L.cheaper !== v; return `<td style="color:${VC[v]};font-weight:800;${win ? 'background:rgba(61,190,108,.22);box-shadow:inset 0 0 0 1px rgba(61,190,108,.6);border-radius:6px' : ''}${lose ? 'opacity:.55' : ''}">${win ? `<span style="color:${COL.g}">${IC.check}</span> ` : ''}${nf(val)}</td>` }
   const volTag = v => v ? `${nf(v.min)}～${nf(v.max)} <b style="color:${(v.pct || 0) >= 100 ? COL.r : (v.pct || 0) >= 50 ? COL.y : COL.m}">${v.pct == null ? '' : v.pct + '%'}</b>` : '—'
   function detail (r) {
     const mos = D.months
@@ -106,7 +119,7 @@
     let h = `<div style="display:grid;grid-template-columns:1fr;gap:10px">`
     h += `<div>${typeof lineChart === 'function' ? lineChart({ labels: mos.map(m => m.slice(2).replace('-', '/')), series, yFmt: v => nf(v), zero: true, h: 170 }) : ''}</div>`
     h += `<div class="scroll"><table class="tight" style="min-width:600px"><thead><tr><th style="text-align:left"></th>${mos.map(m => `<th>${m.slice(2).replace('-', '/')}</th>`).join('')}</tr></thead><tbody>`
-    for (const v of D.vendors) if (r.s[v]) h += `<tr><td style="text-align:left;color:${VC[v]};font-weight:800">${v}</td>${mos.map(m => `<td>${r.s[v][m] == null ? '<span class="mut">—</span>' : nf(r.s[v][m])}</td>`).join('')}</tr>`
+    for (const v of D.vendors) if (r.s[v]) h += `<tr><td style="text-align:left;color:${VC[v]};font-weight:800">${v}</td>${mos.map(m => { const p = r.s[v][m]; if (p == null) return '<td><span class="mut">—</span></td>'; const o = r.both ? r.s[v === '尚太' ? '上展' : '尚太'][m] : null; const win = o != null && p < o, lose = o != null && p > o; return `<td style="${win ? 'background:rgba(61,190,108,.22);color:' + COL.g + ';font-weight:800' : ''}${lose ? 'opacity:.55' : ''}">${nf(p)}</td>` }).join('')}</tr>`
     if (r.both) h += `<tr><td style="text-align:left">差（尚太−上展）</td>${mos.map(m => { const a = r.s.尚太[m], b = r.s.上展[m]; if (a == null || b == null) return '<td class="mut">—</td>'; const d = a - b; return `<td style="color:${d > 0 ? COL.r : d < 0 ? COL.g : COL.m}">${d > 0 ? '+' : ''}${nf(d)}</td>` }).join('')}</tr>`
     if (r.mkt) h += `<tr><td style="text-align:left;color:${COL.m}">市場月均</td>${mos.map(m => `<td class="mut">${r.mkt[m] == null ? '—' : nf(r.mkt[m])}</td>`).join('')}</tr>`
     for (const v of D.vendors) if (r.qty && r.qty[v]) h += `<tr><td style="text-align:left;color:${VC[v]}">叫貨量 ${v} <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span></td>${mos.map(m => `<td>${r.qty[v][m] ? nf(r.qty[v][m]) : '<span class="mut">—</span>'}</td>`).join('')}</tr>`
@@ -145,6 +158,7 @@
 
   // ── 核對 ──
   function chk () {
+    if (!D.chkLoaded) { loadChk(); return '<section><div class="hint" style="padding:22px">核對資料計算中（偵錯中心那包比較慢，約 5 秒）…</div></section>' }
     const A = D.anomalies || [], S = D.anomSummary || {}, O = D.orders || {}
     const VT = { hit: ['跟報價單對上', COL.g], miss: ['跟報價單對不上', COL.r], noquote: ['報價表沒這品項／該月', COL.y], nodata: ['沒有可比的價', COL.m] }
     let h = `<section style="padding:12px 14px"><h2 style="margin:0 0 6px;font-size:16px">① 偵錯中心「價格異常」×報價單</h2><div class="hint" style="line-height:1.7">價格異常共 ${S.allPrice} 筆，其中菜商 ${S.total} 筆：<b style="color:${COL.g}">對上 ${S.hit}</b>・<b style="color:${COL.r}">對不上 ${S.miss}</b>・<span style="color:${COL.y}">沒報價 ${S.noquote}</span>・已處理 ${S.decided}。「對上」＝變價後的叫貨價跟那家那個月的報價一致（±1%），是真的漲跌不是打錯。</div>`
