@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=1080" />
 <title>GROUN:D 菜單海報</title>
 <!--
-  菜單海報 HTML 模板（張良 2026-10-10 v1.3：10-11 點選式編輯（Logo／分類標題／品項／底條字級與間距，存雲端）；v1.2：10-11 編輯條加「退出」鈕＋Esc、加「💾 存版本」；v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
+  菜單海報 HTML 模板（張良 2026-10-10 v1.4：10-12 品名縮字三段（去字距→縮到下限→換行）＋Logo 上下間距可負值＋「撐滿到底條」把空白分進間距；v1.3：10-11 點選式編輯（Logo／分類標題／品項／底條字級與間距，存雲端）；v1.2：10-11 編輯條加「退出」鈕＋Esc、加「💾 存版本」；v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
   取代舊 canvas 手刻：用 CSS 排版 → puppeteer 截圖成 PNG。框線/對齊/換行全自動，不再切字。
   資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
   直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
@@ -38,17 +38,17 @@
   #mini label{ display:flex; align-items:center; gap:8px; margin:4px 0 } #mini label span{ width:60px; font-size:12px; color:#bbb } #mini input[type=range]{ flex:1 } #mini .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
   #mini .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:#999; gap:6px } #mini .foot a{ color:#9cf; cursor:pointer } #mini .foot button{ padding:5px 10px; border:none; border-radius:8px; background:#555; color:#fff; cursor:pointer; font-weight:700; font-size:12px }
   /* 直式畫布 */
-  #poster{ --logo:1080px; --head:19px; --h2:30px; --nm:30px; --en:18px; --pr:30px; --ig:10px; --boxpad:12px; --catgap:13px; --colgap:37px; --pad:38px; --foot:23px; --footh:70px; --top:28px;
+  #poster{ --logo:1080px; --head:19px; --h2:30px; --nm:30px; --en:18px; --pr:30px; --ig:10px; --boxpad:12px; --catgap:13px; --colgap:37px; --pad:38px; --foot:23px; --footh:70px; --top:28px; --brandgap:6px; --nmmin:22px; --fill:0%;
     width:1080px; height:1920px; background:var(--cream); position:relative;
     font-family:"Noto Sans TC","ChillDINGothic",system-ui,sans-serif; color:var(--red); letter-spacing:.04em;
-    padding:var(--top) var(--pad) 0; display:flex; flex-direction:column;
+    padding:0 var(--pad) 0; display:flex; flex-direction:column;
   }
   /* 點選式編輯（v1.3）：可點的元素虛線框、選中實線 */
   body.edit [data-edit]{ cursor:pointer; outline:3px dashed transparent; outline-offset:4px; transition:outline-color .15s; border-radius:6px }
   body.edit [data-edit]:hover{ outline-color:rgba(206,22,17,.55) }
   body.edit [data-edit].sel{ outline:3px solid #1a7f37 }
   /* 品牌頭：用官方 logo 圖（brand_v13.png 無襯線粗黑體，照 CIS），不用字型拼 */
-  .brand{ margin:0 calc(0px - var(--pad)) 6px; text-align:center; }
+  .brand{ margin:var(--top) calc(0px - var(--pad)) var(--brandgap); text-align:center; } /* v1.4 上下間距都可負值往上拉（張良 2026-10-12「上下空白滿大」） */
   .brand img{ width:var(--logo); display:inline-block; }
   /* 欄頭 */
   .colhead{ display:flex; justify-content:space-between; align-items:baseline; font-size:var(--head); font-weight:700; padding:0 12px; margin-bottom:6px; }
@@ -199,7 +199,7 @@ function render(){
     sec.items.forEach(it=>{
       const {nm,ih}=splitIH(it.name);
       const tag=comboTag(Number(sec.combo)||0, Number(it.price)||0);
-      let note='', nmHtml=nm;
+      let note='', nmHtml=nm.replace(/｜/g,'｜<wbr>'); // v1.4 「｜」後面可斷行
       // 無咖啡因 → 英文行末紅字
       const decaf = /無咖啡因/.test(it.note||'') ? '無咖啡因' : '';
       const hasPr = Number(it.price)>0;
@@ -225,17 +225,37 @@ function render(){
 
 // 縮字＋縮高（可重複呼叫；每次先重置再算）——字體載入完成後要再跑一次，否則用替補字體量到的高度偏矮會撐破
 function fit(){
+  // v1.4 品名縮字三段（張良 2026-10-12「炸雞字體比較小」）：①先把字距收到 0 ②再縮字但不低於「縮字下限」 ③還塞不下才讓品名換行（價格留在第一行右邊）
   document.querySelectorAll('.item .row1').forEach(row=>{
     const nm=row.querySelector('.nm'); if(!nm) return;
-    nm.style.fontSize=''; let size=peff('nm');
+    nm.style.fontSize=''; nm.style.letterSpacing=''; nm.style.whiteSpace=''; nm.style.flex=''; nm.style.minWidth=''; nm.style.wordBreak='';
+    let size=peff('nm'); const min=Math.min(size, peff('nmmin'));
     const avail = row.clientWidth - 10; let guard=0;
-    while((sumFixed(row) > avail) && size>20 && guard<20){ size--; nm.style.fontSize=size+'px'; guard++; }
+    if (sumFixed(row) > avail) nm.style.letterSpacing='0';
+    while((sumFixed(row) > avail) && size>min && guard<30){ size--; nm.style.fontSize=size+'px'; guard++; }
+    if (sumFixed(row) > avail){ // 換行優先斷在空格／「｜」（keep-all 中文不拆字）；完全沒斷點才允許逐字斷
+      nm.style.whiteSpace='normal'; nm.style.flex='0 1 auto'; nm.style.minWidth='0'; nm.style.wordBreak='keep-all';
+      if (nm.scrollWidth > nm.clientWidth + 2) nm.style.wordBreak='normal';
+    }
   });
   const cats=document.getElementById('cats');
   const footerTop = 1920 - peff('footh') - 18, availH = footerTop - cats.offsetTop;
+  const cols=[...cats.querySelectorAll('.col')];
+  cols.forEach(col=>{ col.style.removeProperty('--ig'); col.style.removeProperty('--catgap'); });
   cats.style.transform='scale(1)';
+  // v1.4 撐滿到底條（張良「上下空白滿大，想利用空間」）：目標高度＝max(最高那欄, 可用高度)；比較矮的欄把差距×撐滿% 平均分進品項間距與分類間距 → 左右欄一樣貼到底；
+  // 內容太高整體縮小時也照做（矮的那欄補到跟高的一樣高，縮完就兩欄齊底）
+  const fill=Math.max(0,Math.min(1,peff('fill')/100));
+  if (fill>0){
+    const target=Math.max(cats.scrollHeight, availH);
+    cols.forEach(col=>{
+      const n=col.querySelectorAll('.item').length; if(n<2) return;
+      const extra=(target-col.offsetHeight)*fill; const d=Math.min(60, extra/(n-1)); if(d<=0) return;
+      col.style.setProperty('--ig',(peff('ig')+d)+'px'); col.style.setProperty('--catgap',(peff('catgap')+d)+'px');
+    });
+  }
   const real = cats.scrollHeight;
-  cats.style.transform = real>availH ? 'scale('+(availH/real)+')' : 'scale(1)';
+  if (real>availH) cats.style.transform='scale('+(availH/real)+')';
   window.__rendered = true;
 }
 function sumFixed(row){
@@ -260,11 +280,11 @@ async function boot(){
 boot();
 
 // ── ✎ 點選式編輯（v1.3）：Logo／欄頭／分類標題／品項／底條 → 字級與間距滑桿；設定存在 POSTER.cfg（跟插圖位置一起進雲端與版本） ──
-const PPARAMS={ logo:['Logo 大小',500,1080,1080,'px'], top:['上方留白',0,120,28,'px'], head:['欄頭字',14,30,19,'px'],
+const PPARAMS={ logo:['Logo 大小',500,1080,1080,'px'], top:['上方留白',-80,120,28,'px'], brandgap:['Logo 下方間距',-80,100,6,'px'], head:['欄頭字',14,30,19,'px'],
   h2:['分類標題大小',20,48,30,'px'], catgap:['分類間距',0,40,13,'px'], colgap:['兩欄間距',10,80,37,'px'], pad:['左右邊距',16,80,38,'px'],
-  nm:['品名大小',20,42,30,'px'], en:['英文副標大小',12,28,18,'px'], pr:['價格大小',20,42,30,'px'], ig:['品項間距',0,30,10,'px'], boxpad:['框內留白',4,30,12,'px'],
+  nm:['品名大小',20,42,30,'px'], nmmin:['品名縮字下限',16,42,22,'px'], fill:['撐滿到底條',0,100,0,'%'], en:['英文副標大小',12,28,18,'px'], pr:['價格大小',20,42,30,'px'], ig:['品項間距',0,30,10,'px'], boxpad:['框內留白',4,30,12,'px'],
   foot:['底條字大小',16,34,23,'px'], footh:['底條高度',50,110,70,'px'] };
-const PMINI={ logo:{title:'Logo',keys:['logo','top']}, head:{title:'欄頭（MENU 菜單）',keys:['head']}, cat:{title:'分類標題',keys:['h2','catgap','colgap','pad']}, items:{title:'品項',keys:['nm','en','pr','ig','boxpad']}, footer:{title:'底條',keys:['foot','footh']} };
+const PMINI={ logo:{title:'Logo',keys:['logo','top','brandgap']}, head:{title:'欄頭（MENU 菜單）',keys:['head']}, cat:{title:'分類標題',keys:['h2','catgap','colgap','pad','fill']}, items:{title:'品項',keys:['nm','nmmin','en','pr','ig','boxpad','fill']}, footer:{title:'底條',keys:['foot','footh']} };
 function peff(k){ const c=(POSTER&&POSTER.cfg)||{}; return (k in c)?c[k]:PPARAMS[k][3]; }
 function applyPcfg(){ const el=document.getElementById('poster'); Object.keys(PPARAMS).forEach(k=>el.style.setProperty('--'+k, peff(k)+PPARAMS[k][4])); }
 let PSEL=null;
