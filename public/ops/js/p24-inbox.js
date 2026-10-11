@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.50（圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.51（回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -78,11 +78,11 @@ function ibRenderPane() {
       <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibNote()" title="內部備註（客人看不到）">備註${cv.note ? ' ●' : ''}</button>
     </div>
     <div id="ibMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
-    <div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="document.getElementById('ibFile').click()" title="傳圖片或檔案（也可以直接把截圖貼到輸入框）">${IB_ICON.clip} 附件</button><input id="ibFile" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" style="display:none" onchange="ibUploadFiles(this.files);this.value=''"><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
+    ${(ibAcct(cv.acct).canReply === false) ? `<div class="hint" style="padding:12px;border-top:1px solid var(--line);font-size:13.5px;text-align:center">你有這個帳號的查看權限，沒有回覆權限。要回覆請主管在收件匣設定勾「可回覆」。</div>` : `<div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="document.getElementById('ibFile').click()" title="傳圖片或檔案（也可以直接把截圖貼到輸入框）">${IB_ICON.clip} 附件</button><input id="ibFile" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" style="display:none" onchange="ibUploadFiles(this.files);this.value=''"><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
     <div style="display:flex;gap:8px;padding:6px 12px 10px;align-items:flex-end">
       <textarea id="ibInput" rows="1" placeholder="回覆客人…（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}" onpaste="ibPaste(event)"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="ibSend()">${IB_ICON.send}</button>
-    </div>`
+    </div>`}`
   ibModeLine()
 }
 function ibModeLine() {
@@ -257,7 +257,21 @@ function ibSetRender() {
   }).join('')
   const people = d.people || []
   const perm = (d.cfg && d.cfg.perm) || {}
-  const permHtml = (d.accounts || []).map(a => `<div style="margin-top:8px"><b style="font-size:13.5px;color:${a.color}">${ibEsc(a.name)}</b><div class="hint" style="font-size:11.5px">主管永遠看得到；勾的人也看得到並會收到通知</div><div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px">${people.map(p => `<label style="display:flex;gap:4px;align-items:center;font-size:13.5px"><input type="checkbox" class="ibPerm" data-acct="${a.key}" value="${ibEsc(p)}"${(perm[a.key] || []).includes(p) ? ' checked' : ''}>${ibEsc(p)}</label>`).join('')}</div></div>`).join('')
+  const reply = (d.cfg && d.cfg.reply) || {}
+  // 名單依 AB／GD × 正職／PT 分組（張良 10-11），每組一個「全選」
+  const info = (d.peopleInfo && d.peopleInfo.length) ? d.peopleInfo : people.map(n => ({ name: n, co: '', title: '' }))
+  const GROUPS = [['GD', '正職', 'GROUN:D 正職'], ['GD', 'PT', 'GROUN:D PT'], ['AB', '正職', 'A Beach 正職'], ['AB', 'PT', 'A Beach PT'], ['', '', '其他（名冊沒標店別或職別）']]
+  const grid = (cls, a, sel) => GROUPS.map(([co, ti, label]) => {
+    const ps = info.filter(p => (co ? (p.co === co && (ti ? p.title === ti : true)) : !(p.co && p.title)))
+    if (!ps.length) return ''
+    const gid = cls + '_' + a.key + '_' + co + ti
+    return `<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px"><span class="hint" style="font-size:12px;font-weight:700">${label}</span><label class="hint" style="font-size:11.5px;display:flex;gap:3px;align-items:center;cursor:pointer"><input type="checkbox" onchange="document.querySelectorAll('.${gid}').forEach(x=>x.checked=this.checked)">全選</label></div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:2px">${ps.map(p => `<label style="display:flex;gap:4px;align-items:center;font-size:13.5px"><input type="checkbox" class="${cls} ${gid}" data-acct="${a.key}" value="${ibEsc(p.name)}"${(sel || []).includes(p.name) ? ' checked' : ''}>${ibEsc(p.name)}</label>`).join('')}</div></div>`
+  }).join('')
+  const permHtml = (d.accounts || []).map(a => `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px"><b style="font-size:14px;color:${a.color}">${ibEsc(a.name)}</b>
+      <div style="margin-top:6px"><b style="font-size:13px">看得到</b><span class="hint" style="font-size:11.5px">　主管永遠看得到；勾的人看得到並收到通知</span>${grid('ibPerm', a, perm[a.key])}</div>
+      <div style="margin-top:10px"><b style="font-size:13px">可回覆</b><span class="hint" style="font-size:11.5px">　主管永遠可回；勾的人才能回覆、傳圖（要同時有「看得到」）</span>${grid('ibReply', a, reply[a.key])}</div>
+    </div>`).join('')
   const tpl = (d.cfg && d.cfg.templates) || []
   const tplHtml = `<div id="ibTplList">${tpl.map((t, i) => ibTplRow(t, i)).join('')}</div><button class="mini" style="margin-top:6px;padding:5px 10px;font-size:12.5px" onclick="ibTplAdd()">＋ 新增範本</button>`
   box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">收件匣設定</b><button class="mini" onclick="document.getElementById('ibOv').remove()">關閉</button></div>
@@ -272,10 +286,11 @@ function ibTplRow(t, i) { return `<div class="ibTpl" style="display:flex;gap:6px
 function ibTplAdd() { const l = document.getElementById('ibTplList'); if (l) l.insertAdjacentHTML('beforeend', ibTplRow({}, 0)) }
 async function ibSetSave() {
   const perm = {}; document.querySelectorAll('#ibOv .ibPerm:checked').forEach(x => { (perm[x.dataset.acct] = perm[x.dataset.acct] || []).push(x.value) })
-  for (const a of (_ibSet.accounts || [])) perm[a.key] = perm[a.key] || []
+  const reply = {}; document.querySelectorAll('#ibOv .ibReply:checked').forEach(x => { (reply[x.dataset.acct] = reply[x.dataset.acct] || []).push(x.value) })
+  for (const a of (_ibSet.accounts || [])) { perm[a.key] = perm[a.key] || []; reply[a.key] = reply[a.key] || [] }
   const templates = [...document.querySelectorAll('#ibOv .ibTpl')].map(r => ({ title: r.querySelector('.ibTplTitle').value, text: r.querySelector('.ibTplText').value })).filter(t => t.text.trim())
   const remindMin = +((document.getElementById('ibRemind') || {}).value || 30)
-  const d = await ibPost({ op: 'cfg', cfg: { perm, templates, remindMin } })
+  const d = await ibPost({ op: 'cfg', cfg: { perm, reply, templates, remindMin } })
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   libToast('設定已儲存'); document.getElementById('ibOv').remove()
   const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() }

@@ -4325,7 +4325,7 @@ export default async function handler(req, res) {
     let bodyI = {}
     if (req.method === 'POST') { try { bodyI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
     const tkI = req.method === 'POST' ? bodyI.token : req.query.me
-    const [whoI, defI, pmI, rosI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster')])
+    const [whoI, defI, pmI, rosI, hrI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_crew_pm_hr_master')])
     if (!whoI) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
     const IB = await import('./_inbox.js')
     const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
@@ -4333,13 +4333,17 @@ export default async function handler(req, res) {
     const cfgI = await IB.loadCfg()
     const opI = String(req.method === 'POST' ? bodyI.op : req.query.op || 'list')
     const originI = 'https://' + (String(req.headers['x-forwarded-host'] || req.headers.host || 'ground-pm.vercel.app'))
+    // 名單依 AB／GD × 正職／PT 分組（張良 10-11）：店別與職別來自人資名冊 sp_crew_pm_hr_master（co 含 A Beach＝AB、GD；title 正職／PT），在職名單仍以 kb_roster 為準
+    const aliveI = ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+    const hrRows = ((hrI || {}).rows || [])
+    const peopleI = aliveI.map(p => { const h = hrRows.find(r => r && r.name === p.name && !r.resign && !r.leave) || hrRows.find(r => r && r.name === p.name) || {}; const co = /A ?Beach|AB/i.test(h.co || '') ? 'AB' : /GD|GROUN/i.test(h.co || '') ? 'GD' : ''; const title = /PT|兼職/i.test(h.title || p.gdRole || '') ? 'PT' : (h.title ? '正職' : ''); return { name: p.name, co, title } })
     res.setHeader('Cache-Control', 'private, no-store')
     try {
-      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a) }))
+      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a), canReply: IB.canReplyAcct(cfgI, whoI, mgrI, a.key) }))
       if (req.method !== 'POST') {
-        if (opI === 'list') return res.status(200).json({ ok: true, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) })
+        if (opI === 'list') return res.status(200).json({ ok: true, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
         if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
-        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) }) }
+        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: peopleI.map(p => p.name), peopleInfo: peopleI }) }
         return res.status(400).json({ ok: false, error: '不認識的操作' })
       }
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))

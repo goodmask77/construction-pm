@@ -52,10 +52,11 @@ const convId = (acct, uid) => `${acct}:${uid}`
 const splitId = (id) => { const i = String(id).indexOf(':'); return i > 0 ? [id.slice(0, i), id.slice(i + 1)] : [null, null] }
 const msgKey = (acct, uid, t) => `pm_inbox_m_${acct}_${uid}_${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const statKey = (acct) => `pm_inbox_acct_${acct}`
-export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {} } } // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
+export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {}, reply: c.reply || {} } } // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
 export const maskUrl = (u) => String(u || '').replace(/([?&][^=&]+=)[^&]{4,}/g, (m, k) => k + '••••')
 export const isMgr = (who, apr, pm) => !!who && (apr.includes(who.name) || who.name === '張良瑋' || who.role === '主管' || (((pm || {}).users || {})[who.rid || who.uid] || {}).admin)
 export const canSeeAcct = (cfg, who, mgr, acct) => mgr || ((cfg.perm || {})[acct] || []).includes(who.name)
+export const canReplyAcct = (cfg, who, mgr, acct) => mgr || (canSeeAcct(cfg, who, mgr, acct) && ((cfg.reply || {})[acct] || []).includes(who.name)) // v4.70.51 回覆權限分開勾（張良 10-11）：主管永遠可回；其他人要同時「看得到」＋「可回覆」
 
 // ── 驗簽：哪個帳號的 secret 驗得過＝哪個帳號 ──
 export function acctBySignature(raw, sig) {
@@ -212,6 +213,7 @@ export async function sendOut({ who, mgr, cfg, id, text, kind, extra }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!canReplyAcct(cfg, who, mgr, acct)) return { ok: false, error: '你只有查看權限，沒有回覆權限（請主管在收件匣設定勾「可回覆」）' }
   if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
   text = String(text || '').trim(); if (!text) return { ok: false, error: '沒有內容' }
   const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
@@ -240,6 +242,7 @@ export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!canReplyAcct(cfg, who, mgr, acct)) return { ok: false, error: '你只有查看權限，沒有回覆權限（請主管在收件匣設定勾「可回覆」）' }
   if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
   const m = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(dataUrl || '')); if (!m) return { ok: false, error: '檔案格式不對' }
   const buf = Buffer.from(m[2], 'base64'); const mime = m[1]
@@ -290,17 +293,18 @@ export async function settings({ origin }) {
     const want = origin + '/api/inbox-webhook'
     return { key: a.key, name: a.name, color: a.color, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
   }))
-  return { ok: true, accounts, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin }, sigfail: sig }
+  return { ok: true, accounts, cfg: { perm: cfg.perm, reply: cfg.reply, templates: cfg.templates, remindMin: cfg.remindMin }, sigfail: sig }
 }
 export async function saveCfg(patch, who) {
   const cfg = await loadCfg()
   if (patch.perm && typeof patch.perm === 'object') { cfg.perm = {}; for (const a of ACCOUNTS) cfg.perm[a.key] = Array.isArray(patch.perm[a.key]) ? patch.perm[a.key].map(String).slice(0, 50) : [] }
+  if (patch.reply && typeof patch.reply === 'object') { cfg.reply = {}; for (const a of ACCOUNTS) cfg.reply[a.key] = Array.isArray(patch.reply[a.key]) ? patch.reply[a.key].map(String).slice(0, 50) : [] }
   if (Array.isArray(patch.templates)) cfg.templates = patch.templates.filter(x => x && (x.text || '').trim()).map((x, i) => ({ id: x.id || ('t' + Date.now().toString(36) + i), title: String(x.title || '').slice(0, 30), text: String(x.text || '').slice(0, 1000) })).slice(0, 60)
   if (patch.remindMin != null) cfg.remindMin = Math.max(5, Math.min(1440, +patch.remindMin || 30))
   if (patch.forward && typeof patch.forward === 'object') { for (const [k, v] of Object.entries(patch.forward)) { if (!acctOf(k)) continue; const u = String(v || '').trim(); if (!u) delete cfg.forward[k]; else if (/^https:\/\//.test(u)) cfg.forward[k] = u.slice(0, 500) } }
   cfg.updatedBy = who.name; cfg.updatedT = nowIso()
   await kvSet(CFG_KEY, cfg, who.name)
-  return { ok: true, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin } }
+  return { ok: true, cfg: { perm: cfg.perm, reply: cfg.reply, templates: cfg.templates, remindMin: cfg.remindMin } }
 }
 // 把這個帳號的 webhook 指到我們這裡（先看現在指哪裡；指著別的系統就不硬改，回報給人決定）
 export async function connectAcct({ key, origin, force }) {
