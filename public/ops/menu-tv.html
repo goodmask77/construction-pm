@@ -63,6 +63,11 @@
   .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:8px; padding:2px 12px; font-size:calc(var(--pr) * .6 * var(--cf)); }
   .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:calc(var(--en) * var(--cf)); font-weight:500; margin-top:3px; letter-spacing:.01em; }
   .item .en .decaf{ color:var(--red); font-weight:700; margin-left:10px; }
+  /* v4.70.76 即將上線：整列反灰＋名稱後灰底白字標籤 */
+  .item.soon .nm,.item.soon .ih,.item.soon .pr,.item.soon .tag,.item.soon .en{ color:#9a9a9a; opacity:.75; }
+  .item.soon .tag.inc{ background:#b5b5b5; color:#fff; }
+  .item.soon .lead{ border-bottom-color:#bbb; }
+  .item .soonb{ flex:0 0 auto; background:#8a8a8a; color:#fff; border-radius:8px; padding:2px 12px; font-size:calc(var(--pr) * .6 * var(--cf)); font-weight:800; letter-spacing:.08em; line-height:1.3; }
   /* 套餐欄：紅框用 ::after 疊在最上(z=1)，照片可在框內自由移動不會蓋到框線 */
   .cat.side .box{ position:relative; padding:14px 24px 18px; flex:1; display:flex; flex-direction:column; min-height:0; }
   .cat.side .box::after{ content:''; position:absolute; inset:0; border:3px solid var(--red); border-radius:22px; pointer-events:none; z-index:1; }
@@ -147,13 +152,14 @@ function setScreen(i){ screenIdx=i; if(QUAD){ markCur(); buildAdj(); } else rend
 function comboTag(combo,price){ if(!combo) return null; const d=price-combo; return d===0?{t:'內含',inc:true}:{t:(d>0?'+':'')+d,inc:false}; }
 function splitIH(name){ let ih=false,nm=String(name||''); if(/\s+I\s*\/\s*H\s*$/i.test(nm)){ih=true;nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim();} return {nm,ih}; }
 function splitName(nm){ nm=String(nm||'').trim(); const m=nm.match(/^([A-Za-z0-9&'.\- ]+?)\s*([一-鿿].*)?$/); const en=m&&m[1]?m[1].trim():''; const zh=m&&m[2]?m[2].trim():(en?'':nm); return {en:en.toUpperCase(),zh}; }
-function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins:d.origins, sections:(d.sections||[]).map(s=>({name:s.name,combo:Number(s.combo)||0,items:(s.items||[]).filter(it=>Number(it.price)>0).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note}))})).filter(s=>s.items.length) }; }
+function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins:d.origins, sections:(d.sections||[]).map(s=>({name:s.name,combo:Number(s.combo)||0,items:(s.items||[]).filter(it=>Number(it.price)>0||it.soon).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note,soon:!!it.soon}))})).filter(s=>s.items.length) }; }
 
 function itemHTML(sec,it,side){
   const {nm,ih}=splitIH(it.name); const tag=comboTag(Number(sec.combo)||0,Number(it.price)||0); const decaf=/無咖啡因/.test(it.note||'')?'無咖啡因':'';
-  return `<div class="item" data-edit="items"><div class="row1"><span class="nm">${nm}</span>`+(ih?`<span class="ih">冰 / 熱</span>`:``)
-    +`<span class="lead"></span><span class="pr">${it.price}</span>`
-    +(side?`<span class="tagc">${tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''}</span>`:(tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''))
+  const hasPr=Number(it.price)>0, tagH=(tag&&hasPr)?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''; // v4.70.76 即將上線：反灰＋標籤；沒定價就不印價格
+  return `<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1"><span class="nm">${nm}</span>`+(it.soon?`<span class="soonb">即將上線</span>`:``)+(ih?`<span class="ih">冰 / 熱</span>`:``)
+    +`<span class="lead"></span>`+(hasPr?`<span class="pr">${it.price}</span>`:``)
+    +(side?`<span class="tagc">${tagH}</span>`:tagH)
     +`</div>`+(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)+`</div>`;
 }
 // ⊞ 四頁同看：QUAD=true 時 #quad 內有四個 .tv（data-idx 0~3）同時渲染；所有「畫面」操作都走 roots()（目前顯示中的 .tv 們）

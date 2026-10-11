@@ -272,7 +272,7 @@ function menuDiff(){
   return { bF, dF,
     add: Object.keys(dF).filter(k=>!bF[k]),
     del: Object.keys(bF).filter(k=>!dF[k]),
-    chg: Object.keys(dF).filter(k=>bF[k] && (bF[k].name!==dF[k].name || bF[k].price!==dF[k].price || (bF[k].note||'')!==(dF[k].note||'') || (bF[k].en||'')!==(dF[k].en||''))) }
+    chg: Object.keys(dF).filter(k=>bF[k] && (bF[k].name!==dF[k].name || bF[k].price!==dF[k].price || (bF[k].note||'')!==(dF[k].note||'') || (bF[k].en||'')!==(dF[k].en||'') || !!bF[k].soon!==!!dF[k].soon)) }
 }
 function menuRender(){
   const d = window._menuD; if (!d || curStore !== 'menu') return
@@ -336,7 +336,7 @@ function menuRender(){
       // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
       // v4.43.7 對齊治本：th 改[名稱,對齊]單一來源（售價/新售價=right 跟 td 一致、操作=left）——照 p11 C9 範式
       if (fold) { h += `</div>`; return } // 收合＝只留標題列
-      h += `<div class="scroll"><table style="width:100%;min-width:560px;border-collapse:collapse;margin-top:6px;table-layout:fixed"><colgroup><col style="width:22%"><col style="width:25%"><col style="width:9%"><col style="width:9%"><col style="width:11%"><col style="width:18%"><col style="width:6%"></colgroup><thead><tr>${[['中文','left'],['英文','left'],['售價','right'],['新售價','right'],['套餐','center'],['備註','left'],['操作','center']].map(([x,al])=>`<th style="text-align:${al};font-size:12px;color:#6b7a90;padding:5px 7px;border:1px solid var(--line);background:var(--soft)">${x}</th>`).join('')}</tr></thead><tbody>`
+      h += `<div class="scroll"><table style="width:100%;min-width:560px;border-collapse:collapse;margin-top:6px;table-layout:fixed"><colgroup><col style="width:21%"><col style="width:23%"><col style="width:8%"><col style="width:8%"><col style="width:11%"><col style="width:9%"><col style="width:14%"><col style="width:6%"></colgroup><thead><tr>${[['中文','left'],['英文','left'],['售價','right'],['新售價','right'],['套餐','center'],['即將上線','center'],['備註','left'],['操作','center']].map(([x,al])=>`<th style="text-align:${al};font-size:12px;color:#6b7a90;padding:5px 7px;border:1px solid var(--line);background:var(--soft)">${x}</th>`).join('')}</tr></thead><tbody>`
       ;(s2.items||[]).forEach(i2=>{
         const b = df.bF[i2.id]
         const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
@@ -359,7 +359,11 @@ function menuRender(){
           const chip = `<span style="color:${clr};font-size:12.5px;font-weight:800;white-space:nowrap">${label}</span>`
           return td(edOn?`<button class="mini" onclick="menuItemCombo(${si},'${i2.id}')" title="點一下改成：不給套餐" style="padding:4px 8px">${chip}</button>`:chip)
         })()
-        h += `<tr data-id="${i2.id}" style="background:${isNew?'#1C3326':'transparent'}">${nameTd}${cell('en',i2.en,'min-width:110px',1)}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card)"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800">$${i2.price}</td>`}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.np||''}" placeholder="—" onchange="menuCell(${si},'${i2.id}','np',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card);color:#A85C26"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800;color:#A85C26">${i2.np?'$'+i2.np:'—'}</td>`}${comboTd}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid var(--line);padding:3px 5px;text-align:center">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新</span> ':''}${edOn?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
+        // v4.70.76 即將上線欄（張良 2026-10-12）：勾了=還沒上；直式／電視菜單圖照樣印但反灰＋標「即將上線」，售價 0 也會印
+        const soonTd = `<td style="padding:4px 5px;border:1px solid var(--line);text-align:center">${edOn
+          ? `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:${i2.soon?'#C9A227':'var(--muted)'}"><input type="checkbox" ${i2.soon?'checked':''} onchange="menuItemSoon(${si},'${i2.id}',this.checked)" style="width:16px;height:16px;accent-color:#C9A227">${i2.soon?'即將上線':'已上'}</label>`
+          : (i2.soon?`<span style="background:#5a4a1a;color:#F2D16B;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:800;white-space:nowrap">即將上線</span>`:`<span class="mut" style="font-size:12px">—</span>`)}</td>`
+        h += `<tr data-id="${i2.id}" style="background:${isNew?'#1C3326':'transparent'}${i2.soon?';opacity:.72':''}">${nameTd}${cell('en',i2.en,'min-width:110px',1)}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card)"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800">$${i2.price}</td>`}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.np||''}" placeholder="—" onchange="menuCell(${si},'${i2.id}','np',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card);color:#A85C26"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800;color:#A85C26">${i2.np?'$'+i2.np:'—'}</td>`}${comboTd}${soonTd}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid var(--line);padding:3px 5px;text-align:center">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新</span> ':''}${edOn?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
       })
       h += `</tbody></table></div>`
       // 這分類底下被刪掉的（原菜單有、新菜單沒了）→ 灰底刪除線＋復原
@@ -416,7 +420,7 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   if (kind === 'csv') { // v4.70.57 匯出表格（張良 2026-10-11「不要只有文字」）：UTF-8 BOM，Excel／Numbers／Google 試算表直接開不亂碼
     const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"'
     const R = [['分類','品名','英文','單點價','套餐基準價','套餐加價','備註'].map(q).join(',')]
-    secs.forEach(s2 => s2.items.forEach(i2 => { const add = s2.combo ? (Number(i2.price)||0) - s2.combo : ''; R.push([s2.name, i2.name, i2.en||'', i2.price, s2.combo||'', add===''?'':(add===0?'內含':(add>0?'+'+add:add)), [s2.note, i2.note].filter(Boolean).join('；')].map(q).join(',')) }))
+    secs.forEach(s2 => s2.items.forEach(i2 => { const add = s2.combo ? (Number(i2.price)||0) - s2.combo : ''; R.push([s2.name, i2.name, i2.en||'', i2.price, s2.combo||'', add===''?'':(add===0?'內含':(add>0?'+'+add:add)), [i2.soon?'即將上線':'', s2.note, i2.note].filter(Boolean).join('；')].map(q).join(',')) }))
     if (d.draft.note) R.push('', q('套餐規則') + ',' + q(d.draft.note))
     const blob = new Blob(['\ufeff' + R.join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const a3 = document.createElement('a'); a3.href = URL.createObjectURL(blob); a3.download = 'GROUND菜單_' + todayTpe() + '.csv'; a3.click(); URL.revokeObjectURL(a3.href)
@@ -429,7 +433,7 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     L.push('')
     L.push('【' + s2.name + '】' + (s2.note ? '（' + s2.note + '）' : '') + (s2.combo ? '　套餐價 $' + s2.combo : ''))
     s2.items.forEach(i2=>{ const c = mnCombo(s2, i2)
-      L.push('・' + i2.name + (i2.en ? '｜' + i2.en : '') + '｜$' + i2.price + (i2.np ? '（新售價 $' + i2.np + '）' : '') + (c ? '｜' + c.t : '') + (i2.note ? '｜' + i2.note : ''))
+      L.push('・' + i2.name + (i2.en ? '｜' + i2.en : '') + '｜$' + i2.price + (i2.np ? '（新售價 $' + i2.np + '）' : '') + (c ? '｜' + c.t : '') + (i2.note ? '｜' + i2.note : '') + (i2.soon ? '｜即將上線' : ''))
     })
   })
   if (kind === 'txt') {
@@ -1253,6 +1257,11 @@ function menuSecCombo(si){ // v4.58.0 設這類的套餐基準價（張良）：
   const n = Math.max(0, Math.round(+String(v).replace(/[^0-9]/g,'')||0))
   s2.combo = n || ''
   menuSave((n?'設套餐價 $'+n+' ':'關套餐 ')+s2.name)
+}
+function menuItemSoon(si, id, on){ // v4.70.76 切換「即將上線」（還沒上的品項）
+  const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
+  it.soon = on ? 1 : 0
+  menuSave((it.soon?'標即將上線 ':'取消即將上線 ')+it.name)
 }
 function menuItemCombo(si, id){ // 切換這品項「給/不給套餐」
   const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
