@@ -2067,7 +2067,7 @@ export default async function handler(req, res) {
     const pmM = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {}, pending: {} }
     const meU = meM2 ? pmM.users[meM2.rid || meM2.uid] : null
     const meOut = meM2 ? { name: meM2.name, canEdit: pmM.mode !== 'approve' || !!(meU && meU.edit), admin: !!(meU && meU.admin), pendingMe: !!pmM.pending[meM2.rid || meM2.uid] } : null
-    return res.status(200).json({ ok: true, imgs: mdoc.imgs || [], imgHist: Object.fromEntries(Object.entries(mdoc.imgHist || {}).map(([k, v]) => [k, (v || []).length])), base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })), removed: Object.entries(pmM.removed || {}).map(([r, v]) => ({ rid: r, ...v })) } : null })
+    return res.status(200).json({ ok: true, imgs: mdoc.imgs || [], curVer: mdoc.curVer || null, posterImg: mdoc.posterImg || null, imgHist: Object.fromEntries(Object.entries(mdoc.imgHist || {}).map(([k, v]) => [k, (v || []).length])), base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })), removed: Object.entries(pmM.removed || {}).map(([r, v]) => ({ rid: r, ...v })) } : null })
   }
   // ✨ 菜單 AI 圖庫 v4.70.32（張良 2026-10-10 Gemini 串好後：電視圖「AI 重畫」照片＋直式菜單「插圖／Logo 變化／標語」）
   // 兩段式：Claude 先看參考圖＋老闆的話寫一段精確英文指令（brief）→ Gemini 照指令畫 n 張（實測「重畫一份完整的」才穩，「原圖外繪」會畫壞）
@@ -2077,15 +2077,18 @@ export default async function handler(req, res) {
   // POST ?menuaisign=<K>  {token, ext}            → 簽名上傳位址（後製完的成品直傳）
   // POST ?menuaisave=<K>  {token, kind, key, url, sub, brief_zh} → 登記：photo=換掉該道菜照片（留歷史）／art=加入插圖庫
   // POST ?menuassetset=<K> {token, tvcfg?, poster?, photoReset?:key, artDel?:id} → 版面設定跨裝置／回預設照片／刪插圖
+  //   版本存檔 v4.70.50（張良 2026-10-11「每次編輯完給我版本存檔，要顯示日期、版本名稱，也直接更新在 /prep 新菜單頁」）：
+  //   verSave:{kind:'tv'|'poster', name, urls:[成品圖網址], cfg:{tvcfg,photos}|{poster}} → 存進 vers（≤40）；tv 四張同時換掉 sp_finance_pm_menu.imgs（新菜單頁頂四格）＋記 curVer；poster 記 posterImg
+  //   verApply:id → 把那版的版面設定／照片／插圖位置套回來，新菜單頁四格也換回那版；verDel:id → 刪版本
   const MENU_ASSETS_KEY = 'sp_finance_pm_menu_assets'
-  const menuAssetsGet = async () => { const d = (await kvGet(MENU_ASSETS_KEY)) || {}; d.photos = d.photos || {}; d.art = d.art || []; d.tvcfg = d.tvcfg || null; d.poster = d.poster || {}; d.edits = d.edits || []; return d }
+  const menuAssetsGet = async () => { const d = (await kvGet(MENU_ASSETS_KEY)) || {}; d.photos = d.photos || {}; d.art = d.art || []; d.tvcfg = d.tvcfg || null; d.poster = d.poster || {}; d.edits = d.edits || []; d.vers = d.vers || []; return d }
   const menuAssetsLog = (d, by, what) => { d.edits = [{ by, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what }, ...(d.edits || [])].slice(0, 40) }
   if (req.query?.menuassets) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuassets) !== ok2) return res.status(403).json({ ok: false })
     const d = await menuAssetsGet()
     res.setHeader('Cache-Control', 'no-store')
-    return res.status(200).json({ ok: true, photos: d.photos, art: d.art, tvcfg: d.tvcfg, poster: d.poster, edits: d.edits.slice(0, 10) })
+    return res.status(200).json({ ok: true, photos: d.photos, art: d.art, tvcfg: d.tvcfg, poster: d.poster, vers: d.vers, edits: d.edits.slice(0, 10) })
   }
   if (req.method === 'POST' && req.query?.menuai) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2181,8 +2184,35 @@ export default async function handler(req, res) {
     if (b.poster && typeof b.poster === 'object' && JSON.stringify(b.poster).length < 40000) { d.poster = b.poster; whats.push('直式插圖位置') }
     if (b.photoReset) { const key = String(b.photoReset).replace(/[^a-z]/g, ''); if (d.photos[key]) { delete d.photos[key]; whats.push('照片回預設 ' + key) } }
     if (b.artDel) { const bef = d.art.length; d.art = d.art.filter(a => a.id !== String(b.artDel)); if (d.art.length < bef) { whats.push('刪插圖 ' + b.artDel); d.poster.stickers = (d.poster.stickers || []).filter(s => s.id !== String(b.artDel)) } }
+    // 版本存檔／套回／刪除（新菜單頁四格 imgs 與 curVer 跟著動，兩邊同一份資料）
+    const tpeNow = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+    const syncMenuDoc = async (v) => { // tv 版本 → 新菜單頁頂四格換成這版四張；poster 版本 → 記最新直式海報
+      const mdoc = (await kvGet('sp_finance_pm_menu')) || {}
+      if (v.kind === 'tv' && v.urls.length === 4) {
+        mdoc.imgs = mdoc.imgs || []; mdoc.imgHist = mdoc.imgHist || {}
+        v.urls.forEach((u, i) => { if (mdoc.imgs[i] && mdoc.imgs[i] !== u) { (mdoc.imgHist[i] = mdoc.imgHist[i] || []).push(mdoc.imgs[i]); mdoc.imgHist[i] = mdoc.imgHist[i].slice(-10) } mdoc.imgs[i] = u })
+        mdoc.curVer = { id: v.id, name: v.name, date: v.date, by: v.by }
+      } else if (v.kind === 'poster' && v.urls[0]) mdoc.posterImg = { id: v.id, url: v.urls[0], name: v.name, date: v.date, by: v.by }
+      else return
+      mdoc.edits = [{ by: who.name, ts: tpeNow().slice(5), what: (v.kind === 'tv' ? '電視菜單版本「' : '直式菜單版本「') + v.name + '」' }, ...(mdoc.edits || [])].slice(0, 30)
+      await kvPut('sp_finance_pm_menu', mdoc, '菜單版本(' + who.name + ')')
+    }
+    if (b.verSave && typeof b.verSave === 'object') {
+      const vs = b.verSave, kind = vs.kind === 'poster' ? 'poster' : 'tv'
+      const urls = (Array.isArray(vs.urls) ? vs.urls : []).map(u => String(u || '').slice(0, 300)).filter(u => /^https?:\/\//.test(u)).slice(0, 4)
+      if (!urls.length) return res.status(400).json({ ok: false, error: '沒有成品圖，存不了版本' })
+      if (JSON.stringify(vs.cfg || {}).length > 60000) return res.status(400).json({ ok: false, error: '版面設定太大' })
+      const v = { id: 'v' + Date.now().toString(36), kind, name: String(vs.name || '').trim().slice(0, 60) || ((kind === 'tv' ? '電視菜單 ' : '直式菜單 ') + tpeNow()), date: tpeNow(), by: who.name, urls, cfg: vs.cfg || {} }
+      d.vers = [v, ...d.vers].slice(0, 40); whats.push('存版本「' + v.name + '」'); await syncMenuDoc(v)
+    }
+    if (b.verApply) {
+      const v = d.vers.find(x => x.id === String(b.verApply)); if (!v) return res.status(404).json({ ok: false, error: '找不到這個版本' })
+      if (v.kind === 'tv') { if (v.cfg.tvcfg) d.tvcfg = v.cfg.tvcfg; if (v.cfg.photos) d.photos = v.cfg.photos } else if (v.cfg.poster) d.poster = v.cfg.poster
+      whats.push('回復版本「' + v.name + '」'); await syncMenuDoc(v)
+    }
+    if (b.verDel) { const bef = d.vers.length; d.vers = d.vers.filter(x => x.id !== String(b.verDel)); if (d.vers.length < bef) whats.push('刪版本 ' + b.verDel) }
     if (whats.length) { menuAssetsLog(d, who.name, whats.join('、')); await kvPut(MENU_ASSETS_KEY, d, '菜單版面(' + who.name + ')') }
-    return res.status(200).json({ ok: true, photos: d.photos, art: d.art, tvcfg: d.tvcfg, poster: d.poster })
+    return res.status(200).json({ ok: true, photos: d.photos, art: d.art, tvcfg: d.tvcfg, poster: d.poster, vers: d.vers })
   }
   // 菜單設計圖換圖（張良 2026-10-02：菜單頁頂四格圖，點看大圖、可各自換新圖）：POST ?menuimgset=<OPS_BOARD_KEY> {idx,url,token}
   if (req.method === 'POST' && req.query?.menuimgset) {
@@ -4295,7 +4325,7 @@ export default async function handler(req, res) {
     let bodyI = {}
     if (req.method === 'POST') { try { bodyI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
     const tkI = req.method === 'POST' ? bodyI.token : req.query.me
-    const [whoI, defI, pmI, rosI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster')])
+    const [whoI, defI, pmI, rosI, hrI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_crew_pm_hr_master')])
     if (!whoI) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
     const IB = await import('./_inbox.js')
     const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
@@ -4303,13 +4333,17 @@ export default async function handler(req, res) {
     const cfgI = await IB.loadCfg()
     const opI = String(req.method === 'POST' ? bodyI.op : req.query.op || 'list')
     const originI = 'https://' + (String(req.headers['x-forwarded-host'] || req.headers.host || 'ground-pm.vercel.app'))
+    // 名單依 AB／GD × 正職／PT 分組（張良 10-11）：店別與職別來自人資名冊 sp_crew_pm_hr_master（co 含 A Beach＝AB、GD；title 正職／PT），在職名單仍以 kb_roster 為準
+    const aliveI = ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+    const hrRows = ((hrI || {}).rows || [])
+    const peopleI = aliveI.map(p => { const h = hrRows.find(r => r && r.name === p.name && !r.resign && !r.leave) || hrRows.find(r => r && r.name === p.name) || {}; const co = /A ?Beach|AB/i.test(h.co || '') ? 'AB' : /GD|GROUN/i.test(h.co || '') ? 'GD' : ''; const title = /PT|兼職/i.test(h.title || p.gdRole || '') ? 'PT' : (h.title ? '正職' : ''); return { name: p.name, co, title } })
     res.setHeader('Cache-Control', 'private, no-store')
     try {
-      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a) }))
+      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a), canReply: IB.canReplyAcct(cfgI, whoI, mgrI, a.key) }))
       if (req.method !== 'POST') {
-        if (opI === 'list') return res.status(200).json({ ok: true, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) })
+        if (opI === 'list') return res.status(200).json({ ok: true, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
         if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
-        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) }) }
+        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: peopleI.map(p => p.name), peopleInfo: peopleI }) }
         return res.status(400).json({ ok: false, error: '不認識的操作' })
       }
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))

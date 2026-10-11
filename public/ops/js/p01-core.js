@@ -13,6 +13,7 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
+  try { document.documentElement.classList.toggle('paneLock', k === 'inbox' || k === 'chat') } catch(_) {} // v4.70.52 對話視窗（收件匣／聊天室）固定撐滿、頁面不捲動；離開就解鎖（張良 10-11「不要上下滑彈來彈去」）
   // v4.41.2 治本（張良「切到設定了人員名冊還是藍色」）：原本寫死清單＝新分頁(hrm/inline…)漏清不退藍；改抓全部 tab- 按鈕一律清
   document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { b.className = (b.id === 'tab-' + k) ? 'on' : '' })
   const tw0 = document.getElementById('taskWrap'); if (tw0) tw0.style.display = (k==='task') ? '' : 'none' // v4.33.7 任務iframe常駐切換（閃跳治本）
