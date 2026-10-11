@@ -1,4 +1,4 @@
-// 🍳 /prep 第 20 塊（v4.70.63，2026-10-12）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
+// 🍳 /prep 第 20 塊（v4.70.64，2026-10-12）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
 // 規格 §4：列表照片為主（工作站／半成品或餐點／版本／產量／每單位成本／完整狀態／內容完整度 材料✓步驟✗照片✗）；
 //   詳情：材料（每行完整換算鏈、半成品可展開樹）／步驟（順序、標題、說明、相關材料、照片、計時，可拖曳）／成本（走勢＋差異標記）／版本（草稿→發布，不可覆寫）；
 //   製作模式：桌面左材料右步驟、手機上步驟＋材料抽屜＋上一步/下一步/計時；倍率只影響顯示；計時切頁後恢復。
@@ -30,39 +30,42 @@
   const imgUrl = p => p ? '/api/mail-sync?rcpimg=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&path=' + encodeURIComponent(p) : ''
   const can = () => RD && RD.me && RD.me.canEdit
 
-  function filt () {
+  // v4.70.64：內容篩選條件集中一處；每顆篩選鈕直接顯示數字（張良 2026-10-12「有哪些有步驟哪些沒步驟…直接給我按鈕顯示數字」）
+  const OKF = { all: () => true, ok: r => r.ok, gap: r => !r.ok, steps: r => r.content.steps, nosteps: r => !r.content.steps, photo: r => r.content.photo, nophoto: r => !r.content.photo }
+  const OKL = [['all', '全部'], ['ok', '成本完整'], ['gap', '不完整'], ['steps', '有步驟'], ['nosteps', '還沒步驟'], ['photo', '有照片'], ['nophoto', '沒照片']]
+  function base (ignoreSt) { // 目前模式＋搜尋（＋站／品類，算站／品類鈕數字時不含）
     const src = mode === 'prep' ? (RD.recipes || []) : (RD.dishes || [])
     const qq = q.toLowerCase()
     return src.filter(r => {
-      if (mode === 'prep' && fSt !== 'all' && (r.station || '未分站') !== fSt) return false
-      if (mode === 'dish' && fCat !== 'all' && (r.category || '未分類') !== fCat) return false
-      if (fOk === 'ok' && !r.ok) return false
-      if (fOk === 'gap' && r.ok) return false
-      if (fOk === 'nosteps' && r.content.steps) return false
+      if (!ignoreSt && mode === 'prep' && fSt !== 'all' && (r.station || '未分站') !== fSt) return false
+      if (!ignoreSt && mode === 'dish' && fCat !== 'all' && (r.category || '未分類') !== fCat) return false
       if (qq && !([r.name, r.code, r.station, r.category, ...(r.items || []).map(i => i.name)].join(' ').toLowerCase().includes(qq))) return false
       return true
     })
   }
+  function filt () { return base().filter(OKF[fOk] || OKF.all) }
+  const numTag = n => `<span style="margin-left:5px;font-size:11.5px;opacity:.8;font-variant-numeric:tabular-nums">${n}</span>`
   function render () {
     if (!RD.ok) return '<section><div class="err">' + esc(RD.error || '讀不到食譜') + '</div>' + (/綁定|登入|身分/.test(RD.error || '') ? '<div class="hint" style="margin-top:10px">食譜成本是內部資料，要先登入。私訊 DD「登入碼」拿 4 位數 → 右上「登入」。</div>' : '') + '</section>'
     const ps = RD.recipes || [], ds = RD.dishes || []
     let h = `<h1 style="display:flex;align-items:center;gap:8px">${IC.pot} 食譜庫</h1><div class="sub">備料食譜（半成品）＝阿桑系統即時配方 ${ps.length} 份；出餐食譜（在賣菜）${ds.length} 道。材料／用量／產量已有，<b>步驟、照片、影片要補</b>。成本由系統算，每行附換算鏈。</div>`
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:14px 0">`
       + kpi('備料食譜', ps.length, `成本完整 ${ps.filter(r => r.ok).length}`, COL.b, "_rcpMode('prep')") + kpi('出餐食譜', ds.length, `成本完整 ${ds.filter(r => r.ok).length}`, COL.p, "_rcpMode('dish')")
-      + kpi('有步驟', ps.filter(r => r.content.steps).length + ds.filter(r => r.content.steps).length, '內容補齊進度', COL.g, "_rcpOk('nosteps')") + kpi('有照片', ps.filter(r => r.content.photo).length + ds.filter(r => r.content.photo).length, '', COL.y, '') + `</div>`
+      + kpi('有步驟', ps.filter(r => r.content.steps).length + ds.filter(r => r.content.steps).length, `還沒步驟 ${ps.filter(r => !r.content.steps).length + ds.filter(r => !r.content.steps).length}・點看`, COL.g, "_rcpOk('steps')") + kpi('有照片', ps.filter(r => r.content.photo).length + ds.filter(r => r.content.photo).length, `沒照片 ${ps.filter(r => !r.content.photo).length + ds.filter(r => !r.content.photo).length}・點看`, COL.y, "_rcpOk('photo')") + `</div>`
     h += `<section style="padding:12px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">`
       + `<button class="mini ${mode === 'prep' ? 'on' : ''}" onclick="_rcpMode('prep')">備料（半成品）</button><button class="mini ${mode === 'dish' ? 'on' : ''}" onclick="_rcpMode('dish')">出餐（在賣菜）</button>`
       + `<input value="${esc(q)}" oninput="_rcpQ(this.value)" placeholder="搜尋食譜／材料…" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:10px;padding:8px 12px">`
       + (can() ? `<button class="mini" onclick="_rcpNew()">${IC.plus} 新增食譜</button>` : '') + `<button class="mini" onclick="rcpRefresh()">${IC.undo}</button></div>`
-    if (mode === 'prep') { const sts = ['未分站', ...(RD.stations || [])]; h += `<div class="hint" style="font-size:12px">工作站（Pizza／內場／吧台…可在食譜裡設）</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="mini ${fSt === 'all' ? 'on' : ''}" onclick="_rcpSt('all')">全部</button>` + sts.map(s => `<button class="mini ${fSt === s ? 'on' : ''}" onclick="_rcpSt('${esc(s)}')">${esc(s)}</button>`).join('') + `</div>` } else { h += `<div class="hint" style="font-size:12px">菜單品類</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="mini ${fCat === 'all' ? 'on' : ''}" onclick="_rcpCat('all')">全部</button>` + (RD.cats || []).map(s => `<button class="mini ${fCat === s ? 'on' : ''}" onclick="_rcpCat('${esc(s)}')">${esc(s)}</button>`).join('') + `</div>` }
-    h += `<div style="display:flex;gap:6px;flex-wrap:wrap">` + [['all', '全部'], ['ok', '成本完整'], ['gap', '不完整'], ['nosteps', '還沒步驟']].map(([v, l]) => `<button class="mini ${fOk === v ? 'on' : ''}" onclick="_rcpOk('${v}')">${l}</button>`).join('') + `</div></section>`
+    const B0 = base(true), B1 = base() // B0 算站／品類鈕數字（不含站條件）；B1 算內容鈕數字（含目前站／品類）
+    if (mode === 'prep') { const sts = ['未分站', ...(RD.stations || [])]; h += `<div class="hint" style="font-size:12px">工作站（Pizza／內場／吧台…可在食譜裡設）</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="mini ${fSt === 'all' ? 'on' : ''}" onclick="_rcpSt('all')">全部${numTag(B0.length)}</button>` + sts.map(s => `<button class="mini ${fSt === s ? 'on' : ''}" onclick="_rcpSt('${esc(s)}')">${esc(s)}${numTag(B0.filter(r => (r.station || '未分站') === s).length)}</button>`).join('') + `</div>` } else { h += `<div class="hint" style="font-size:12px">菜單品類</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="mini ${fCat === 'all' ? 'on' : ''}" onclick="_rcpCat('all')">全部${numTag(B0.length)}</button>` + (RD.cats || []).map(s => `<button class="mini ${fCat === s ? 'on' : ''}" onclick="_rcpCat('${esc(s)}')">${esc(s)}${numTag(B0.filter(r => (r.category || '未分類') === s).length)}</button>`).join('') + `</div>` }
+    h += `<div class="hint" style="font-size:12px">內容狀態（數字＝目前這一區有幾份）</div><div style="display:flex;gap:6px;flex-wrap:wrap">` + OKL.map(([v, l]) => `<button class="mini ${fOk === v ? 'on' : ''}" data-rcpcnt="${v}" onclick="_rcpOk('${v}')">${l}${numTag(B1.filter(OKF[v]).length)}</button>`).join('') + `</div></section>`
     h += `<div class="hint" style="margin:6px 2px">${mode === 'dish' ? '出餐食譜行來自 10-06 快照（阿桑尚未給菜單食譜行端點），售價＝/costs/menu 即時' : '資料：阿桑 /recipes 即時（' + esc(String(RD.masterUpdatedAt || '').slice(5, 16).replace('T', ' ')) + '）'}</div>`
     h += '<div id="rcpGrid">' + grid() + '</div>'
     return h
   }
   function kpi (l, v, sub, c, onclick) { return `<div class="kpi" ${onclick ? `onclick="${onclick}" style="cursor:pointer;text-align:left"` : 'style="text-align:left"'}><div class="v" style="color:${c};font-size:25px">${v}</div><div class="l" style="font-size:14px">${l}</div><div class="sub2">${sub}</div></div>` }
   window._rcpMode = function (m) { mode = m; app.innerHTML = render() }
-  window._rcpQ = function (v) { q = v; const el = document.getElementById('rcpGrid'); if (el) el.innerHTML = grid() }
+  window._rcpQ = function (v) { q = v; const el = document.getElementById('rcpGrid'); if (el) el.innerHTML = grid(); document.querySelectorAll('[data-rcpcnt]').forEach(b => { const fn = OKF[b.dataset.rcpcnt]; if (fn) { const t = b.querySelector('span'); if (t) t.textContent = base().filter(fn).length } }) }
   window._rcpSt = function (v) { fSt = v; app.innerHTML = render() }
   window._rcpCat = function (v) { fCat = v; app.innerHTML = render() }
   window._rcpOk = function (v) { fOk = v; app.innerHTML = render() }
