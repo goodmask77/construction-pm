@@ -20,13 +20,15 @@
   async function post (body) { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) }); return r.json().catch(() => ({ ok: false, error: '連線問題' })) }
   const paint = () => { const el = document.getElementById('cdBody'); if (el) el.innerHTML = render() }
 
-  window.vegView = function () { if (!D) { load().then(paint); return '<section><div class="hint" style="padding:22px">載入菜商報價…</div></section>' } return render() }
+  window.vegView = function () { if (!D) { load().then(() => { paint(); if (D.ok && D.me && D.me.canDecide && mktStale() && !autoMkt) { autoMkt = true; _vgMarket() } }); return '<section><div class="hint" style="padding:22px">載入菜商報價…</div></section>' } return render() }
   window._vgView = v => { view = v; paint() }
   window._vgF = (k, v) => { f[k] = (k === 'both') ? !f.both : v; paint() }
   window._vgQ = v => { f.q = v; const el = document.getElementById('vgTbl'); if (el) el.innerHTML = table() }
   window._vgOpen = k => { if (open.has(k)) open.delete(k); else open.add(k); paint() }
   window._vgReload = async () => { msg = ''; await load(true); paint() }
-  window._vgMarket = async () => { busy = true; msg = '重抓農業部行情中（約 20 秒）…'; paint(); const j = await post({ op: 'refreshMarket' }); busy = false; msg = j.ok ? `行情已更新：${j.nCrops} 種作物${(j.errs || []).length ? '，' + j.errs.length + ' 種抓失敗' : ''}` : (j.error || '沒成功'); await load(true); paint() }
+  let autoMkt = false
+  window._vgMarket = async () => { busy = true; msg = '抓農業部行情中（分批、約 1～3 分鐘，抓到哪存到哪）…'; paint(); const j = await post({ op: 'refreshMarket' }); busy = false; msg = j.ok ? `行情已更新：${j.nCrops} 種作物${j.nSkip ? '，還有 ' + j.nSkip + ' 種下次接著抓' : ''}${(j.errs || []).length ? '，' + j.errs.length + ' 種抓失敗' : ''}` : (j.error || '沒成功'); await load(true); paint() }
+  const mktStale = () => !D.market.fetchedAt || (Date.now() - Date.parse(D.market.fetchedAt)) > 24 * 3600e3 || (D.market.nCrops < (D.market.nMapped || 0))
   window._vgConfirm = async () => { const n = (D.anomSummary || {}).hit || 0; if (!n) return; if (!confirm(`把 ${n} 筆「跟報價單對上」的價格異常一次確認正確？（偵錯中心逐筆留紀錄，可復原）`)) return; busy = true; msg = '確認中…'; paint(); const j = await post({ op: 'confirm' }); busy = false; msg = j.ok ? `已確認 ${j.done.length} 筆${j.skipped.length ? '，略過 ' + j.skipped.length + ' 筆' : ''}` : (j.error || '沒成功'); await load(true); paint() }
 
   function render () {

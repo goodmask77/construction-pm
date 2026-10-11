@@ -49,9 +49,9 @@ export async function importQuotes ({ kvGet, kvPut, body, who }) {
 
 // ── 市場行情：農業部 AgriProductsTransType，台北一市，近 13 個月日均 → 月均（元/公斤）──
 const roc = d => `${d.getUTCFullYear() - 1911}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${String(d.getUTCDate()).padStart(2, '0')}`
-async function fetchCrop (crop, startRoc, endRoc) {
+async function fetchCrop (crop, startRoc, endRoc, timeoutMs = 45000) {
   const u = 'https://data.moa.gov.tw/api/v1/AgriProductsTransType/?' + new URLSearchParams({ Start_time: startRoc, End_time: endRoc, CropName: crop, MarketName: '台北一' })
-  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000)
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs)
   try {
     const r = await fetch(u, { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status)
     const d = await r.json(); const by = {}
@@ -60,16 +60,27 @@ async function fetchCrop (crop, startRoc, endRoc) {
     return out
   } finally { clearTimeout(tm) }
 }
-export async function marketSeries ({ kvGet, kvPut, force }) {
-  const cache = (await kvGet(VM_KEY)) || { crops: {}, fetchedAt: '' }
+// 讀快取（頁面載入用，不打農業部）；refresh 才真的抓：農業部 API 一次併發太多會被擋（實測 47 種全 abort），改 4 個一批、每種最多 45 秒、總預算 200 秒，抓到哪存到哪（下次接著補）
+export async function marketCache ({ kvGet }) { return (await kvGet(VM_KEY)) || { crops: {}, fetchedAt: '' } }
+export async function marketSeries ({ kvGet, kvPut, force, budgetMs = 200000 }) {
+  const cache = await marketCache({ kvGet })
   const fresh = cache.fetchedAt && (Date.now() - Date.parse(cache.fetchedAt)) < 20 * 3600e3
   if (fresh && !force) return cache
-  const crops = [...new Set(Object.values(MARKET_MAP).filter(Boolean))]
+  const t0 = Date.now()
+  const stale = c => !cache.crops[c] || !cache.crops[c]._at || (Date.now() - Date.parse(cache.crops[c]._at)) > 20 * 3600e3
+  const crops = [...new Set(Object.values(MARKET_MAP).filter(Boolean))].sort((a, b) => (stale(a) ? 0 : 1) - (stale(b) ? 0 : 1))
   const end = new Date(Date.now() + 8 * 3600e3); const start = new Date(Date.UTC(end.getUTCFullYear() - 1, end.getUTCMonth() - 1, 1))
-  const sR = roc(start), eR = roc(end); const errs = []
-  const results = await Promise.all(crops.map(async c => { try { return [c, await fetchCrop(c, sR, eR)] } catch (e) { errs.push(c + ':' + String(e.message || e).slice(0, 60)); return [c, null] } }))
-  const next = { crops: { ...cache.crops }, fetchedAt: new Date().toISOString(), market: '台北一', errs }
-  for (const [c, s] of results) if (s) next.crops[c] = s
+  const sR = roc(start), eR = roc(end); const errs = []; let nDone = 0, nSkip = 0
+  const next = { crops: { ...cache.crops }, fetchedAt: cache.fetchedAt || '', market: '台北一', errs }
+  for (let i = 0; i < crops.length; i += 4) {
+    if (Date.now() - t0 > budgetMs) { nSkip += crops.length - i; break }
+    const batch = crops.slice(i, i + 4).filter(c => force === 'all' || stale(c))
+    if (!batch.length) continue
+    const rs = await Promise.all(batch.map(async c => { try { return [c, await fetchCrop(c, sR, eR, 45000)] } catch (e) { errs.push(c + ':' + String(e.message || e).slice(0, 40)); return [c, null] } }))
+    for (const [c, s] of rs) if (s) { next.crops[c] = { ...s, _at: new Date().toISOString() }; nDone++ }
+  }
+  if (nDone) next.fetchedAt = new Date().toISOString()
+  next.nDone = nDone; next.nSkip = nSkip; next.ms = Date.now() - t0
   try { await kvPut(VM_KEY, next, '市場行情快取') } catch (_) {}
   return next
 }
@@ -99,7 +110,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) 
   const idx = {}; for (const v of VENDORS) { idx[v] = {}; for (const [n, it] of Object.entries(V[v])) idx[v][nk(n)] = { name: n, ...it } }
   const quoteOf = (v, name, ym) => { const d = (idx[v] || {})[nk(name)]; return d ? (d.m[ym] == null ? null : d.m[ym]) : null }
   const allYm = [...new Set(VENDORS.flatMap(v => Object.values(V[v]).flatMap(it => Object.keys(it.m))))].sort()
-  const market = withMarket ? await marketSeries({ kvGet, kvPut }) : { crops: {} }
+  const market = withMarket ? await marketCache({ kvGet }) : { crops: {} } // 只讀快取；抓行情走 refreshMarket（分批、慢）
   // 品項合併（兩家名稱正規化後相同＝同一品項）
   const keys = [...new Set(VENDORS.flatMap(v => Object.keys(idx[v])))]
   const items = keys.map(k => {
@@ -107,7 +118,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) 
     const row = { key: k, name: ref.name, cat: (a && a.cat) || (b && b.cat) || '', spec: ref.spec, unit: ref.unit || '公斤', s: {}, both: !!(a && b) }
     for (const v of VENDORS) { const d = idx[v][k]; row.s[v] = d ? d.m : null }
     const crop = MARKET_MAP[ref.name] || (a && MARKET_MAP[a.name]) || (b && MARKET_MAP[b.name]) || null
-    row.crop = crop; row.mkt = crop && market.crops[crop] ? Object.fromEntries(Object.entries(market.crops[crop]).map(([ym, x]) => [ym, x.avg])) : null
+    row.crop = crop; row.mkt = crop && market.crops[crop] ? Object.fromEntries(Object.entries(market.crops[crop]).filter(([ym, x]) => /^\d{4}-\d{2}$/.test(ym) && x && x.avg != null).map(([ym, x]) => [ym, x.avg])) : null
     // 最新一個月兩家都有的比較
     const common = allYm.filter(ym => a && b && a.m[ym] != null && b.m[ym] != null)
     row.nCommon = common.length
@@ -153,7 +164,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) 
   const anomalies = (todo.items || []).filter(i => i.tab === 'price' && VENDORS.includes(baseVendor(i.supplier))).map(i => { const m = matchVerdict(i, quoteOf, c => curBy[c]); return { id: i.id, supplier: i.supplier, code: i.code, name: i.name, signal: i.signal, date: i.date, title: i.title, decided: !!i.decision, verdict: m.verdict, detail: m.detail, impact: i.impact ? { nMenus: i.impact.nMenus, perServing: i.impact.perServing } : null } })
   const anomSummary = { hit: anomalies.filter(a => a.verdict === 'hit' && !a.decided).length, miss: anomalies.filter(a => a.verdict === 'miss' && !a.decided).length, noquote: anomalies.filter(a => a.verdict === 'noquote' && !a.decided).length, decided: anomalies.filter(a => a.decided).length, total: anomalies.length, allPrice: (todo.items || []).filter(i => i.tab === 'price').length }
 
-  return { ok: true, months: allYm, vendors: VENDORS, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '' }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
+  return { ok: true, months: allYm, vendors: VENDORS, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '' }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
 }
 
 // ── 一鍵確認「對上」的異常（走偵錯中心同一條決定流程，逐筆留紀錄，可 undo）──
