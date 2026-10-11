@@ -18,6 +18,7 @@ const IB_CSS = `<style id="ibCss">
 .ibSeg{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:3px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .ibSeg::-webkit-scrollbar{display:none}
 .ibSeg button{flex:0 0 auto;border:0;background:transparent;color:#C3CEDC;font-size:13px;font-weight:700;padding:6px 11px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit}
+@media(max-width:430px){.ibSeg button{font-size:12.5px;padding:6px 8px;gap:5px}.ibSeg .nc{display:none}}
 .ibSeg button.on{background:var(--grad);color:#fff;box-shadow:0 2px 8px rgba(18,102,200,.3)}
 .ibSeg button.on[data-c]{background:var(--c);box-shadow:none}
 .ibSeg button .dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
@@ -87,7 +88,7 @@ function ibRenderList() {
   const byAcct = (d.convs || []).filter(c => !_ibAcct || c.acct === _ibAcct)
   const nTodo = byAcct.filter(c => c.status !== 'done' || c.unread).length, nDone = byAcct.filter(c => c.status === 'done' && !c.unread).length
   const convs = byAcct.filter(c => _ibFilter === 'all' ? true : _ibFilter === 'done' ? (c.status === 'done' && !c.unread) : (c.status !== 'done' || c.unread))
-  const acctSeg = `<div class="ibSeg"><button class="${!_ibAcct ? 'on' : ''}" onclick="_ibAcct='';ibRenderList()">全部</button>${(d.accounts || []).map(a => `<button class="${_ibAcct === a.key ? 'on' : ''}" data-c="1" style="--c:${a.color};${a.configured ? '' : 'opacity:.55'}" onclick="_ibAcct='${a.key}';ibRenderList()"><i class="dot"></i>${ibEsc(a.name)}${a.configured ? '' : ' <span style="font-size:10px;font-weight:400">未接</span>'}</button>`).join('')}</div>`
+  const acctSeg = `<div class="ibSeg"><button class="${!_ibAcct ? 'on' : ''}" onclick="_ibAcct='';ibRenderList()">全部</button>${(d.accounts || []).map(a => `<button class="${_ibAcct === a.key ? 'on' : ''}" data-c="1" style="--c:${a.color};${a.configured ? '' : 'opacity:.55'}" onclick="_ibAcct='${a.key}';ibRenderList()"><i class="dot"></i>${ibEsc(a.name)}${a.configured ? '' : ' <span class="nc" style="font-size:10px;font-weight:400">未接</span>'}</button>`).join('')}</div>`
   const stSeg = `<div class="ibSeg"><button class="${_ibFilter === 'todo' ? 'on' : ''}" onclick="_ibFilter='todo';ibRenderList()">待處理${nTodo ? ` <span class="n">${nTodo}</span>` : ''}</button><button class="${_ibFilter === 'done' ? 'on' : ''}" onclick="_ibFilter='done';ibRenderList()">已完成${nDone ? ` <span class="n" style="background:rgba(255,255,255,.12);color:#C3CEDC">${nDone}</span>` : ''}</button><button class="${_ibFilter === 'all' ? 'on' : ''}" onclick="_ibFilter='all';ibRenderList()">全部</button></div>`
   const row = c => { const a = ibAcct(c.acct); return `<div class="ibRow${_ibCur === c.id ? ' cur' : ''}${c.status === 'done' && !c.unread ? ' done' : ''}" onclick="ibOpen('${ibEsc(c.id)}')">
       <div class="av" style="${c.pic ? `background-image:url('${ibEsc(c.pic)}')` : ''}">${c.pic ? '' : ibEsc((c.name || '?').slice(0, 1))}</div>
