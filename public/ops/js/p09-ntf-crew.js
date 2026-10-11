@@ -83,6 +83,7 @@ function custDayOpen(i){
       ${x.wl?cKpi(cNum(x.wl)+' 組', '候補', '滿了才會排進來', '#8C98A8'):''}
     </div>
     ${notes.length?`<div style="border:1px solid #E8A657;border-radius:9px;padding:6px 10px;margin-bottom:8px;font-size:12px"><b style="color:#E8A657">當日備註</b>：${notes.map(n=>(n.note||n)).join('；')}</div>`:''}
+    ${x.wx||(x.sh&&x.sh.n)?`<div class="hint" style="font-size:11.5px;margin-bottom:8px;line-height:1.6">${x.wx?`天氣：${x.wx.n} ${x.wx.lo}～${x.wx.hi}°・降雨 ${x.wx.pop}%`:''}${x.sh&&x.sh.n?`${x.wx?'<br>':''}排班：${x.sh.n} 人 ${x.sh.h} 小時（外場 ${x.sh.fo}・內場 ${x.sh.ki}；近 8 週同週幾平均 ${x.sh.avgH} 小時）<br><span style="font-size:10.5px">${(x.sh.names||[]).join('、')}</span>`:''}</div>`:''}
     ${rows?`<div class="scroll" style="max-height:48vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['時間','姓名','人數','狀態','備註'].map(c=>`<th style="position:sticky;top:0;background:var(--soft);padding:3px 7px;font-size:11px;text-align:left">${c}</th>`).join('')}</tr>${rows}</table></div>`:'<div class="mut" style="font-size:12px">這天還沒有訂位</div>'}
     <div class="hint" style="font-size:10px;margin-top:6px">依 inline 每小時同步；不含已取消。人數是客人訂的時候寫的。</div></div>`
   document.body.appendChild(ov)
@@ -106,6 +107,7 @@ async function custHome(){
         <div style="font-size:22px;font-weight:900;line-height:1.15;margin-top:2px;color:${lv.k==='hot'?'#F07373':lv.k==='cold'?'#8C98A8':'var(--text)'}">${cNum(x.g)}<span style="font-size:10px;font-weight:700;color:var(--muted)"> 人</span></div>
         <div class="hint" style="font-size:10px;white-space:nowrap">去年 ${base?cNum(base):'—'}${lv.r!=null?` <b style="color:${lv.k==='hot'?'#F07373':lv.k==='cold'?'#8C98A8':'#5FD3A6'}">${Math.round(lv.r*100)}%</b>`:''}</div>
         <div class="hint" style="font-size:10px;white-space:nowrap">午 ${x.l}・晚 ${x.dn}</div>
+        <div class="hint" style="font-size:10px;white-space:nowrap;overflow:hidden">${x.wx?`<span style="${x.wx.pop>=60?'color:#6EB1FF;font-weight:800':''}">${x.wx.n}${x.wx.pop>=30?' '+x.wx.pop+'%':''}</span> ${x.wx.hi}°`:'—'}${x.sh&&x.sh.n?`・班 ${x.sh.n}`:''}</div>
         <div style="font-size:10px;font-weight:800;min-height:13px;white-space:nowrap;overflow:hidden">${x.uc?`<span style="color:#E8A657">待確認 ${x.uc}</span> `:''}${x.big?`<span style="color:#C792EA">大組 ${x.big}</span> `:''}${x.wl?`<span style="color:#8C98A8">候補 ${x.wl}</span> `:''}${notes?`<span style="color:#E8A657">註</span>`:''}</div></div>` }
     h += cCard('未來 14 天訂位', `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:6px">${ol.days.map(cell).join('')}</div><div class="hint" style="font-size:10.5px;margin-top:6px"><b style="color:#F07373">紅</b>＝已訂達去年同一週同一天到店人次的 80%（要加人、備料加量）　<b style="color:#8C98A8">灰</b>＝不到一半（補客）　點格子看逐筆訂位。去年基準＝inline 到店人次（含現場客）；有 POS 來客就用 POS。`, `已訂人次 vs 去年同一週同一天・inline ${String(ol.builtAt||'').slice(11,16)} 算`)
     // 行動建議
@@ -114,6 +116,11 @@ async function custHome(){
       if (x.uc) acts.push({ d: x.d, p: 1, t: `${lb}有 <b>${x.uc} 組 ${x.ucG} 人</b>待確認，請電話確認`, c: '#E8A657' })
       if (x.big) acts.push({ d: x.d, p: 2, t: `${lb}有 <b>${x.big} 組 20 人以上大組</b>：留桌、備料、排人`, c: '#C792EA' })
       if (lv.k === 'hot') acts.push({ d: x.d, p: 3, t: `${lb}已訂 <b>${x.g} 人</b>，已達去年同日 ${cNum(x.ly.pos||x.ly.g)} 人的 ${Math.round(lv.r*100)}%：排班加人、備料加量${x.wl?'、候補已有 '+x.wl+' 組':''}`, c: '#F07373' })
+      if (x.sh && x.sh.h && x.sh.avgH) { // 人力 vs 近 8 週同週幾平均排班時數
+        if (lv.k === 'hot' && x.sh.h < x.sh.avgH * 0.9) acts.push({ d: x.d, p: 3.5, t: `${lb}排班 ${x.sh.n} 人 ${x.sh.h} 小時，比近 8 週同週幾平均 ${x.sh.avgH} 小時少，但訂位已是去年的 ${Math.round(lv.r*100)}%：<b>人力可能不足</b>`, c: '#F07373' })
+        if (lv.k === 'cold' && x.sh.avgG && x.g < x.sh.avgG * 0.5 && x.sh.h > x.sh.avgH * 1.1) acts.push({ d: x.d, p: 3.5, t: `${lb}排班 ${x.sh.h} 小時比平均 ${x.sh.avgH} 多，訂位只有 ${x.g} 人（近 8 週同週幾平均到店 ${x.sh.avgG}）：<b>人力可能過多</b>，考慮調班`, c: '#8C98A8' })
+      }
+      if (x.wx && x.wx.pop >= 60 && [5,6,0].includes(new Date(x.d+'T00:00:00').getDay())) acts.push({ d: x.d, p: 5, t: `${lb}降雨機率 ${x.wx.pop}%（${x.wx.n}）：週末現場客會少，備料保守、提醒訂位客`, c: '#6EB1FF' })
       if (lv.k === 'cold' && [5,6,0].includes(new Date(x.d+'T00:00:00').getDay()) && x.d > td) acts.push({ d: x.d, p: 4, t: `${lb}週末只訂 <b>${x.g} 人</b>（去年同日 ${cNum(x.ly.pos||x.ly.g)}）：社群發文、推熟客補客`, c: '#8C98A8' })
     }
   } else h += cCard('未來 14 天訂位', '<div class="err">近期資料讀不到，稍後再進來</div>')
@@ -135,9 +142,18 @@ async function custHome(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="mini" style="padding:4px 12px;font-weight:800" onclick="custDb('lost')">流失常客名單（可匯出）</button>${inWin>=0?`<button class="mini" style="padding:4px 12px;font-weight:800" onclick="custDayOpen(${inWin})">看 ${cMd(x.from)} 訂位</button>`:''}</div></div>` }
     h += `<div style="height:10px"></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">${ol.hols.map(hc).join('')}</div>`
   }
-  // ③ 要你做的事
+  // ③ 近 7 天回顧（第二批）：到店人次 vs 近 8 週同週幾平均，±30% 點名
+  if (ol && ol.week && ol.week.length) {
+    const tot = ol.week.reduce((t,x)=>t+x.g,0), totB = ol.week.reduce((t,x)=>t+x.base,0), totPos = ol.week.reduce((t,x)=>t+x.pos,0), totRev = ol.week.reduce((t,x)=>t+x.rev,0)
+    const rC = r => r==null ? 'var(--muted)' : r < 70 ? '#F07373' : r > 130 ? '#5FD3A6' : 'var(--text)'
+    const rows = ol.week.map(x=>`<tr>${[`<b>${cMd(x.d)}</b> ${cWd(x.d)}`, `<b>${cNum(x.g)}</b> <span class="hint" style="font-size:10px">午${x.l}/晚${x.dn}</span>`, cNum(x.base), x.ratio==null?'—':`<b style="color:${rC(x.ratio)}">${x.ratio}%</b>`, x.pos?cNum(x.pos):'—', x.rev?cNum(Math.round(x.rev/1000))+'k':'—', x.sh?x.sh+'h':'—'].map(c=>`<td style="border-top:1px solid var(--line);padding:3px 7px;white-space:nowrap">${c}</td>`).join('')}</tr>`).join('')
+    for (const x of ol.week) { if (x.ratio != null && x.ratio < 70) acts.push({ d: x.d, p: 6, t: `上週 ${cMd(x.d)}（${cWd(x.d)}）只來 <b>${x.g} 人</b>，近 8 週同週幾平均 ${x.base}（${x.ratio}%）：查那天發生什麼（天氣／活動／評論）`, c: '#E8A657' }) }
+    const wr = totB ? Math.round(tot/totB*100) : null
+    h += `<div style="height:10px"></div>` + cCard('近 7 天回顧', `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px"><span><span style="font-size:22px;font-weight:900;color:${rC(wr)}">${cNum(tot)}</span> <span style="font-size:12px;font-weight:800">人到店</span></span><span class="hint" style="font-size:11px">近 8 週同期平均 ${cNum(Math.round(totB))}${wr!=null?`（<b style="color:${rC(wr)}">${wr}%</b>）`:''}</span>${totPos?`<span class="hint" style="font-size:11px">POS 來客 ${cNum(totPos)}・營收 ${cNum(Math.round(totRev/10000))} 萬</span>`:''}</div><div class="scroll" style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['日期','到店人次','近8週同週幾','比例','POS來客','營收','排班'].map(c=>`<th style="background:var(--soft);padding:3px 7px;font-size:11px;text-align:left;white-space:nowrap">${c}</th>`).join('')}</tr>${rows}</table></div><div class="hint" style="font-size:10.5px;margin-top:5px"><b style="color:#F07373">紅</b>＝低於同週幾平均七成　<b style="color:#5FD3A6">綠</b>＝高於 130%。到店人次＝inline 不含取消（含現場客）；POS 是日結真值。</div>`, '每天到店人次 vs 近 8 週同週幾平均')
+  }
+  // ④ 要你做的事
   acts.sort((a,b)=>a.d.localeCompare(b.d)||a.p-b.p)
-  h += `<div style="height:10px"></div>` + cCard('要你做的事', acts.length ? `<ol style="margin:0;padding-left:20px;font-size:12.5px;line-height:1.7">${acts.slice(0,8).map(a=>`<li style="border-left:3px solid ${a.c};padding-left:8px;margin:3px 0">${a.t}</li>`).join('')}</ol>` : '<div class="mut" style="font-size:12px">未來 14 天沒有要特別處理的：沒有待確認、沒有爆量也沒有明顯空檔。</div>', `從上面兩區自動整理・連假落後會在前 14／7／3 天 LINE 私訊提醒`)
+  h += `<div style="height:10px"></div>` + cCard('要你做的事', acts.length ? `<ol style="margin:0;padding-left:20px;font-size:12.5px;line-height:1.7">${acts.slice(0,10).map(a=>`<li style="border-left:3px solid ${a.c};padding-left:8px;margin:3px 0">${a.t}</li>`).join('')}</ol>` : '<div class="mut" style="font-size:12px">未來 14 天沒有要特別處理的：沒有待確認、沒有爆量也沒有明顯空檔。</div>', `從上面兩區自動整理・連假落後會在前 14／7／3 天 LINE 私訊提醒`)
   // ④ 長期趨勢（原九大面向整組收下來；預設收合）
   const allM = Object.keys(ins.m).sort().filter(ym=>ym<=nowYM)
   const yrs = [...new Set(allM.map(ym=>ym.slice(0,4)))]

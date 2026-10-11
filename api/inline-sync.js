@@ -277,6 +277,37 @@ const dayStat = (arr) => { // 一天的訂位 → 統計（候補 ty=4 不算人
 }
 // 某日在「截止時間點」之前已建立的有效訂位人次（去年同期這時候已訂多少＝公平比較的基準）
 const bookedBy = (arr, cutoff) => (arr || []).reduce((t, r) => t + (!isCx(r) && r.ty !== 4 && (r.created || '').slice(0, 10) <= cutoff ? (r.n || 0) : 0), 0)
+// 天氣（v4.70.64 第二批）：Open-Meteo 免金鑰，A Beach＝台北信義區；KV 快取 3 小時
+const WX_LAT = 25.0336, WX_LON = 121.5645
+const wxName = (c) => c === 0 ? '晴' : c <= 2 ? '多雲' : c === 3 ? '陰' : c <= 48 ? '霧' : c <= 57 ? '毛毛雨' : c <= 67 ? '雨' : c <= 77 ? '雪' : c <= 82 ? '陣雨' : '雷雨'
+async function weather14() {
+  const cached = await kvGet('sp_finance_pm_wx').catch(() => null)
+  if (cached && cached.ts && Date.now() - new Date(cached.ts).getTime() < 3 * 3600e3) return cached.days || {}
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTaipei&forecast_days=14`)
+    if (!r.ok) throw new Error('wx ' + r.status)
+    const j = await r.json(); const dd = j.daily || {}; const days = {}
+    ;(dd.time || []).forEach((d, i) => { days[d] = { c: dd.weather_code[i], n: wxName(dd.weather_code[i]), hi: Math.round(dd.temperature_2m_max[i]), lo: Math.round(dd.temperature_2m_min[i]), pop: dd.precipitation_probability_max[i] } })
+    await kvPut('sp_finance_pm_wx', { ts: new Date().toISOString(), days }, '天氣快取')
+    return days
+  } catch (_) { return (cached || {}).days || {} }
+}
+// 班表（NUEiP 同步月檔 sp_crew_pm_hr_sched_）：某日排班人數／總時數／名單（休例假沒 start 不算）
+const hhm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? +m[1] * 60 + +m[2] : null }
+function shiftStat(list) {
+  const o = { n: 0, h: 0, fo: 0, ki: 0, names: [] }
+  for (const x of list || []) {
+    const a = hhm(x.start), b = hhm(x.end); if (a == null || b == null) continue
+    let mins = b - a; if (mins <= 0) mins += 1440
+    const brk = Number(x.brk) || 0; mins -= brk >= 30 ? brk : brk * 60 // brk 可能是分鐘或小時
+    if (mins <= 0) continue
+    o.n++; o.h += mins / 60
+    if (/內/.test(x.dept || '')) o.ki++; else o.fo++
+    o.names.push(`${x.name}${x.pt ? '(PT)' : ''} ${x.start}-${x.end}`)
+  }
+  o.h = +o.h.toFixed(1)
+  return o
+}
 async function custOutlook() {
   const today = twToday(), y0 = +today.slice(0, 4)
   const H14 = dateRange(today, addDays(today, 13))
@@ -287,6 +318,8 @@ async function custOutlook() {
   const need = new Set()
   const want = (d) => need.add(d.slice(0, 7))
   for (const d of H14) { want(d); want(addDays(d, -364)) }
+  const PAST = dateRange(addDays(today, -63), addDays(today, -1)) // 近 7 天回顧＋近 8 週同週幾基準＋排班基準
+  for (const d of PAST) want(d)
   const lyBlocks = holBlocks(holLY, `${y0 - 1}-01-01`, `${y0}-12-31`)
   for (const b of blocks) {
     for (const d of b.days) want(d)
@@ -296,17 +329,24 @@ async function custOutlook() {
     b.ly = ly
     for (const d of ly.days) want(d)
   }
-  const docs = {}
-  await Promise.all([...need].map(async (m) => { docs[m] = (await kvGet('sp_finance_pm_inline_' + m)) || { days: {} } }))
+  const docs = {}, sched = {}
+  const schMos = new Set([...PAST, ...H14].map((d) => d.slice(0, 7)))
+  const [wx] = await Promise.all([weather14(), ...[...need].map(async (m) => { docs[m] = (await kvGet('sp_finance_pm_inline_' + m)) || { days: {} } }), ...[...schMos].map(async (m) => { sched[m] = (await kvGet('sp_crew_pm_hr_sched_' + m)) || { days: {} } })])
+  const schArr = (d) => (sched[d.slice(0, 7)] || { days: {} }).days[d] || []
   const dayArr = (d) => (docs[d.slice(0, 7)] || { days: {} }).days[d] || []
   // POS 真實來客（AB）
   const pos = {}
   try { for (const e of (((await kvGet('sp_finance_pm_pos')) || {}).entries || [])) { if (/groun/i.test(e.store || '') || !e.date) continue; pos[e.date] = { g: Number(e.guests) || 0, rev: Number(e.revenue) || 0 } } } catch (_) {}
   // ① 未來 14 天
   const strip = (r) => ({ t: r.t || '', nm: r.name || '', n: r.n || 0, st: r.st, ty: r.ty, kc: (r.kc || 0) + (r.ks || 0), note: (r.note || r.inote || '').slice(0, 40) })
+  // 近 8 週同週幾基準（到店人次／排班時數）→ 人力過多不足的比較底
+  const wdG = Array.from({ length: 7 }, () => []), wdH = Array.from({ length: 7 }, () => [])
+  for (const d of PAST.slice(-56)) { const w = new Date(d + 'T00:00:00Z').getUTCDay(); const g = dayStat(dayArr(d)).g; if (g) wdG[w].push(g); const sh = shiftStat(schArr(d)); if (sh.h) wdH[w].push(sh.h) }
+  const avg = (a) => a.length ? Math.round(a.reduce((t, v) => t + v, 0) / a.length * 10) / 10 : 0
   const days = H14.map((d) => {
-    const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly))
-    return { d, hol: holShort(hol[d] || ''), ...s, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
+    const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly)), w = new Date(d + 'T00:00:00Z').getUTCDay()
+    const sh = shiftStat(schArr(d))
+    return { d, hol: holShort(hol[d] || ''), ...s, wx: wx[d] || null, sh: { n: sh.n, h: sh.h, fo: sh.fo, ki: sh.ki, names: sh.names.slice(0, 30), avgH: avg(wdH[w]), avgG: avg(wdG[w]) }, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
   })
   // ② 連假倒數
   const hols = blocks.map((b) => {
@@ -321,7 +361,30 @@ async function custOutlook() {
     const status = ratio == null ? 'na' : ratio < 70 ? 'behind' : ratio > 110 ? 'ahead' : 'ok'
     return { name: b.name, from: b.from, to: b.to, days: b.days, left, g, r, uc, ly: { from: ly.from, to: ly.to, approx: !!ly.approx, then: lyThen, final: lyFinal, pos: lyPos, rev: lyRev }, ratio, status, gap: Math.max(0, lyFinal - g) }
   })
-  return { today, seats: SEATS_AB, days, hols, builtAt: new Date().toISOString() }
+  // ③ 近 7 天回顧：每天到店人次 vs 近 8 週同週幾平均（±30% 點名）＋POS 真實來客/營收
+  const week = PAST.slice(-7).map((d) => {
+    const w = new Date(d + 'T00:00:00Z').getUTCDay(), s = dayStat(dayArr(d))
+    const base = avg(wdG[w].filter((_, i) => true)), ratio = base ? Math.round(s.g / base * 100) : null
+    return { d, g: s.g, r: s.r, l: s.l, dn: s.dn, base, ratio, pos: (pos[d] || {}).g || 0, rev: (pos[d] || {}).rev || 0, sh: shiftStat(schArr(d)).h }
+  })
+  return { today, seats: SEATS_AB, days, hols, week, builtAt: new Date().toISOString() }
+}
+// 明日大組未確認（第二批）：每天台灣 16 點那次 cron，明天 6 人以上還是「待確認」→ 私訊審核人；一天一次
+async function bigAlert() {
+  const h = new Date(Date.now() + 8 * 3600e3).getUTCHours()
+  if (h !== 16) return { skip: 'not16' }
+  const tmr = addDays(twToday(), 1)
+  const log = (await kvGet('sp_finance_pm_inline_alerts')) || {}
+  if (log['big_' + tmr]) return { skip: 'sent' }
+  const doc = (await kvGet('sp_finance_pm_inline_' + tmr.slice(0, 7))) || { days: {} }
+  const big = (doc.days[tmr] || []).filter((r) => !isCx(r) && r.ty !== 4 && (r.n || 0) >= 6 && r.st === 3).sort((a, b) => (a.t || '').localeCompare(b.t || ''))
+  log['big_' + tmr] = new Date().toISOString()
+  await kvPut('sp_finance_pm_inline_alerts', log, 'inline明日大組提醒')
+  if (!big.length) return { big: 0 }
+  const { notifyOps } = await import('./_onboard.js')
+  const tot = big.reduce((t, r) => t + (r.n || 0), 0)
+  await notifyOps(`📋 明天（${tmr.slice(5).replace('-', '/')}）有 ${big.length} 組大桌共 ${tot} 人還沒確認，18:00 前請電話確認：\n${big.slice(0, 12).map((r) => `・${r.t || '--:--'} ${r.name || '未填名'} ${r.n} 人${r.phone ? ' ' + r.phone.replace(/^\+886/, '0') : ''}`).join('\n')}${big.length > 12 ? `\n…共 ${big.length} 組` : ''}`)
+  return { big: big.length }
 }
 // 連假落後提醒（cron 每小時進來、台灣時間 10 點那次才跑）：距連假 14／7／3 天時，已訂低於去年同期七成 → 私訊審核人；同一假同一天數只發一次
 async function holidayAlert() {
@@ -465,6 +528,7 @@ export default async function handler(req, res) {
     } catch (e) { cb = { custErr: e?.message } }
     let ha = {}
     try { ha = await holidayAlert() } catch (e) { ha = { alertErr: e?.message } }
+    try { Object.assign(ha, await bigAlert()) } catch (e) { ha.bigErr = e?.message }
     return res.status(200).json({ ok: true, ...out, ...far, ...cb, ...ha })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
