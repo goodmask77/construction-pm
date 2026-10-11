@@ -44,7 +44,10 @@ async function rHide(kEnc, hideV){
 }
 // ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
-;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
+;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m)
+  // v4.70.65 預覽直通：正式站 /ops/?preview=1#tab=xxx → 帶著這台已登入的身分跳到固定預覽網址同一頁（張良 2026-10-12「打開還要登入 一起處理」）；只准跳自家 vercel 網域，token 不會外流
+  const pv = sp.get('preview'); if (pv) { const host = pv === '1' ? 'ground-pm-preview.vercel.app' : pv; if (/^(ground-pm-preview|construction-[a-z0-9-]+-goodmask77s-projects)\.vercel\.app$/.test(host) && location.host !== host) { let tk = ''; try { tk = localStorage.getItem('prepToken') || '' } catch(_) {} location.replace('https://' + host + '/ops/' + (tk ? '?me=' + encodeURIComponent(tk) : '') + location.hash); return } }
+  if (m || sp.has('r') || pv) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
 const TK = () => localStorage.getItem('prepToken') || ''
 // 📱 已綁定→manifest 換成個人化版（v4.31.2 張良：換 icon 重加 App 變訪客）：加入主畫面的捷徑 start_url 自帶 ?me=token，重加 App 身分不掉
 function maniSync(){ try { const t8 = TK(); const l8 = document.querySelector('link[rel="manifest"]'); if (l8) l8.href = t8 ? ('/api/mail-sync?manifest=1&me=' + encodeURIComponent(t8)) : '/ops/manifest.json?v=2' } catch(_){} }
