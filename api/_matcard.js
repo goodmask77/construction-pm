@@ -144,11 +144,13 @@ export async function buildCards ({ kvGet, months }) {
     // v4.70.76 從沒叫過（張良 2026-10-12「有多少料號建立後沒使用過」）：這張卡所有供應品在叫貨紀錄裡都沒出現；lastOrderDay＝最近一次叫貨日
     const sps = c.supplies.map(k => supplies[k]).filter(Boolean)
     c.neverOrdered = sps.length > 0 && sps.every(s => !s.lastOrder)
+    c.neverDead = c.neverOrdered && !c.usedRecipes.length && !c.usedMenus.length // 沒叫過、食譜／菜單也沒用到＝真的死料候選
     c.lastOrderDay = sps.reduce((m, s) => (s.lastOrder && s.lastOrder.d > m ? s.lastOrder.d : m), '')
   }
   rows.sort((a, b) => (a.status === '啟用' ? 0 : 1) - (b.status === '啟用' ? 0 : 1) || (b.usedMenus.length - a.usedMenus.length) || (a.name < b.name ? -1 : 1))
   const facets = { types: TYPES, baseUnits: BASE_UNITS, brands: ['A Beach', 'GROUN:D'], cats: [...new Set(rows.flatMap(c => c.cats))].sort(), stores: [...new Set(rows.map(c => c.store).filter(Boolean))].sort(), suppliers: [...new Set(rows.flatMap(c => c.suppliers))].sort() }
-  return { cards: rows, supplies, facets, log: (doc.log || []).slice(-80).reverse(), live: master.live, masterUpdatedAt: master.updatedAt, snapAsOf: snap.asOf, nMerged: Object.keys(doc.supplyCard || {}).length }
+  const orderFrom = [serA.firstDay, serG.firstDay].filter(Boolean).sort()[0] || '' // v4.70.77 叫貨紀錄最早一天（「沒叫過」的口徑要講清楚）
+  return { cards: rows, supplies, facets, log: (doc.log || []).slice(-80).reverse(), live: master.live, masterUpdatedAt: master.updatedAt, snapAsOf: snap.asOf, nMerged: Object.keys(doc.supplyCard || {}).length, orderFrom, orderFromA: serA.firstDay || '', orderFromG: serG.firstDay || '' }
 }
 
 // ── 寫：全部留紀錄；供應品主檔不改（只改歸屬／屬性／換算／報價／拆分）──
