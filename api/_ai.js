@@ -21,22 +21,24 @@ export const hasKey = (p) => !!keyOf(p)
 // 功能路由登記表：label=人看的名稱、where=用在哪、def=預設、fb=備援（預設失敗時）、kind=text|image
 // 新功能要用 AI 一律先登記在這裡（設定頁會自動長出來）
 export const AI_ROUTES = {
+  // v4.70.77 張良 2026-10-12 拍板「照這樣」：文案／主App／讀秤／食譜匯入→ChatGPT gpt-6.1-sol（中階款，2／10）、翻譯／摘要→gpt-6-luna（0.1／0.5）、
+  // D哥留 Claude opus-5-5（動作引擎答錯代價高；測試群用「雙答比對」跟 sol 比一週再決定）；備援全換 Claude 5.5 系列（比 4.x 便宜又強）
   dd:        { label: 'D哥 LINE 機器人', where: '私訊／群組回答、動作引擎', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-opus-4-8' }, fb: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
+               def: { provider: 'anthropic', model: 'claude-opus-5-5' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   social:    { label: '行銷大師 AI 文案', where: '一鍵生成 5 版／分品牌各寫一版（會看圖）', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'anthropic', model: 'claude-opus-4-8' } },
+               def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   image:     { label: 'AI 生圖', where: '行銷大師素材庫「AI 生圖」（Claude 不會生圖，只能選 Gemini／ChatGPT）', kind: 'image',
                def: { provider: 'gemini', model: 'gemini-nano-banana-2.1' }, fb: { provider: 'gemini', model: 'gemini-3.1-flash-image' } },
   translate: { label: '即時翻譯', where: 'DD 群組「翻譯模式」每句雙向翻', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, fb: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
+               def: { provider: 'openai', model: 'gpt-6-luna' }, fb: { provider: 'anthropic', model: 'claude-haiku-5-5' } },
   summary:   { label: '對話摘要', where: 'DD 舊對話滾動濃縮（省錢用小模型即可）', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, fb: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
+               def: { provider: 'openai', model: 'gpt-6-luna' }, fb: { provider: 'anthropic', model: 'claude-haiku-5-5' } },
   app:       { label: '主 App AI 顧問', where: '工程主 App 的 /api/ai（callAI）', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'anthropic', model: 'claude-opus-4-8' } },
+               def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   waste:     { label: '耗損 AI 讀秤', where: 'GD 耗損頁：看秤面讀重量＋從候選清單認物料（視覺，批次 1b v4.70.32）', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'gemini', model: 'gemini-3.8-flash' } },
+               def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   rcpimport: { label: '食譜 AI 匯入', where: 'GD 食譜庫「新增食譜」：截圖／試算表／連結讀成材料＋步驟（視覺，v4.70.66）', kind: 'text',
-               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'gemini', model: 'gemini-3.8-flash' } },
+               def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
 }
 
 // ── 設定讀寫 ──
@@ -67,7 +69,7 @@ function resolve(route, cfg, override) {
 }
 export function defaultModel(p, kind) {
   if (kind === 'image') return p === 'openai' ? 'gpt-image-2' : p === 'gemini' ? 'gemini-nano-banana-2.1' : '' // 2026-10-10 實測：Gemini 2.5 系列已對新用戶關閉，官方建議 3.8-flash；生圖最新 Nano Banana 2.1
-  return p === 'openai' ? 'gpt-5.5' : p === 'gemini' ? 'gemini-3.8-flash' : 'claude-sonnet-4-6'
+  return p === 'openai' ? 'gpt-6.1-sol' : p === 'gemini' ? 'gemini-3.8-flash' : 'claude-sonnet-5-5' // v4.70.77 各家中階款（sol／sonnet-5-5 都是 2／10）
 }
 
 // ── 內容格式轉換 ──
@@ -97,20 +99,29 @@ function toGemini(system, messages) {
 }
 
 // ── 三家文字呼叫（單次，不含備援） ──
-async function callOnce({ provider, model }, { system, messages, maxTokens, cache, timeoutMs }) {
+async function callOnce({ provider, model }, { system, messages, maxTokens, cache, timeoutMs, effort }) { // effort='low'|'medium'|'high'（v4.70.77 推理深度；省時省錢的功能給 low）
   const key = keyOf(provider); if (!key) throw Object.assign(new Error(AI_PROVIDERS[provider].label + ' 尚未設定金鑰（' + AI_PROVIDERS[provider].env + '）'), { nokey: true })
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs || 120000)
   try {
     if (provider === 'anthropic') {
       const { sys, msgs } = toAnthropic(system, messages, cache)
-      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model, max_tokens: maxTokens || 3000, ...(sys ? { system: sys } : {}), messages: msgs }) })
-      const d = await r.json().catch(() => ({}))
+      // v4.70.77 Claude 5.x 思考內建且算在 max_tokens 裡（Sonnet 5.5 預設 high）→ 加 effort（呼叫端沒給就 medium）＋ max_tokens 多留 4000 給思考，免得正文被截斷
+      const think = /^claude-(opus|sonnet|haiku)-5|^claude-fable/.test(model)
+      const mk = (withEffort) => JSON.stringify({ model, max_tokens: (maxTokens || 3000) + (think ? 4000 : 0), ...(withEffort && think ? { output_config: { effort: effort || 'medium' } } : {}), ...(sys ? { system: sys } : {}), messages: msgs })
+      const post = (body) => fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }, body })
+      let r = await post(mk(true)); let d = await r.json().catch(() => ({}))
+      if (!r.ok && r.status === 400 && think && /output_config|effort/i.test((d.error && d.error.message) || '')) { r = await post(mk(false)); d = await r.json().catch(() => ({})) } // 舊模型不認 effort → 拿掉重打
       if (!r.ok) throw Object.assign(new Error((d.error && d.error.message) || ('Claude HTTP ' + r.status)), { status: r.status })
+      if (d.stop_reason === 'refusal') throw Object.assign(new Error('Claude 安全分類拒答' + (d.stop_details && d.stop_details.category ? '（' + d.stop_details.category + '）' : '')), { refusal: true }) // 5.x 會拒答→當失敗退備援
       return { text: (d.content || []).map(b => b.text || '').join('').trim(), usage: d.usage, stop: d.stop_reason, raw: d }
     }
     if (provider === 'openai') {
-      const r = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body: JSON.stringify({ model, max_completion_tokens: maxTokens || 3000, messages: toOpenAI(system, messages) }) })
-      const d = await r.json().catch(() => ({}))
+      // v4.70.77 gpt-5／6／o 系列是推理款：推理 token 也算在 max_completion_tokens → 多留 4000；呼叫端給 effort 就帶 reasoning_effort（D哥／翻譯／摘要用 low 求快）；不認就拿掉重打
+      const reason = /^(gpt-[5-9]|o\d)/.test(model)
+      const mk = (withEffort) => JSON.stringify({ model, max_completion_tokens: (maxTokens || 3000) + (reason ? 4000 : 0), ...(withEffort && reason && effort ? { reasoning_effort: effort } : {}), messages: toOpenAI(system, messages) })
+      const post = (body) => fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key }, body })
+      let r = await post(mk(true)); let d = await r.json().catch(() => ({}))
+      if (!r.ok && r.status === 400 && effort && /reasoning/i.test((d.error && d.error.message) || '')) { r = await post(mk(false)); d = await r.json().catch(() => ({})) }
       if (!r.ok) throw Object.assign(new Error((d.error && d.error.message) || ('ChatGPT HTTP ' + r.status)), { status: r.status })
       const c = d.choices && d.choices[0]
       return { text: String((c && c.message && c.message.content) || '').trim(), usage: d.usage, stop: c && c.finish_reason, raw: d }
@@ -242,9 +253,21 @@ export async function aiListModels(provider, kind = 'text') {
 // 單價表 AI_PRICES（USD／百萬 token；img＝每張）：預設值＝依公開定價估，可在設定頁改（cfg.prices 覆蓋）；匯率 cfg.usdTwd 預設 32
 // ══════════════════════════════════════════════════════════════════════
 export const AI_PRICES = { // key 用「前綴」比對（最長前綴優先）；cr=快取讀、cw=快取寫（沒填＝cr 0.1×in、cw 1.25×in）
+  'claude-fable-5':   { in: 10,   out: 50 },
+  'claude-opus-5-5':  { in: 4,    out: 20, cr: 0.2 },   // v4.70.77 新一代（2026-10 官方價）
+  'claude-sonnet-5-5':{ in: 2,    out: 10, cr: 0.2 },
+  'claude-haiku-5-5': { in: 0.1,  out: 0.5 },
+  'claude-opus-5':    { in: 5,    out: 25 },
+  'claude-sonnet-5':  { in: 2,    out: 10 },
   'claude-opus-4':    { in: 5,    out: 25 },
   'claude-sonnet-4':  { in: 3,    out: 15 },
   'claude-haiku-4':   { in: 1,    out: 5 },
+  'gpt-6.1-sol':      { in: 2,    out: 10, cr: 0.1 },   // v4.70.77 OpenAI 6 系列（第三方整理的公開價，官方頁沒查到；可在設定頁改）
+  'gpt-6-sol':        { in: 2,    out: 10, cr: 0.2 },
+  'gpt-6-luna':       { in: 0.1,  out: 0.5 },
+  'gpt-6-astra':      { in: 10,   out: 50 },
+  'gpt-6':            { in: 2,    out: 10 },
+  'gpt-5.6':          { in: 2,    out: 10 },
   'gpt-5.5':          { in: 1.25, out: 10 },
   'gpt-5':            { in: 1.25, out: 10 },
   'gpt-5-mini':       { in: 0.25, out: 2 },
@@ -359,7 +382,7 @@ export async function aiUsageSummary() {
     }
     providers[p] = { label: AI_PROVIDERS[p].label, month: byProv[p] || { n: 0, usd: 0, it: 0, ot: 0, img: 0, err: 0 }, today: todayP[p] || { n: 0, usd: 0 }, avg7Usd: Math.round(avg7 * 10000) / 10000, budget }
   }
-  const routes = {}; for (const [r, c] of Object.entries(byRoute)) routes[r] = { label: (AI_ROUTES[r] || {}).label || r, ...c }
+  const routes = {}; for (const [r, c] of Object.entries(byRoute)) routes[r] = { label: (AI_ROUTES[r] || {}).label || (/-ab$/.test(r) && AI_ROUTES[r.slice(0, -3)] ? AI_ROUTES[r.slice(0, -3)].label + '（比對）' : r), ...c }
   const models = Object.entries(byModel).map(([k, c]) => { const [p, m] = k.split('|'); const pr = priceOf(m, p, cfg.prices); return { provider: p, model: m, ...c, price: pr } })
   return { ym, today, daysUsed, rate, providers, routes, models, prices: cfg.prices || {}, links: { anthropic: 'https://console.anthropic.com/settings/billing', openai: 'https://platform.openai.com/usage', gemini: 'https://aistudio.google.com/usage' } }
 }
@@ -388,5 +411,51 @@ export async function aiOverview() {
   const providers = {}; for (const [k, v] of Object.entries(AI_PROVIDERS)) providers[k] = { label: v.label, hasKey: hasKey(k), image: !!v.image, env: v.env }
   const routes = Object.entries(AI_ROUTES).map(([key, R]) => ({ key, label: R.label, where: R.where, kind: R.kind, def: R.def, fb: R.fb || null, cur: (cfg.routes || {})[key] || null }))
   const defaults = { text: {}, image: {} }; for (const k of Object.keys(AI_PROVIDERS)) { defaults.text[k] = defaultModel(k, 'text'); defaults.image[k] = defaultModel(k, 'image') }
-  return { providers, routes, defaults }
+  let abGroups = [] // v4.70.77 雙答比對「在哪些群比」勾選用：DD 在的群（真名）
+  try { const m = await import('./_ddmsg.js'); abGroups = (await m.ddGroupList()).filter(g => !g.gone).map(g => ({ gid: g.gid, name: g.name || (g.cfg && g.cfg.alias) || '', key: g.key || '', hide: (g.cfg && g.cfg.hide) || 0 })) } catch (_) {}
+  return { providers, routes, defaults, ab: cfg.ab || {}, abGroups }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+// 雙答比對（v4.70.77 張良 2026-10-12「測試群用 sol、正式群留 opus，一週後比哪邊答錯少」）
+// cfg.ab[route] = { on, provider, model, gids:[LINE群id 或 'dm'=操作者私訊], reply:'a'(正式設定回)|'b'(比對模型回), by, at }
+// 勾選的群裡每句話兩邊各答一次（並行，不多等），兩邊都記到 pm_ai_ab_<route>（最多 150 筆），設定頁列表給張良按「A較好／B較好／差不多」
+export const abLogKey = (route) => 'pm_ai_ab_' + route
+export async function aiAbSet(route, ab, who) {
+  if (!AI_ROUTES[route]) throw new Error('未知功能 ' + route)
+  const cfg = await aiCfgGet(); cfg.ab = cfg.ab || {}
+  if (!ab || !ab.on) { if (cfg.ab[route]) cfg.ab[route] = { ...cfg.ab[route], on: 0, by: who || '', at: new Date().toISOString() } }
+  else {
+    if (!AI_PROVIDERS[ab.provider]) throw new Error('未知供應商 ' + ab.provider)
+    cfg.ab[route] = { on: 1, provider: ab.provider, model: String(ab.model || '').trim().slice(0, 80), gids: (Array.isArray(ab.gids) ? ab.gids : []).map(String).filter(Boolean).slice(0, 30), reply: ab.reply === 'a' ? 'a' : 'b', by: who || '', at: new Date().toISOString() }
+  }
+  await kvSet(AI_CFG_KEY, cfg); return cfg.ab[route] || null
+}
+export async function aiAbList(route) { try { const d = (await kvGet(abLogKey(route))) || {}; return d.list || [] } catch (_) { return [] } }
+export async function aiAbVerdict(route, id, v, who) {
+  const key = abLogKey(route); const d = (await kvGet(key)) || { list: [] }
+  const it = (d.list || []).find(x => x.id === id); if (!it) throw new Error('找不到這筆紀錄')
+  it.v = ['a', 'b', 'tie'].includes(v) ? v : null; it.vby = who || ''; it.vat = new Date().toISOString()
+  await kvSet(key, d); return it
+}
+const abBrief = (r) => r.err ? { err: r.err, ms: r.ms } : { provider: r.provider, model: r.model, text: String(r.text || '').slice(0, 2500), ms: r.ms, ot: +((r.usage || {}).output_tokens || (r.usage || {}).completion_tokens || 0) || 0, fb: (r.tried || []).length }
+// aiCallAB(route, opts, ctx={gid, q, round})：ctx.gid 不在比對名單＝跟 aiCall 一樣；在名單＝兩邊並行各答一次、記紀錄、回「reply 指定那邊」（它壞了就回另一邊，D哥不會啞）
+export async function aiCallAB(route, opts, ctx) {
+  const cfg = await aiCfgGet(); const ab = (cfg.ab || {})[route] || null
+  const scope = ctx && ctx.gid
+  if (!ab || !ab.on || !ab.provider || !scope || !(ab.gids || []).includes(scope)) return aiCall(route, opts)
+  const run = async (o, tag) => { const t = Date.now(); try { const r = await aiCall(tag, o); return { ...r, ms: Date.now() - t } } catch (e) { return { err: String(e.message || e).slice(0, 200), ms: Date.now() - t, tried: e.tried || [] } } }
+  const [A, B] = await Promise.all([run(opts, route), run({ ...opts, override: { provider: ab.provider, model: ab.model || defaultModel(ab.provider, 'text') }, noFallback: true }, route + '-ab')])
+  const want = ab.reply === 'a' ? A : B, other = want === A ? B : A
+  const chosen = (!want.err && want.text) ? want : other
+  try {
+    let gname = scope === 'dm' ? '操作者私訊' : ''
+    if (!gname) { try { const m = await import('./_ddmsg.js'); gname = (await m.ddGroupName(scope)) || '' } catch (_) {} }
+    const key = abLogKey(route); const d = (await kvGet(key)) || { list: [] }
+    d.list = [{ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: new Date().toISOString(), gid: scope, gname: String(gname || ''), q: String((ctx && ctx.q) || '').slice(0, 400), round: (ctx && ctx.round) || 1, a: abBrief(A), b: abBrief(B), replied: chosen === A ? 'a' : 'b', v: null }, ...(d.list || [])].slice(0, 150)
+    await kvSet(key, d)
+  } catch (e) { console.log('[ai-ab] log failed', e.message) }
+  if (chosen.err) throw Object.assign(new Error(chosen.err), { tried: chosen.tried || [] })
+  return { ...chosen, ab: { replied: chosen === A ? 'a' : 'b' } }
 }
