@@ -4288,6 +4288,37 @@ export default async function handler(req, res) {
   // 權限模型：每個資料夾 acl={ roles:{角色:等級}, users:{rid:等級}, noExport }；等級 0=看不到 1=只能看/下載 2=可編輯（上傳/刪/改/排序）。
   // 管理者（approver／主管／prep admin）永遠 2，且唯一能「管理資料夾結構＋設權限」。個人覆蓋 > 角色預設 > 一般預設。
   // 💬 聊天室（v4.70.45 溝通中樞項目 3a；規則在 api/_chat.js）：GET ?chat=<OPS_BOARD_KEY>&me=token&op=rooms|msgs（&room=&after=&read=1）；POST ?chat=<K> {token, op:'send'|'read'|'create'|'rename'|'members'|'delete', ...}
+  // 📥 統一收件匣 v4.70.47（溝通中樞第三部 項目 5＋6）：GET ?inbox=K&me=token&op=list|conv|settings ／ POST ?inbox=K {token, op:send|status|assign|note|rename|cfg|connect}
+  if (req.query?.inbox) {
+    const okI = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okI || String(req.query.inbox) !== okI) return res.status(403).json({ ok: false })
+    let bodyI = {}
+    if (req.method === 'POST') { try { bodyI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkI = req.method === 'POST' ? bodyI.token : req.query.me
+    const [whoI, defI, pmI, rosI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster')])
+    if (!whoI) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const IB = await import('./_inbox.js')
+    const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
+    const mgrI = IB.isMgr(whoI, aprI, pmI)
+    const cfgI = await IB.loadCfg()
+    const opI = String(req.method === 'POST' ? bodyI.op : req.query.op || 'list')
+    const originI = 'https://' + (String(req.headers['x-forwarded-host'] || req.headers.host || 'ground-pm.vercel.app'))
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a) }))
+      if (req.method !== 'POST') {
+        if (opI === 'list') return res.status(200).json({ ok: true, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) })
+        if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
+        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職').map(p => p.name) }) }
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
+      if (['status', 'assign', 'note', 'rename'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
+      if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
+      if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '收件匣暫時出錯：' + String(e?.message || e).slice(0, 80) }) }
+  }
   if (req.query?.chat) {
     const okC = (process.env.OPS_BOARD_KEY || '').trim()
     if (!okC || String(req.query.chat) !== okC) return res.status(403).json({ ok: false })
