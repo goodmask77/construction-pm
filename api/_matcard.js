@@ -141,6 +141,10 @@ export async function buildCards ({ kvGet, months }) {
     // 間接：被半成品用到 → 半成品被哪些菜單用（快照菜單行以品名對）
     for (const rn of [...rs]) for (const l of snap.menuLines) if (norm(l.name) === norm(rn) && l.menu) ms.add(l.menu + '（經 ' + rn + '）')
     c.usedRecipes = [...rs].slice(0, 30); c.usedMenus = [...ms].slice(0, 30)
+    // v4.70.76 從沒叫過（張良 2026-10-12「有多少料號建立後沒使用過」）：這張卡所有供應品在叫貨紀錄裡都沒出現；lastOrderDay＝最近一次叫貨日
+    const sps = c.supplies.map(k => supplies[k]).filter(Boolean)
+    c.neverOrdered = sps.length > 0 && sps.every(s => !s.lastOrder)
+    c.lastOrderDay = sps.reduce((m, s) => (s.lastOrder && s.lastOrder.d > m ? s.lastOrder.d : m), '')
   }
   rows.sort((a, b) => (a.status === '啟用' ? 0 : 1) - (b.status === '啟用' ? 0 : 1) || (b.usedMenus.length - a.usedMenus.length) || (a.name < b.name ? -1 : 1))
   const facets = { types: TYPES, baseUnits: BASE_UNITS, brands: ['A Beach', 'GROUN:D'], cats: [...new Set(rows.flatMap(c => c.cats))].sort(), stores: [...new Set(rows.map(c => c.store).filter(Boolean))].sort(), suppliers: [...new Set(rows.flatMap(c => c.suppliers))].sort() }
@@ -165,6 +169,13 @@ export async function applyCardOp ({ kvGet, kvPut, who, body, uploadPrivate }) {
     await kvPut(CARD_KEY, doc, '物料卡合併(' + who.name + ')'); return { ok: true, cardId: target }
   }
   if (op === 'unmerge') { const k = String(body.supplyKey || ''); if (!doc.supplyCard[k]) return { ok: false, error: '這個代碼本來就沒合併' }; log({ key: k, prev: doc.supplyCard[k] }); delete doc.supplyCard[k]; await kvPut(CARD_KEY, doc, '物料卡拆出(' + who.name + ')'); return { ok: true } }
+  if (op === 'batchStatus') { // v4.70.76 批次停用／啟用（我們這邊的卡屬性，不動阿桑系統）
+    const ids = (Array.isArray(body.cardIds) ? body.cardIds : []).map(String).filter(Boolean).slice(0, 500); const st = body.status === '停用' ? '停用' : '啟用'
+    if (!ids.length) return { ok: false, error: '沒有勾選' }
+    for (const id of ids) { const c = doc.cards[id] || { id, createdAt: at }; c.status = st; doc.cards[id] = c }
+    log({ batchStatus: st, n: ids.length, cardIds: ids.slice(0, 50), reason: String(body.reason || '').slice(0, 200) })
+    await kvPut(CARD_KEY, doc, '物料卡批次' + st + '(' + who.name + ')'); return { ok: true, n: ids.length }
+  }
   if (op === 'edit') { // 卡屬性：name/displaySku/type/baseUnit/store/station/status/brands/primary/note
     const id = String(body.cardId || ''); if (!id) return { ok: false, error: '缺卡 ID' }
     const c = doc.cards[id] || { id, createdAt: at }

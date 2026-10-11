@@ -1,4 +1,4 @@
-// 🗂 /prep 第 19 塊（v4.70.63，2026-10-12）：產品與成本模組｜批次 2「物料庫＋物料卡」
+// 🗂 /prep 第 19 塊（v4.70.76，2026-10-12）：產品與成本模組｜批次 2「物料庫＋物料卡」
 // 規格 §3：列表（照片/料號/品名/類型/分類/主要廠商/成本基準價/完整狀態；篩選 品牌/類型/分類/存放/廠商/狀態/缺換算/缺價；搜尋含舊代碼；包材照片牆）
 //          物料卡五分頁：基本資料／供應品與價格（每代碼一列、主要來源、走勢、查當時價）／單位換算／被使用於／紀錄
 // 資料 ?matcard=（api/_matcard.js）：供應品＝阿桑即時主檔；本頁只寫「人做的決定」。UI 慣例：單色線條圖示、不用 prompt。
@@ -41,6 +41,7 @@
       if (f.gap === 'noconv' && !c.gaps.some(g => /換算/.test(g))) return false
       if (f.gap === 'noprice' && !c.gaps.includes('缺價')) return false
       if (f.gap === 'merged' && c.supplies.length < 2) return false
+      if (f.gap === 'never' && !c.neverOrdered) return false // v4.70.76 從沒叫過
       if (q && !([c.name, c.displaySku, ...(c.aliases || []), ...(c.suppliers || [])].join(' ').toLowerCase().includes(q))) return false
       return true
     })
@@ -72,7 +73,8 @@
     h += `<div class="hint" style="font-size:12px">類型</div>` + chips('type', fc.types || [])
     h += `<div class="hint" style="font-size:12px">狀態／缺口</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">`
       + ['啟用', '停用', 'all'].map(v => `<button class="mini ${f.status === v ? 'on' : ''}" onclick="_mcF('status','${v}')">${v === 'all' ? '含停用' : v}</button>`).join('')
-      + `<span style="width:8px"></span>` + [['all', '全部'], ['noconv', '缺／未確認換算'], ['noprice', '缺價'], ['merged', '已合併']].map(([v, l]) => `<button class="mini ${f.gap === v ? 'on' : ''}" onclick="_mcF('gap','${v}')">${l}</button>`).join('') + `</div>`
+      + `<span style="width:8px"></span>` + [['all', '全部'], ['noconv', '缺／未確認換算'], ['noprice', '缺價'], ['merged', '已合併'], ['never', '從沒叫過']].map(([v, l]) => { const n = v === 'never' ? (MC.cards || []).filter(c => c.neverOrdered && (f.status === 'all' || c.status === f.status)).length : null; return `<button class="mini ${f.gap === v ? 'on' : ''}" onclick="_mcF('gap','${v}')">${l}${n != null ? ` <span style="font-size:11px;opacity:.8">${n}</span>` : ''}</button>` }).join('') + `</div>`
+      + (f.gap === 'never' ? `<div class="hint" style="font-size:12px;margin-top:4px">從沒叫過＝這張卡所有代碼在系統叫貨紀錄裡都沒出現（A Beach 紀錄從 2026-07 底、GROUN:D 從 2026-09 起）。可勾選多張「批次停用」＝只停我們這邊的物料卡（列表預設不顯示停用），阿桑／GD 系統的代碼不會動；要真的關掉請她那邊停用。</div>` : '')
     h += `<details style="margin-top:4px"><summary class="hint" style="cursor:pointer">更多篩選：分類／存放／廠商</summary><div style="margin-top:6px"><div class="hint" style="font-size:12px">分類</div>${chips('cat', (fc.cats || []).slice(0, 40))}<div class="hint" style="font-size:12px">存放</div>${chips('store', fc.stores || [])}<div class="hint" style="font-size:12px">廠商</div>${chips('sup', (fc.suppliers || []).slice(0, 60))}</div></details>`
     return h
   }
@@ -83,7 +85,7 @@
     if (!rows.length) return '<section><div class="hint" style="padding:18px;text-align:center">沒有符合的物料卡</div></section>'
     const can = MC.me && MC.me.canEdit
     let h = `<section style="padding:12px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span class="hint">${rows.length} 張${rows.length > 400 ? '（只顯示前 400，請用搜尋）' : ''}・點任一張開物料卡</span>`
-      + (can ? (sel.size >= 2 ? `<button class="mini on" onclick="_mcMergeSel()">${IC.merge} 合併勾選的 ${sel.size} 張成一張卡</button><button class="mini" onclick="_mcSelClear()">取消勾選</button>` : `<span class="hint">勾兩張以上可合併</span>`) : '') + `</div>`
+      + (can ? (sel.size >= 1 ? `${sel.size >= 2 ? `<button class="mini on" onclick="_mcMergeSel()">${IC.merge} 合併勾選的 ${sel.size} 張成一張卡</button>` : ''}<button class="mini" onclick="_mcBatchStatus('停用')">${IC.x} 批次停用 ${sel.size} 張</button>${f.status !== '啟用' ? `<button class="mini" onclick="_mcBatchStatus('啟用')">${IC.check} 批次啟用 ${sel.size} 張</button>` : ''}<button class="mini" onclick="_mcSelClear()">取消勾選</button>` : `<span class="hint">勾一張以上可批次停用；兩張以上可合併</span>`) : '') + `</div>`
     if (f.wall) {
       h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">` + rows.slice(0, 400).map(c => `<div onclick="_mcOpen('${c.id}')" style="cursor:pointer;background:var(--soft);border:1px solid var(--line);border-radius:12px;overflow:hidden"><div style="aspect-ratio:1;background:#0E1217;display:flex;align-items:center;justify-content:center;color:var(--muted)">${c.photo ? `<img src="${photoUrl(c.photo)}" style="width:100%;height:100%;object-fit:cover" loading="lazy">` : IC.img}</div><div style="padding:8px"><div style="font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</div><div class="hint" style="font-size:12px">${esc(c.displaySku)}・${esc(c.type)}</div><div style="font-size:12.5px;margin-top:2px">${c.baseCost != null ? nf(c.baseCost) + ' 元/' + esc(c.baseUnit) : '<span class="mut">—</span>'} ${stBadge(c)}</div></div></div>`).join('') + `</div></section>`
       return h
@@ -105,6 +107,11 @@
   }
   window._mcSel = function (id, on) { if (on) sel.add(id); else sel.delete(id); repaintList() }
   window._mcSelClear = function () { sel.clear(); repaintList() }
+  window._mcBatchStatus = async function (st) { // v4.70.76
+    if (!sel.size) return
+    if (!confirm(`把勾選的 ${sel.size} 張物料卡批次「${st}」？（只改我們這邊的卡，阿桑／GD 系統不動；留紀錄、可再批次啟用）`)) return
+    if (await post({ op: 'batchStatus', cardIds: [...sel], status: st })) { sel.clear(); matcardRefresh() }
+  }
 
   // ── 物料卡 drawer ──
   // v4.70.63：別頁（食譜庫材料行／成本總覽）也能直接開卡：物料卡沒載過就先載整包再開，回傳 true/false 給呼叫端決定要不要提示
