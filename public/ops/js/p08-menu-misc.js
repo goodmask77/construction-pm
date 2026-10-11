@@ -306,7 +306,7 @@ function menuRender(){
     </div>`
   }).join('') + `</div>`
   // v4.70.50（張良 2026-10-11）：四格圖＝電視頁「💾 存版本」最新一版，這裡標出版本名稱＋日期；直式海報最新版也給連結
-  if (d.curVer || d.posterImg) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap">${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>・${d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}・${d.posterImg.date}</a>`:''}</div>`
+  if (d.curVer || d.posterImg || imgs.filter(Boolean).length>1) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">${imgs.filter(Boolean).length>1?`<button class="mini" onclick="mnImgGrid()" title="四張電視圖 2×2 一起預覽">⊞ 四張一起看</button>`:''}${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>・${d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}・${d.posterImg.date}</a>`:''}</div>`
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#2E2814;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
@@ -746,16 +746,18 @@ function menuPosterSectionOne(d, sec, idx){
   menuDownload(menuFitSpec(cv), 'GROUND菜單_'+String(idx+1).padStart(2,'0')+'_'+safe+'_'+todayTpe()+'.png')
 }
 // 圖片預覽（v4.70.51 張良 2026-10-11「打開預覽後可直接往右看下一張」）：四格＝一組，← → 鍵／點左右半邊／手機左右滑切換，點中間或 Esc 關閉
-function mnImgView(u){
-  const list=((window._menuD||{}).imgs||[]).filter(Boolean); let i=Math.max(0,list.indexOf(u)); if(!list.length) list.push(u)
+function mnImgGrid(){ mnImgView(null,true) }
+function mnImgView(u,grid){
+  const list=((window._menuD||{}).imgs||[]).filter(Boolean); let i=Math.max(0,list.indexOf(u)); if(!list.length) list.push(u); let G=!!grid // G=四張一起看（2×2，電視牆實際擺法）
   const ov=document.createElement('div')
   ov.style.cssText='position:fixed;inset:0;background:rgba(10,16,28,.9);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px;user-select:none;touch-action:pan-y'
   const nav=(side)=>`<div data-nav="${side}" style="position:absolute;top:0;bottom:0;${side<0?'left:0':'right:0'};width:18%;display:flex;align-items:center;justify-content:${side<0?'flex-start':'flex-end'};padding:0 14px;cursor:pointer;font-size:44px;color:#fff;opacity:.75;text-shadow:0 2px 8px #000">${side<0?'‹':'›'}</div>`
-  const draw=()=>{ ov.innerHTML=`<img src="${list[i]}" style="max-width:96vw;max-height:94vh;border-radius:10px;box-shadow:0 10px 40px #000">`+(list.length>1?nav(-1)+nav(1)+`<div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 4px #000">${i+1} / ${list.length}　← → 切換・點中間關閉</div>`:'') }
+  const draw=()=>{ if(G&&list.length>1){ ov.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;width:min(96vw,calc(94vh*16/9));">${list.map((x,k)=>`<img data-k="${k}" src="${x}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;cursor:zoom-in;box-shadow:0 6px 24px #000">`).join('')}</div><div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 4px #000">四張一起看　點任一張放大・點空白關閉</div>`; return }
+    ov.innerHTML=`<img src="${list[i]}" style="max-width:96vw;max-height:94vh;border-radius:10px;box-shadow:0 10px 40px #000">`+(list.length>1?nav(-1)+nav(1)+`<div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 4px #000">${i+1} / ${list.length}　← → 切換・點中間關閉　<a data-grid="1" style="color:#9cf;cursor:pointer;margin-left:10px">⊞ 四張一起看</a></div>`:'') }
   const go=(d)=>{ i=(i+d+list.length)%list.length; draw() }
   const close=()=>{ ov.remove(); document.removeEventListener('keydown',key) }
   const key=(e)=>{ if(e.key==='ArrowRight') go(1); else if(e.key==='ArrowLeft') go(-1); else if(e.key==='Escape') close() }
-  ov.onclick=(e)=>{ const n=e.target.closest('[data-nav]'); if(n) go(+n.dataset.nav); else close() }
+  ov.onclick=(e)=>{ const n=e.target.closest('[data-nav]'); const g=e.target.closest('[data-grid]'); const k=e.target.closest('img[data-k]'); if(n) go(+n.dataset.nav); else if(g){ G=true; draw() } else if(k){ G=false; i=+k.dataset.k; draw() } else close() }
   let sx=null; ov.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX },{passive:true}); ov.addEventListener('touchend',e=>{ if(sx==null) return; const dx=e.changedTouches[0].clientX-sx; sx=null; if(Math.abs(dx)>50) go(dx<0?1:-1) })
   document.addEventListener('keydown',key); draw(); document.body.appendChild(ov)
 }
