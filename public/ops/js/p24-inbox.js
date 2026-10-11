@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.49（+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.50（圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -104,8 +104,8 @@ function ibRenderMsgs(scroll) {
     const out = m.dir === 'out'
     let body = ''
     if (m.type === 'sticker' && m.sticker) body = `<img src="https://stickershop.line-scdn.net/stickershop/v1/sticker/${ibEsc(m.sticker.id)}/android/sticker.png" style="width:110px;height:110px;object-fit:contain" alt="貼圖" onerror="this.outerHTML='（貼圖）'">`
-    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener"><img src="${ibEsc(m.url || m.ext)}" style="max-width:min(260px,100%);border-radius:10px;display:block" alt="圖片"></a>`
-    else if (m.type === 'video' && (m.url || m.ext)) body = `<video src="${ibEsc(m.url || m.ext)}" controls style="max-width:min(260px,100%);border-radius:10px;display:block"></video>`
+    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:block;line-height:0"><img src="${ibEsc(m.url || m.ext)}" style="max-width:260px;max-height:340px;width:auto;height:auto;border-radius:10px;display:block" alt="圖片"></a>`
+    else if (m.type === 'video' && (m.url || m.ext)) body = `<video src="${ibEsc(m.url || m.ext)}" controls style="max-width:260px;border-radius:10px;display:block"></video>`
     else if (m.type === 'audio' && (m.url || m.ext)) body = `<audio src="${ibEsc(m.url || m.ext)}" controls style="max-width:240px"></audio>`
     else if (m.type === 'file') body = (m.url || m.ext) ? `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}${m.size ? ` <span class="hint" style="font-size:11px">${Math.round(m.size / 1024)} KB</span>` : ''}</a>` : `${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}（沒抓到內容）`
     else if (m.type === 'location' && m.loc) body = `<a href="https://maps.google.com/?q=${m.loc.lat},${m.loc.lng}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.pin} ${ibEsc(m.text || '位置')}</a>`
@@ -113,7 +113,7 @@ function ibRenderMsgs(scroll) {
     else body = ibEsc(m.text || '')
     return sep + `<div style="display:flex;flex-direction:column;align-items:${out ? 'flex-end' : 'flex-start'};max-width:100%">
       ${out ? `<div class="hint" style="font-size:11.5px;margin:0 6px 2px 0">${ibEsc(m.by || '')}${m.mode === 'push' ? ' · 推播' : ''}</div>` : ''}
-      <div style="max-width:78%;background:${out ? '#2563eb' : 'var(--card)'};color:${out ? '#fff' : 'inherit'};border:1px solid ${out ? '#2563eb' : 'var(--line)'};border-radius:${out ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};padding:8px 12px;font-size:15px;white-space:pre-wrap;word-break:break-word">${body}</div>
+      <div style="max-width:78%;${(['image', 'video'].includes(m.type) && (m.url || m.ext)) ? `width:fit-content;padding:3px;background:transparent;border:2px solid ${out ? '#2563eb' : 'var(--line)'}` : `background:${out ? '#2563eb' : 'var(--card)'};color:${out ? '#fff' : 'inherit'};border:1px solid ${out ? '#2563eb' : 'var(--line)'};padding:8px 12px`};border-radius:${out ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:15px;white-space:pre-wrap;word-break:break-word">${body}</div>
       <div class="hint" style="font-size:10.5px;margin:2px 6px 0">${ibT(m.t)}</div></div>`
   }).join('')
   if (scroll !== false) box.scrollTop = box.scrollHeight
