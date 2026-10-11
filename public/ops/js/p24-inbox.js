@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.47（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.49（+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -6,6 +6,7 @@ const IB_ICON = {
   gear: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   tpl: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>',
   file: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
@@ -77,9 +78,9 @@ function ibRenderPane() {
       <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibNote()" title="內部備註（客人看不到）">備註${cv.note ? ' ●' : ''}</button>
     </div>
     <div id="ibMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
-    <div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
+    <div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="document.getElementById('ibFile').click()" title="傳圖片或檔案（也可以直接把截圖貼到輸入框）">${IB_ICON.clip} 附件</button><input id="ibFile" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" style="display:none" onchange="ibUploadFiles(this.files);this.value=''"><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
     <div style="display:flex;gap:8px;padding:6px 12px 10px;align-items:flex-end">
-      <textarea id="ibInput" rows="1" placeholder="回覆客人…（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}"></textarea>
+      <textarea id="ibInput" rows="1" placeholder="回覆客人…（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}" onpaste="ibPaste(event)"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="ibSend()">${IB_ICON.send}</button>
     </div>`
   ibModeLine()
@@ -152,11 +153,49 @@ async function ibSend() {
   _ibBusy = false
   if (!d || !d.ok) { _ibMsgs = _ibMsgs.filter(m => m.id !== tmp.id); ibRenderMsgs(); ta.value = text; libToast((d && d.error) || '送出失敗，再試一次', true); return }
   const i = _ibMsgs.findIndex(m => m.id === tmp.id); if (i >= 0) _ibMsgs[i] = d.msg
-  _ibReplyLeft = 0; if (_ibConv) { _ibConv.status = d.conv.status; _ibConv.assignee = d.conv.assignee }
+  _ibReplyLeft = 0; ibApplyConv(d.conv)
   ibRenderMsgs(); ibModeLine()
   libToast(d.mode === 'reply' ? '已回覆（免費）' : '已推播（扣 1 則）')
   const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: text.slice(0, 60), dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; c.status = d.conv.status; c.assignee = d.conv.assignee; ibRenderList() }
   ta.focus()
+}
+function ibApplyConv(c) { // 回覆後對話狀態變了→表頭的下拉與清單一起更新（v4.70.49 修：之前表頭還停在「新」）
+  if (!c) return
+  if (_ibConv) { _ibConv.status = c.status; _ibConv.assignee = c.assignee }
+  const sels = document.querySelectorAll('#ibPane select'); if (sels[0]) sels[0].value = c.status || 'new'; if (sels[1]) sels[1].value = c.assignee || ''
+  const r = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (r) { r.status = c.status; r.assignee = c.assignee }
+}
+function ibPaste(ev) {
+  const files = [...((ev.clipboardData || {}).files || [])]
+  if (!files.length) return
+  ev.preventDefault(); ibUploadFiles(files)
+}
+function ibShrinkImage(file) { // 截圖常常 3～8MB：縮到長邊 1600、JPEG 0.85（LINE 圖片訊息只收 JPEG/PNG，預覽圖上限 1MB）
+  return new Promise(res => {
+    const img = new Image(); const u = URL.createObjectURL(file)
+    img.onload = () => { try { const M = 1600; let w = img.width, h = img.height; if (Math.max(w, h) > M) { const k = M / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k) } const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h); URL.revokeObjectURL(u); res(c.toDataURL('image/jpeg', 0.85)) } catch (_) { res(null) } }
+    img.onerror = () => { URL.revokeObjectURL(u); res(null) }
+    img.src = u
+  })
+}
+async function ibUploadFiles(files) {
+  files = [...(files || [])]; if (!files.length || !_ibCur) return
+  for (const f of files) {
+    const isImg = /^image\//.test(f.type)
+    if (!isImg && f.size > 10 * 1024 * 1024) { libToast(f.name + ' 太大（上限 10MB）', true); continue }
+    const tmp = { id: 'tmp' + Date.now() + Math.random(), dir: 'out', type: 'sys', text: (isImg ? '圖片' : f.name) + ' 上傳中…', t: new Date().toISOString() }
+    _ibMsgs.push(tmp); ibRenderMsgs()
+    let dataUrl = isImg ? await ibShrinkImage(f) : null
+    if (!dataUrl) dataUrl = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(f) })
+    const d = dataUrl ? await ibPost({ op: 'sendfile', id: _ibCur, dataUrl, name: f.name }) : null
+    _ibMsgs = _ibMsgs.filter(m => m.id !== tmp.id)
+    if (!d || !d.ok) { ibRenderMsgs(); libToast((d && d.error) || '上傳失敗', true); continue }
+    _ibMsgs.push(d.msg); _ibReplyLeft = 0; ibApplyConv(d.conv); ibRenderMsgs(); ibModeLine()
+    libToast(d.mode === 'reply' ? '已傳送（免費）' : '已傳送（推播，扣 1 則）')
+    const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: isImg ? '（圖片）' : '（檔案）' + f.name, dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; ibRenderList() }
+  }
+  // 剛送出的圖要簽名網址才看得到：重撈一次對話
+  const d2 = await ibGet('op=conv&id=' + encodeURIComponent(_ibCur)); if (d2 && d2.ok) { _ibMsgs = d2.list || _ibMsgs; ibRenderMsgs() }
 }
 async function ibOp(op, value) {
   const d = await ibPost({ op, id: _ibCur, value })
@@ -213,6 +252,7 @@ function ibSetRender() {
       <div class="hint" style="font-size:12.5px;margin-top:4px">${info}${q ? ' · ' + q : ''}${a.lastEventT ? ' · 最近收到 ' + ibT(a.lastEventT) : ''}</div>
       ${a.hook && a.hook.endpoint && !a.hookOk ? `<div class="hint" style="font-size:12px;word-break:break-all">目前 webhook：${ibEsc(a.hook.endpoint)}${a.hook.active === false ? '（未啟用）' : ''}</div>` : ''}
       ${!a.configured ? `<div class="hint" style="font-size:12px">要給 CC 的環境變數：${a.envSecret}、${a.envToken}</div>` : ''}
+      ${a.forwardSet ? `<div class="hint" style="font-size:12px;word-break:break-all">同時轉發給原本的系統：${ibEsc(a.forward)}${a.lastFwd ? (a.lastFwd.ok ? ' · 最近轉發成功 ' + ibT(a.lastFwd.t) : ' · <span style="color:#d97706">最近轉發失敗 ' + ibEsc(a.lastFwd.err || a.lastFwd.status) + '</span>') : ''} <button class="mini" style="padding:2px 8px;font-size:11.5px" onclick="ibForwardStop('${a.key}')">停止轉發</button></div>` : ''}
     </div>`
   }).join('')
   const people = d.people || []
@@ -242,10 +282,15 @@ async function ibSetSave() {
 }
 async function ibConnect(key, force) {
   const d = await ibPost({ op: 'connect', acct: key, force })
-  if (d && d.needConfirm) { if (confirm(d.error + '\n\n確定改接？原本接的系統會收不到訊息。')) return ibConnect(key, true); return }
+  if (d && d.needConfirm) { if (confirm(d.error)) return ibConnect(key, true); return }
   if (!d || !d.ok) { libToast((d && d.error) || '接不上', true); return }
   const t = d.test || {}
-  libToast(t.success ? '已接上，LINE 測試通過' : '已設定，但 LINE 測試回：' + (t.reason || t.detail || JSON.stringify(t)).slice(0, 80), !t.success)
+  libToast((t.success ? '已接上，LINE 測試通過' : '已設定，但 LINE 測試回：' + (t.reason || t.detail || JSON.stringify(t)).slice(0, 80)) + (d.forwarding ? '；原本的系統改成轉發' : ''), !t.success)
   const d2 = await ibGet('op=settings'); if (d2 && d2.ok) { _ibSet = d2; ibSetRender() }
+}
+async function ibForwardStop(key) {
+  if (!confirm('停止轉發後，原本接著這個帳號的系統就收不到訊息了。確定？')) return
+  const d = await ibPost({ op: 'cfg', cfg: { forward: { [key]: '' } } }); if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
+  libToast('已停止轉發'); const d2 = await ibGet('op=settings'); if (d2 && d2.ok) { _ibSet = d2; ibSetRender() }
 }
 window.addEventListener('resize', () => { if (curStore === 'inbox' && _ibD) { ibRender(); if (_ibCur) ibRenderMsgs(false) } })

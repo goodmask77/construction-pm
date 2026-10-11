@@ -4313,6 +4313,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ ok: false, error: '不認識的操作' })
       }
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
+      if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
       if (['status', 'assign', 'note', 'rename'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
       if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }

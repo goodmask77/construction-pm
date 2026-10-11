@@ -22,8 +22,8 @@
 
 | 帳號 | Channel secret | Channel access token |
 | --- | --- | --- |
-| A Beach 客服 | ☐ | ☐ |
-| GROUN:D 客服 | ☐ | ☐ |
+| A Beach 客服 | ✅ 已給（10-11） | ☐ 等小夏給現用 token |
+| GROUN:D 客服 | ✅ 已接通（10-11） | ✅ |
 | 招募 | ✅ 已接通（10-11） | ✅ |
 
 拿到後直接貼給 CC 就好（CC 放進 Vercel 的環境變數，網頁上永遠看不到）。環境變數名稱：`LINE_OA_AB_SECRET`／`LINE_OA_AB_TOKEN`、`LINE_OA_GD_*`、`LINE_OA_HR_*`。
@@ -34,7 +34,7 @@
 2. 右上「設定」→ 左邊「Messaging API」。
    - 看到「啟用 Messaging API」按鈕 → 按下去。會要你選或建一個「服務提供者（Provider）」，名字隨便取（例如 GROUND），同意條款即可。
    - 啟用後這一頁會顯示 **Channel ID** 和 **Channel secret** → 複製 **Channel secret**。
-3. 開 <https://developers.line.biz/console>，同一個 LINE 登入 → 點剛才的服務提供者 → 點這個帳號的 channel → 上方「Messaging API」分頁 → 拉到最下面「Channel access token (long-lived)」→ 按「Issue」→ 複製那一長串。
+3. 開 <https://developers.line.biz/console>，同一個 LINE 登入 → **左邊 Providers 清單**點該帳號的服務提供者（例：Abeach101、GROUN:D；首頁「最近看過」不一定有列）→ 點這個帳號的 channel（名稱是官方帳號名，不是「DD」） → 上方「Messaging API」分頁 → 拉到最下面「Channel access token (long-lived)」→ 按「Issue」→ 複製那一長串。
 4. 回到 <https://manager.line.biz> 這個帳號 →「設定」→「回應設定」：
    - 「聊天」保持開（店員還是可以在 LINE 官方帳號 App 看）
    - 「Webhook」打開
@@ -47,6 +47,6 @@ CC 收到後：放進 Vercel → 部署 → 到 /prep 收件匣設定頁按「�
 
 - **回覆要從 app 發。** 在 LINE 官方帳號 App 手動回的話，收件匣看不到那一則（LINE 不會把人工回覆送進 webhook）。
 - **免費／扣額度。** 客人傳來後 50 秒內回覆是免費的（reply）；超過就要用推播（push），會算進該帳號的每月則數。回覆框會寫清楚。
-- **一個帳號只能有一個 webhook 網址。** 如果某個帳號已經接著別的系統（訂位、阿桑的 OPS…），按「接到收件匣」時會先告訴你目前指到哪裡，由你決定要不要改。改了之後原本那個系統就收不到了。
+- **一個帳號只能有一個 webhook 網址。** 如果某個帳號已經接著別的系統（例如 A Beach 客服目前接著包場 EM 系統 em-abeach），按「接到收件匣」時會先告訴你目前指到哪裡；你按確定後，webhook 改指到收件匣，**原本的系統自動變成「轉發對象」**：每一則訊息我們原封不動（同內容、同簽章）再送給它，它照常運作。設定頁看得到轉發狀態，也可以「停止轉發」。（v4.70.48）
 - **個人 LINE 的聊天接不進來。** 只有官方帳號的對話可以。
 - 第一版只做 1:1 客人對話。官方帳號被加進群組的訊息也會收，但顯示為「群組 xxxx」，不特別處理。

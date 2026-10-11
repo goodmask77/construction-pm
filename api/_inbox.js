@@ -52,7 +52,8 @@ const convId = (acct, uid) => `${acct}:${uid}`
 const splitId = (id) => { const i = String(id).indexOf(':'); return i > 0 ? [id.slice(0, i), id.slice(i + 1)] : [null, null] }
 const msgKey = (acct, uid, t) => `pm_inbox_m_${acct}_${uid}_${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const statKey = (acct) => `pm_inbox_acct_${acct}`
-export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, ...c } }
+export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {} } } // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
+export const maskUrl = (u) => String(u || '').replace(/([?&][^=&]+=)[^&]{4,}/g, (m, k) => k + '••••')
 export const isMgr = (who, apr, pm) => !!who && (apr.includes(who.name) || who.name === '張良瑋' || who.role === '主管' || (((pm || {}).users || {})[who.rid || who.uid] || {}).admin)
 export const canSeeAcct = (cfg, who, mgr, acct) => mgr || ((cfg.perm || {})[acct] || []).includes(who.name)
 
@@ -105,6 +106,19 @@ async function bumpStat(acct, patch) {
 }
 export async function noteSigFail() { try { const s = (await kvGet('pm_inbox_acct__sigfail')) || { n: 0 }; await kvSet('pm_inbox_acct__sigfail', { n: (s.n || 0) + 1, lastT: nowIso() }, '收件匣狀態') } catch (_) {} }
 
+// ── 轉發：原封不動（同 body、同簽章）送給原本接著的系統；失敗記在帳號狀態，不影響我們自己的存檔 ──
+export async function forwardRaw(a, raw, sig) {
+  const cfg = await loadCfg(); const url = cfg.forward[a.key]; if (!url) return null
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000)
+  let out
+  try { const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-line-signature': sig, 'user-agent': 'LineBotWebhook/2.0 (via ground-pm inbox relay)' }, body: raw, signal: ctl.signal }); out = { ok: r.ok, status: r.status, t: nowIso() } }
+  catch (e) { out = { ok: false, status: 0, err: String(e?.name === 'AbortError' ? 'timeout' : e?.message || e).slice(0, 80), t: nowIso() } }
+  clearTimeout(tm)
+  bumpStat(a.key, { lastFwd: out }).catch(() => {})
+  if (!out.ok) console.log('[inbox] forward fail', a.key, JSON.stringify(out))
+  return out
+}
+
 // ── 收訊：一個 webhook 事件 → 存訊息＋更新對話＋通知 ──
 export async function ingestEvent(a, ev, destination) {
   const src = ev.source || {}
@@ -135,7 +149,7 @@ export async function ingestEvent(a, ev, destination) {
         if (dl && dl.buf.length) { const path = `inbox/${a.key}/${uid}/${t.toString(36)}.${extOf(dl.mime, m.fileName)}`; if (await uploadPrivate(path, dl.buf, dl.mime)) { msg.media = path; msg.mime = dl.mime; msg.size = dl.buf.length } }
       }
     } else { text = '（' + (m.type || '訊息') + '）' }
-    conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso()
+    conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso(); conv.replyUsed = false // 每則新訊息都有新的 replyToken（v4.70.49 修：之前回過一次後永遠走 push）
     conv.unread = (conv.unread || 0) + 1
     if (conv.status === 'done') conv.status = 'new'
     conv.lastInT = msg.t
@@ -202,6 +216,10 @@ export async function sendOut({ who, mgr, cfg, id, text, kind, extra }) {
   text = String(text || '').trim(); if (!text) return { ok: false, error: '沒有內容' }
   const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
   const messages = [{ type: 'text', text: text.slice(0, 4900) }]
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch: { type: 'text', text }, lastText: text })
+}
+// 送出（文字或媒體）：50 秒內有未用過的 replyToken → reply（免費），否則 push；存 out 訊息＋更新對話
+async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText }) {
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
   let mode = fresh ? 'reply' : 'push', r
   if (fresh) {
@@ -210,12 +228,32 @@ export async function sendOut({ who, mgr, cfg, id, text, kind, extra }) {
   } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) })
   if (!r.ok) return { ok: false, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
-  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', type: 'text', text, by: who.name, mode }
-  conv.replyUsed = true; conv.last = { text: text.slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
+  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
+  conv.replyUsed = true; conv.last = { text: String(lastText || '').slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
   if (conv.status === 'new') conv.status = 'open'
   if (!conv.assignee) conv.assignee = who.name
   await Promise.all([kvInsert(mk, msg), kvSet(ck, conv)])
   return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee } }
+}
+// 送圖片／檔案（v4.70.49 張良「能上傳檔案或截圖貼上嗎」）：圖片→LINE 圖片訊息（LINE 要抓得到的 https 網址＝私桶簽名一年）；其他檔案 LINE 沒有「檔案訊息」→ 用文字附連結
+export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
+  const m = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(dataUrl || '')); if (!m) return { ok: false, error: '檔案格式不對' }
+  const buf = Buffer.from(m[2], 'base64'); const mime = m[1]
+  if (!buf.length) return { ok: false, error: '檔案是空的' }
+  if (buf.length > 10 * 1024 * 1024) return { ok: false, error: '檔案太大（上限 10MB）' }
+  const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
+  const fileName = String(name || '').trim().slice(0, 80) || (mime.startsWith('image/') ? '圖片' : '檔案')
+  const isImg = /^image\/(jpeg|png)$/.test(mime) // LINE 圖片訊息只收 JPEG/PNG（前端已轉 JPEG）
+  const ts = Date.now(); const path = `inbox/${acct}/${uid}/out_${ts.toString(36)}.${extOf(mime, fileName)}`
+  if (!(await uploadPrivate(path, buf, mime))) return { ok: false, error: '上傳失敗' }
+  const url = await signedUrl(path, 365 * 86400); if (!url) return { ok: false, error: '產生網址失敗' }
+  const messages = isImg ? [{ type: 'image', originalContentUrl: url, previewImageUrl: url }] : [{ type: 'text', text: `📎 ${fileName}\n${url}` }]
+  const msgPatch = isImg ? { type: 'image', media: path, mime, fileName, size: buf.length } : { type: 'file', media: path, mime, fileName, size: buf.length, text: `📎 ${fileName}` }
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText: isImg ? '（圖片）' : `（檔案）${fileName}` })
 }
 
 // ── 狀態／指派／備註 ──
@@ -250,7 +288,7 @@ export async function settings({ origin }) {
     let info = null, hook = null, quota = null
     if (ok) { const [i, w, q] = await Promise.all([botInfo(a), webhookInfo(a), quotaOf(a)]); info = i.ok ? i.data : { error: i.data?.message || i.status }; hook = w.ok ? w.data : { error: w.data?.message || w.status }; quota = q }
     const want = origin + '/api/inbox-webhook'
-    return { key: a.key, name: a.name, color: a.color, configured: ok, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
+    return { key: a.key, name: a.name, color: a.color, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
   }))
   return { ok: true, accounts, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin }, sigfail: sig }
 }
@@ -259,6 +297,7 @@ export async function saveCfg(patch, who) {
   if (patch.perm && typeof patch.perm === 'object') { cfg.perm = {}; for (const a of ACCOUNTS) cfg.perm[a.key] = Array.isArray(patch.perm[a.key]) ? patch.perm[a.key].map(String).slice(0, 50) : [] }
   if (Array.isArray(patch.templates)) cfg.templates = patch.templates.filter(x => x && (x.text || '').trim()).map((x, i) => ({ id: x.id || ('t' + Date.now().toString(36) + i), title: String(x.title || '').slice(0, 30), text: String(x.text || '').slice(0, 1000) })).slice(0, 60)
   if (patch.remindMin != null) cfg.remindMin = Math.max(5, Math.min(1440, +patch.remindMin || 30))
+  if (patch.forward && typeof patch.forward === 'object') { for (const [k, v] of Object.entries(patch.forward)) { if (!acctOf(k)) continue; const u = String(v || '').trim(); if (!u) delete cfg.forward[k]; else if (/^https:\/\//.test(u)) cfg.forward[k] = u.slice(0, 500) } }
   cfg.updatedBy = who.name; cfg.updatedT = nowIso()
   await kvSet(CFG_KEY, cfg, who.name)
   return { ok: true, cfg: { perm: cfg.perm, templates: cfg.templates, remindMin: cfg.remindMin } }
@@ -270,11 +309,13 @@ export async function connectAcct({ key, origin, force }) {
   const want = origin + '/api/inbox-webhook'
   const cur = await webhookInfo(a)
   const curEp = cur.ok ? (cur.data.endpoint || '') : ''
-  if (curEp && curEp !== want && !force) return { ok: false, needConfirm: true, current: curEp, error: `這個帳號的 webhook 目前指到別的地方：${curEp}。要改過來請按「確定改接」` }
+  if (curEp && curEp !== want && !force) return { ok: false, needConfirm: true, current: maskUrl(curEp), error: `這個帳號的 webhook 目前指到別的系統：${maskUrl(curEp)}。改接後我們會把每一則原封轉發給它，它照常運作；確定要改接嗎？` }
+  // 改接時把原本的系統記成「轉發對象」：原系統不會斷（可在設定頁停止轉發）
+  if (curEp && curEp !== want) { const cfg = await loadCfg(); cfg.forward[a.key] = curEp; await kvSet(CFG_KEY, cfg, '收件匣改接') }
   const s = await webhookSet(a, want); if (!s.ok) return { ok: false, error: `LINE 不讓設定（${s.status}）：${String(s.data?.message || '').slice(0, 100)}` }
   const t = await webhookTest(a, want)
   await bumpStat(a.key, { connectedT: nowIso(), prevHook: curEp && curEp !== want ? curEp : undefined })
-  return { ok: true, endpoint: want, test: t.data, previous: curEp }
+  return { ok: true, endpoint: want, test: t.data, previous: curEp && curEp !== want ? maskUrl(curEp) : '', forwarding: !!(curEp && curEp !== want) }
 }
 
 // ── 未回覆提醒（每小時 cron 呼叫）：超過 remindMin 分鐘沒人回且還沒完成 → 再推一次＋LINE 私訊審核人 ──
