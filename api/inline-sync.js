@@ -259,9 +259,10 @@ function holBlocks(hol, from, to) {
     if (last && addDays(last.to, 1) === d) { last.to = d; last.days.push(d); if (last.name === '補假' && hol[d] !== '補假') last.name = hol[d] }
     else blocks.push({ from: d, to: d, days: [d], name: hol[d] })
   }
-  for (const b of blocks) b.name = b.name.replace(/臺灣光復暨金門古寧頭大捷紀念日/, '光復節').replace(/開國紀念日/, '元旦').replace(/農曆除夕/, '除夕')
+  for (const b of blocks) b.name = holShort(b.name)
   return blocks
 }
+const holShort = (n) => String(n || '').replace(/臺灣光復暨金門古寧頭大捷紀念日/, '光復節').replace(/開國紀念日/, '元旦').replace(/農曆除夕/, '除夕').replace(/和平紀念日/, '228').replace(/行憲紀念日/, '行憲日')
 const dayStat = (arr) => { // 一天的訂位 → 統計（候補 ty=4 不算人次；待確認 st=3 另計）
   const o = { r: 0, g: 0, l: 0, dn: 0, wl: 0, uc: 0, ucG: 0, big: 0 }
   for (const r of arr || []) {
@@ -305,7 +306,7 @@ async function custOutlook() {
   const strip = (r) => ({ t: r.t || '', nm: r.name || '', n: r.n || 0, st: r.st, ty: r.ty, kc: (r.kc || 0) + (r.ks || 0), note: (r.note || r.inote || '').slice(0, 40) })
   const days = H14.map((d) => {
     const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly))
-    return { d, hol: hol[d] || '', ...s, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
+    return { d, hol: holShort(hol[d] || ''), ...s, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
   })
   // ② 連假倒數
   const hols = blocks.map((b) => {
