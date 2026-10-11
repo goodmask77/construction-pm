@@ -281,16 +281,19 @@ function menuRender(){
   const df = menuDiff()
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:var(--card);color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
   const canE = !!(d.me && d.me.canEdit) // v4.70.56（張良 10-11 工具列重整）：編輯類按鈕只給有編輯權的人；一列「看／輸出」、一列「編輯工具」
-  let h = `<section><h2>新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
+  const edAll = canE && menuMode==='edit' && !!window._mnEditOn // v4.70.57（張良 10-11「鎖住，出一個編輯按鈕打開才出現可以編輯的」）：預設唯讀，按「✎ 編輯菜單」才開
+  let h = `<section><h2>新菜單 <span class="hint">${canE?(edAll?'編輯中：改完按「✓ 完成編輯」':'按「✎ 編輯菜單」才能改，大家都看得到動了什麼'):(meN?'看得到；要編輯先申請編輯權限':'看得到；要編輯先綁定——'+BIND_HINT)}</span></h2>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
+    ${canE&&menuMode==='edit'?`<button class="mini ${edAll?'on':''}" onclick="window._mnEditOn=!window._mnEditOn;menuRender()" title="${edAll?'收起編輯介面':'打開才會出現新增／修改／拖曳排序'}">${edAll?'✓ 完成編輯':'✎ 編輯菜單'}</button>`:''}
     <span style="flex:1"></span>
     <span class="mut" style="font-size:12px">輸出</span>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
     <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張：照片不動，價格/品名跟著你改的自動變">🖼 四張電視圖</button>
+    <button class="mini" onclick="menuExport('csv')" title="分類／品名／英文／單點價／套餐基準／備註，Excel、Numbers、Google 試算表都能直接開">⬇️ 匯出表格</button>
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
   </div>
-  ${canE&&menuMode==='edit'?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--card);border:1.5px solid var(--line);border-radius:10px">
+  ${edAll?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--card);border:1.5px solid var(--line);border-radius:10px">
     <span class="mut" style="font-size:12px">編輯</span>
     <button class="mini" id="menuOcrBtn" onclick="menuOcr()" title="拍／上傳新菜單照片（最多 4 張），AI 逐項抄成菜單，預覽後可覆蓋或只補新品項，之後直接在下面改">📷 拍菜單 AI 建檔</button>
     <button class="mini" onclick="menuSecForm()">＋ 新增分類</button>
@@ -310,7 +313,7 @@ function menuRender(){
     </div>`
   }).join('') + `</div>`
   // v4.70.50（張良 2026-10-11）：四格圖＝電視頁「💾 存版本」最新一版，這裡標出版本名稱＋日期；直式海報最新版也給連結
-  if (d.curVer || d.posterImg || imgs.filter(Boolean).length>1) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">${imgs.filter(Boolean).length>1?`<button class="mini" onclick="mnImgGrid()" title="四張電視圖 2×2 一起預覽">⊞ 四張一起看</button><button class="mini" id="mnDlAll" onclick="mnImgDownloadAll()" title="四張電視圖＋四張合一＋直式海報，手機可直接存到相簿">⬇ 下載 6 張到相簿</button>`:''}${canE?`<button class="mini ${window._mnImgEdit?'on':''}" onclick="window._mnImgEdit=!window._mnImgEdit;menuRender()" title="開啟後每格出現 📷 換圖／↩︎ 復原">${window._mnImgEdit?'✓ 完成換圖':'✎ 換圖'}</button>`:''}${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>${String(d.curVer.name).includes(String(d.curVer.date).slice(0,10))?'':'・'+d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}${String(d.posterImg.name).includes(String(d.posterImg.date).slice(0,10))?'':'・'+d.posterImg.date}</a>`:''}</div>`
+  if (d.curVer || d.posterImg || imgs.filter(Boolean).length>1) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">${imgs.filter(Boolean).length>1?`<button class="mini" onclick="mnImgGrid()" title="四張電視圖 2×2 一起預覽">⊞ 四張一起看</button><button class="mini" id="mnDlAll" onclick="mnImgDownloadAll()" title="四張電視圖＋四張合一＋直式海報，手機可直接存到相簿">⬇ 下載 6 張到相簿</button>`:''}${d.posterImg?`<button class="mini" onclick="mnImgView('${d.posterImg.url}')" title="直式菜單最新存檔版本">🖼 直式預覽</button>`:''}${canE?`<button class="mini ${window._mnImgEdit?'on':''}" onclick="window._mnImgEdit=!window._mnImgEdit;menuRender()" title="開啟後每格出現 📷 換圖／↩︎ 復原">${window._mnImgEdit?'✓ 完成換圖':'✎ 換圖'}</button>`:''}${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>${String(d.curVer.name).includes(String(d.curVer.date).slice(0,10))?'':'・'+d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<span>🖼 直式目前版本：<b style="color:var(--fg)">${String(d.posterImg.name).replace(/</g,'&lt;')}</b>${String(d.posterImg.name).includes(String(d.posterImg.date).slice(0,10))?'':'・'+d.posterImg.date}・${d.posterImg.by||''}</span>`:''}</div>`
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#2E2814;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
@@ -320,7 +323,7 @@ function menuRender(){
     // ～修改明細不逐條列（張良 2026-10-02：保留的菜單不用顯示在這）——數字在上面那行就夠
     h += `</div>`
   } else h += `<div class="mut" style="margin-bottom:10px;font-size:14px">還沒有改動——跟原菜單一模一樣</div>`
-  h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:10px;font-size:14px"><b>套餐規則：</b>${(d.draft.note||'').replace(/</g,'&lt;')} ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuNoteEdit()">✏️</button>`:''}</div>`
+  h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:10px;font-size:14px"><b>套餐規則：</b>${(d.draft.note||'').replace(/</g,'&lt;')} ${edAll&&menuMode==='edit'?`<button class="mini" onclick="menuNoteEdit()">✏️</button>`:''}</div>`
   if (menuMode === 'edit') {
     window._menuFold = window._menuFold || new Set() // v4.10.0（張良）：分類可收合＋一鍵全收/全開
     h += `<div style="margin-bottom:8px;display:flex;gap:6px"><button class="mini" onclick="menuFoldAll(1)">⊖ 全部收合</button><button class="mini" onclick="menuFoldAll(0)">⊕ 全部展開</button></div>`
@@ -328,8 +331,8 @@ function menuRender(){
     ;(d.draft.sections||[]).forEach((s2,si)=>{
       const fold = window._menuFold.has(si)
       h += `<div class="mnSec" data-si="${si}" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
-        <div style="font-weight:900;color:var(--pdark)">${meN?`<span onpointerdown="mnDragStart(event,'sec',${si})" title="按住拖曳排序分類" style="cursor:grab;touch-action:none;color:#9fb0c6;padding:2px 5px;display:inline-block">⠿</span> `:''}<span style="cursor:pointer" onclick="menuFoldT(${si})">${fold?'▸':'▾'} ${s2.name}</span>${fold?` <span class="hint">（${(s2.items||[]).length} 品項）</span>`:''} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
-        ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini ${s2.combo?'on':''}" onclick="menuSecCombo(${si})" title="設這類的套餐基準價：品項售價=基準價→顯示「套餐內含」、高於→「套餐+差額」；0/空=這類不開套餐">套餐價${s2.combo?' $'+s2.combo:''}</button> <button class="mini" onclick="menuItemAdd(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
+        <div style="font-weight:900;color:var(--pdark)">${edAll?`<span onpointerdown="mnDragStart(event,'sec',${si})" title="按住拖曳排序分類" style="cursor:grab;touch-action:none;color:#9fb0c6;padding:2px 5px;display:inline-block">⠿</span> `:''}<span style="cursor:pointer" onclick="menuFoldT(${si})">${fold?'▸':'▾'} ${s2.name}</span>${fold?` <span class="hint">（${(s2.items||[]).length} 品項）</span>`:''} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
+        ${edAll?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${edAll&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini ${s2.combo?'on':''}" onclick="menuSecCombo(${si})" title="設這類的套餐基準價：品項售價=基準價→顯示「套餐內含」、高於→「套餐+差額」；0/空=這類不開套餐">套餐價${s2.combo?' $'+s2.combo:''}</button> <button class="mini" onclick="menuItemAdd(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
       // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
       // v4.43.7 對齊治本：th 改[名稱,對齊]單一來源（售價/新售價=right 跟 td 一致、操作=left）——照 p11 C9 範式
       if (fold) { h += `</div>`; return } // 收合＝只留標題列
@@ -337,7 +340,7 @@ function menuRender(){
       ;(s2.items||[]).forEach(i2=>{
         const b = df.bF[i2.id]
         const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
-        const edOn = meN && menuEditSec[si]
+        const edOn = edAll && menuEditSec[si]
         // v4.52.5 clr=1 給清空 X（張良「加一個X給我直接消除整個」）：點 X=清空該格並重畫；配合後端防蓋修正,清了不會再跑回來
         const cell=(f,v,st,clr)=> edOn ? `<td style="padding:3px 4px;border:1px solid var(--line);position:relative"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" onkeydown="menuKey(event)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;${clr?'padding-right:26px;':''}font-size:14px;background:var(--card);${st||''}">${clr?`<button onclick="menuCell(${si},'${i2.id}','${f}','');menuRender()" title="清空這格" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>`:''}</td>` : `<td style="padding:6px 7px;border:1px solid var(--line);text-align:left;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
         // v4.57.1 張良：⠿拖曳握把移到中文名左邊、中文欄縮窄、操作欄只留🗑（↑↓拿掉用拖曳取代）
@@ -363,7 +366,7 @@ function menuRender(){
       df.del.filter(k=>df.bF[k].sec===s2.name).forEach(k=>{ const b = df.bF[k]
         h += `<div style="display:flex;gap:8px;align-items:center;background:#20262F;border:1px dashed #56493F;border-radius:9px;padding:6px 10px;margin-top:6px;font-size:14px;opacity:.75">
           <span style="flex:1;color:var(--red)"><s>${b.name} $${b.price}</s> <span style="font-size:13px;font-weight:800">已刪除</span></span>
-          ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('永久刪除「${b.name}」？不會再出現在菜單頁'))menuItemPurge('${k}')">永久刪除</button>`:''}</div>` })
+          ${edAll?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('永久刪除「${b.name}」？不會再出現在菜單頁'))menuItemPurge('${k}')">永久刪除</button>`:''}</div>` })
       h += `</div>`
     })
     h += `</div>` // /#mnSecs
@@ -372,7 +375,7 @@ function menuRender(){
     delSecs.forEach(bs=>{
       h += `<div style="background:#20262F;border:1px dashed #56493F;border-radius:12px;padding:9px 11px;margin-bottom:10px;opacity:.75">
         <div style="font-weight:900;color:var(--red)"><s>${bs.name}</s> 已整類刪除</div>` +
-        df.del.filter(k=>df.bF[k].sec===bs.name).map(k=>`<div style="font-size:14px;color:var(--red);margin-top:4px"><s>${df.bF[k].name} $${df.bF[k].price}</s> ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button>`:''}</div>`).join('') + `</div>`
+        df.del.filter(k=>df.bF[k].sec===bs.name).map(k=>`<div style="font-size:14px;color:var(--red);margin-top:4px"><s>${df.bF[k].name} $${df.bF[k].price}</s> ${edAll?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button>`:''}</div>`).join('') + `</div>`
     })
   } else { // 🆚 對照模式：左原右新
     const secNames = [...new Set([...(d.base.sections||[]).map(s2=>s2.name), ...(d.draft.sections||[]).map(s2=>s2.name)])]
@@ -410,6 +413,15 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   const d = window._menuD; if (!d) return
   const secs = (d.draft.sections||[]).map(s2=>({ name:s2.name, note:s2.note, combo:Number(s2.combo)||0,
     items:(s2.items||[]).filter(i2=>i2.name) })).filter(s=>s.items.length)
+  if (kind === 'csv') { // v4.70.57 匯出表格（張良 2026-10-11「不要只有文字」）：UTF-8 BOM，Excel／Numbers／Google 試算表直接開不亂碼
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"'
+    const R = [['分類','品名','英文','單點價','套餐基準價','套餐加價','備註'].map(q).join(',')]
+    secs.forEach(s2 => s2.items.forEach(i2 => { const add = s2.combo ? (Number(i2.price)||0) - s2.combo : ''; R.push([s2.name, i2.name, i2.en||'', i2.price, s2.combo||'', add===''?'':(add===0?'內含':(add>0?'+'+add:add)), [s2.note, i2.note].filter(Boolean).join('；')].map(q).join(',')) }))
+    if (d.draft.note) R.push('', q('套餐規則') + ',' + q(d.draft.note))
+    const blob = new Blob(['\ufeff' + R.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const a3 = document.createElement('a'); a3.href = URL.createObjectURL(blob); a3.download = 'GROUND菜單_' + todayTpe() + '.csv'; a3.click(); URL.revokeObjectURL(a3.href)
+    return
+  }
   const L = []
   L.push('GROUN:D 菜單 ' + todayTpe())
   if (d.draft.note) L.push(d.draft.note)
