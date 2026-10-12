@@ -16,16 +16,30 @@
   const M=document.getElementById('m')
   const dest=(s)=>'/prep'+(s?('#'+decodeURIComponent(s)):'')
   let s=new URLSearchParams(location.search).get('s')||''
+  let to=new URLSearchParams(location.search).get('to')||'', c=new URLSearchParams(location.search).get('c')||'', ref=new URLSearchParams(location.search).get('ref')||'', tab=new URLSearchParams(location.search).get('tab')||'' // v4.70.91 同一個 LIFF 當中繼：to=member（會員卡）/ to=order&c=碼（團體訂餐）；liff.init 只能在這個端點底下跑，所以在這裡認完人再帶身分轉過去
   try{
     const cfg=await (await fetch('/api/mail-sync?webpushcfg=1')).json()
-    if(!cfg||!cfg.liff){ location.replace(dest(s)); return } // 還沒設 LIFF_ID → 直接進看板
-    await liff.init({ liffId: cfg.liff })
-    try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s') } }catch(_){}
+    // v4.71.1 先讀 liff.state（LINE 開 LIFF 時原本的 ?s=/?to= 會被包在這裡）再決定用哪個 LIFF：to=member/order ＝客人用 LIFF_ID（GROUN:D LIFE）；其他（員工 s=深層連結）＝ LIFF_STAFF_ID（DD LIFE，跟 DD 同 Provider 才認得出綁定）
+    try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s'); if(q2.get('to')) to=q2.get('to'); if(q2.get('c')) c=q2.get('c'); if(q2.get('ref')) ref=q2.get('ref'); if(q2.get('tab')) tab=q2.get('tab') } }catch(_){}
+    const isCust=(to==='member'||to==='order')
+    const liffId=cfg&&(isCust?(cfg.liff||cfg.liffStaff):(cfg.liffStaff||cfg.liff))
+    if(!liffId){ location.replace(dest(s)); return } // 還沒設 LIFF → 直接進看板
+    await liff.init({ liffId })
     if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return } // LINE 裡面開＝自動已登入，不會跳這步
     const at=liff.getAccessToken()
+    if(to==='member'){ M.textContent='🪪 開啟會員卡…'; const w=await (await fetch('/api/mail-sync?mcard=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'who',at})})).json()
+      if(w&&w.ok){ location.replace('/member#u='+encodeURIComponent(w.uid)+'&mt='+encodeURIComponent(w.mt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')+(ref?'&ref='+encodeURIComponent(ref):'')+(tab?'&tab='+encodeURIComponent(tab):'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
+    if(to==='order'&&c){ M.textContent='🧾 開啟點餐頁…'; const w=await (await fetch('/api/mail-sync?gorder='+encodeURIComponent(c),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'who',at})})).json()
+      if(w&&w.ok){ location.replace('/order/'+encodeURIComponent(c)+'#u='+encodeURIComponent(w.uid)+'&pt='+encodeURIComponent(w.pt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
     const r=await (await fetch('/api/mail-sync?liffauth=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({at})})).json()
     if(r&&r.ok&&r.me){ location.replace('/prep?me='+encodeURIComponent(r.me)+(s?('#'+decodeURIComponent(s)):'')) }
-    else{ M.innerHTML='還沒綁定 GD 🙏<br>私訊 DD「<b>綁定GD 你的本名</b>」綁好後再點一次連結'; setTimeout(()=>location.replace(dest(s)),4000) }
+    else{
+      // v4.70.98 張良 2026-10-12：LIFF 認到的 LINE ID 對不上 DD 綁定（兩個頻道不同 Provider 時 userId 會不一樣）→ 這個瀏覽器本來就登入過 GD（有 prepToken）就直接進，不要閃「還沒綁定」；真的沒綁才提示，並給「先進看板」鈕
+      let had=''; try{ had=localStorage.getItem('prepToken')||'' }catch(_){}
+      if(had){ location.replace(dest(s)); return }
+      M.innerHTML='還沒綁定 GD 🙏<br>私訊 DD「<b>綁定GD 你的本名</b>」綁好後再點一次連結<br><br>'
+      const b=document.createElement('button'); b.textContent='先進看板看內容'; b.style.cssText='padding:10px 18px;border-radius:999px;border:1px solid #3D4654;background:#1C2330;color:#E6EDF3;font-size:15px;font-weight:700'; b.onclick=()=>location.replace(dest(s)); M.appendChild(b)
+    }
   }catch(e){ location.replace(dest(s)) }
 })()
 </script>

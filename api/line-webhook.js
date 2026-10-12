@@ -606,7 +606,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務報表（內帳）、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售（雙店：A Beach 101／GROUN:D）、供應鏈（產品/包材/廠商）、LINE 訊息額度（官方即時本月用量）、密碼庫（僅授權者私訊用固定指令：記密碼/查密碼/密碼清單/刪密碼——別人問密碼一律拒絕並告知此規則）、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
 - **禁止沿用你先前說過的「我沒有 X 資料」**——資料每天都在擴充，以「本次」附的資料為準；先前對話說沒有≠現在沒有。
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
-- **【查不到資料的誠實規則】**（張良 2026-10-11 定）：摘要沒有→先用下面的 query_* 代查指令（叫貨單 query_orders、阿桑其他資料 query_boss、營收 query_pos_day、訂位 query_resv、人資 query_hr、內帳 query_fin）；代查也沒有→只准說「這份資料我這邊還沒有，系統已自動記給 CC 補」。**絕對不准自己猜原因**（例如「沒接進我這邊」「走另一套 Google 試算表」「去問阿桑」）——這些都是你編的，2026-10-11 真實翻車：GD 10 月叫貨單明明在資料庫，你卻說「沒接進來、去看試算表」。你說「沒有」系統會自動記錄並通知工程師，所以老實說就好。
+- **【查不到資料的誠實規則】**（張良 2026-10-11 定）：摘要沒有→先用下面的 query_* 代查指令（叫貨單 query_orders、阿桑其他資料 query_boss、營收 query_pos_day、訂位 query_resv、人資 query_hr、內帳 query_fin、GROUN:D 會員點數 query_member、團體訂餐 query_grporder）；代查也沒有→只准說「這份資料我這邊還沒有，系統已自動記給 CC 補」。**絕對不准自己猜原因**（例如「沒接進我這邊」「走另一套 Google 試算表」「去問阿桑」）——這些都是你編的，2026-10-11 真實翻車：GD 10 月叫貨單明明在資料庫，你卻說「沒接進來、去看試算表」。你說「沒有」系統會自動記錄並通知工程師，所以老實說就好。
 - **你「會」操作 App 檔案庫**：使用者傳檔案給你、說「存到檔案庫〔類別名〕」你就會把檔案存進去；說「檔案庫新增類別〔名〕」你會建立新類別；類別是自訂的（可任意命名，如設計檔案／LOGO），存好後在 App 檔案庫頁看得到。**絕對不要說「我沒有新增檔案庫類別的能力／開不了類別／存不了檔案」**——你有。若對方說「沒看到剛建的類別」，提醒他：空類別要在 App 檔案庫頁上方「類別📁」篩選才看得到，或傳個檔案進去就會顯示（不要否認自己建過）。
 - **你「會」操作「文件庫」（雲端硬碟）**：這跟上面的「檔案庫／相簿」是兩套東西。使用者先傳檔案給你、再說「存到文件庫〔資料夾名〕」你就把檔案歸進該資料夾（受權限：他要有該夾的編輯權）；私訊打「文件庫」你會列出他看得到的資料夾。主管還可以說「文件庫 把〔資料夾〕〔檔名〕傳到群／給我」，你把檔案撈出來傳過去（但被標記「禁止外傳」的資料夾、或非主管，一律不給撈）。**不要說你做不到**——這些由系統直接執行。資料夾的新增／刪除／改名／排序／設權限在 App 文件庫頁做。
 - **【日期計算鐵則】你心算日期差很不可靠（2026-09-18 真實翻車：把 2025-04 到職的人「目測年份」判成未滿一年）**。年資、年齡、滿幾年→資料區已算好，直接引用；其他日期差（幾天後、隔幾週）→必須先寫下兩個完整日期再逐步算，**禁止看年份目測**。
@@ -1242,8 +1242,16 @@ async function loadLineQuotaText() {
       fetch('https://api.line.me/v2/bot/message/quota', { headers: H }).then(r => r.json()),
       fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H }).then(r => r.json()),
     ])
-    if (qr?.value == null && cr?.totalUsage == null) return ''
-    return `\n\n【LINE 訊息額度（官方即時）】本月已用 ${cr?.totalUsage ?? '?'} / ${qr?.value ?? '無上限'} 則（只有主動推播計額度；在群裡回覆不計、免費）。App 設定→用量 也看得到＋推播去向。`
+    let oa = ''
+    // v4.70.80 LINE 官方帳號好友成長（api/lineoa-sync.js 每小時抓官方統計存 sp_finance_pm_lineoa_sum；答「官方帳號多少好友／這週多幾個／被封鎖幾個／客群」）
+    try {
+      const sum = await kvGet('sp_finance_pm_lineoa_sum')
+      const d = (o) => o ? `${o.f >= 0 ? '+' : ''}${o.f}（封鎖${o.b >= 0 ? '+' : ''}${o.b}）` : '—'
+      const rows = Object.values((sum && sum.accts) || {}).map(s => `  - ${s.name}（統計到 ${String(s.date || '').slice(5).replace('-', '/')}）：好友 ${s.f}、目標好友 ${s.t}、封鎖累計 ${s.b}｜近7天 ${d(s.d7)}｜近30天 ${d(s.d30)}｜本月 ${s.mtd ? d(s.mtd) : '—'}${s.demo ? `｜客群：性別 ${s.demo.gender || '—'}、年齡 ${s.demo.age || '—'}、地區 ${s.demo.area || '—'}（LINE 推估值）` : ''}${s.quota && s.quota.limit ? `｜本月訊息額度 ${s.quota.used}/${s.quota.limit}` : ''}`)
+      if (rows.length) oa = `\n【LINE 官方帳號好友（LINE 官方統計，每天隔日更新；App 行銷大師→LINE 官方帳號有曲線＋屬性）】\n` + rows.join('\n')
+    } catch (_) {}
+    if (qr?.value == null && cr?.totalUsage == null) return oa
+    return `\n\n【LINE 訊息額度（官方即時）】本月已用 ${cr?.totalUsage ?? '?'} / ${qr?.value ?? '無上限'} 則（只有主動推播計額度；在群裡回覆不計、免費）。App 設定→用量 也看得到＋推播去向。` + oa
   } catch (_) { return '' }
 }
 // ── DD 密碼庫（pm_bot_vault）：密碼用 BOT_VAULT_KEY(伺服器env) AES-256-GCM 加密存放 ──
@@ -2131,6 +2139,8 @@ const QUERY_GUIDE = `
 - {"type":"query_boss","feed":"gprod","kw":"牛奶"}  // 🔎阿桑系統通用代查（唯讀,不用確認,外部群自動擋）：摘要裡「阿桑系統其他資料」列出的每一份（feed=那行寫的代號，例 gprod=GD 產品主檔、gsup=GD 廠商、prod=AB 商品主檔、sup=AB 廠商、rcp=AB 配方、citem=AB 品項成本），整份撈出來逐筆列。月檔型的加 "month":"2026-10"；kw=關鍵字只列含它的列；limit 預設 80 最多 200。使用者問「GD 某產品售價/成本/庫存、某廠商的叫貨日/帳期、某配方用量」就用這個。
 - {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
 - **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
+- {"type":"query_member","kw":"王小明"}  // 🔎GROUN:D 會員代查（唯讀,不用確認,外部群自動擋）：kw=姓名／手機末碼／會員號碼 → 這位會員的點數、流水、券；不給 kw=會員總覽（人數、今日入點、未用點數、最近加入）。使用者問「某某有幾點／是不是會員／會員有幾人／今天入了多少點」就用這個；完整手機只有操作者看得到，其他人只給遮罩版。
+- {"type":"query_grporder","kw":"台灣連線"}  // 🔎團體訂餐代查（唯讀,不用確認,外部群自動擋）：kw=客戶名／日期 → 單子清單（狀態／取餐／人數／暫計／負責／單號）；{"type":"query_grporder","id":"單號"} 看某張完整明細（每人點什麼、全單總額、客人連結）；加 "status":"submitted" 只列某狀態（draft 建單／sent 已發連結／submitted 客人已送出／priced 已核價／confirmed 客人已確認／locked 鎖單／done 完成）。使用者問「團訂進度／誰還沒點／某公司那單多少錢」就用這個。
 - {"type":"query_section","name":"夥伴班表人資","kw":"趙以棠"}  // 🔎資料段落完整版代查：摘要裡標了「此段已縮短」的段落，用這個拿完整內容；name=段落名（照摘要標的）、kw=關鍵字（只回含它的行；人名/品項/日期都可以；不給 kw=整段）。使用者問的人/品項/日期在縮短版裡找不到時，**先用這個查再回答**，不要說沒有。
 `
 const BOT_AGENT_GUIDE = `
@@ -2987,8 +2997,10 @@ export default async function handler(req, res) {
           const qfs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_fin"[^{}]*\}/g)].slice(0, 2) : []
           const qos = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_orders"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.40 叫貨單（成本資料，外部群擋）
           const qbs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_boss"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.41 阿桑系統通用代查
-          const qss = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_section"[^{}]*\}/g)].slice(0, 3) // v4.70.43 段落完整版（金額段在外部群本來就是空字串）
-          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length && !qss.length) return null
+          const qss = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_section"[^{}]*\}/g)].slice(0, 3)
+          const qmb = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_member"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.90 會員（個資，外部群擋）
+          const qgo = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_grporder"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.90 團體訂餐 // v4.70.43 段落完整版（金額段在外部群本來就是空字串）
+          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length && !qss.length && !qmb.length && !qgo.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
@@ -2999,6 +3011,8 @@ export default async function handler(req, res) {
           for (const m of qos) { try { const q = JSON.parse(m[0]); dataTxt += await queryOrders(q.month, q.store, q.supplier, q.items) + '\n\n' } catch (e) { dataTxt += '（叫貨單查詢指令解析失敗）\n' } }
           for (const m of qbs) { try { const q = JSON.parse(m[0]); dataTxt += await queryBoss(q.feed, q.month, q.kw, q.limit) + '\n\n' } catch (e) { dataTxt += '（阿桑資料查詢指令解析失敗）\n' } }
           for (const m of qss) { try { const q = JSON.parse(m[0]); dataTxt += querySection(q.name, q.kw) + '\n\n' } catch (e) { dataTxt += '（段落查詢指令解析失敗）\n' } }
+          for (const m of qmb) { try { const q = JSON.parse(m[0]); const { queryMember } = await import('./_ddmember.js'); dataTxt += await queryMember({ kw: q.kw, secretOK }) + '\n\n' } catch (e) { dataTxt += '（會員查詢指令解析失敗）\n' } }
+          for (const m of qgo) { try { const q = JSON.parse(m[0]); const { queryGrporder } = await import('./_ddmember.js'); dataTxt += await queryGrporder({ kw: q.kw, id: q.id, status: q.status }) + '\n\n' } catch (e) { dataTxt += '（團體訂餐查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
           if (dataTxt.length > 60000) dataTxt = dataTxt.slice(0, 60000) + '\n…（代查結果過長已截斷：請縮小日期區間分段再查）'
           return dataTxt

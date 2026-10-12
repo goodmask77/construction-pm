@@ -452,7 +452,7 @@ async function custFind(){
   const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
   box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
 }
-const TAB_DEF = { prep:'銷售數據', rcp:'食譜', pricing:'菜單成本', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', chat:'聊天室', inbox:'收件匣', hrm:'夥伴名冊', onb:'入職', waste:'耗損', costdash:'成本總覽' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
+const TAB_DEF = { prep:'銷售數據', rcp:'食譜', pricing:'菜單成本', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', chat:'聊天室', inbox:'收件匣', gorder:'團體訂餐', member:'會員', hrm:'夥伴名冊', onb:'入職', waste:'耗損', costdash:'成本總覽' , mail:'信箱'} // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
@@ -477,6 +477,9 @@ const TAB_ICONS = {
   onb: _I('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.4-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="M18 8v6M15 11h6"/>'), // 入職＝新人加入（user-plus）
   social: _I('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/>'), // 社群＝喇叭廣播（v4.68 張良 2026-10-08）
   lib: _I('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'), // 文件庫＝資料夾（v4.70.0 張良 2026-10-08）
+  member: _I('<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2.2"/><path d="M5.5 17a3.5 3.5 0 0 1 7 0M14 10h4M14 14h3"/>'), // 會員（v4.70.83）
+  gorder: _I('<path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>'), // 團體訂餐（v4.70.78）
+  mail: _I('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>'), // 信箱中樞＝信封（v4.70.79）
   inbox: _I('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/>'), // 收件匣（v4.70.47）
   chat: _I('<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.6-.8L3 21l1.9-4.6A8.4 8.4 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/>'), // 聊天室（v4.70.45）
   matlib: _I('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h5"/>'),
@@ -827,7 +830,7 @@ async function ddMsgEdit(sub, refresh){
   const ov = document.createElement('div'); ov.id='ddOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:680px;padding:16px" onclick="event.stopPropagation()">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">DD 自動訊息與群組設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">DD 自動訊息與群組設定</b>${aiTag('dd')}<button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
     <div id="ddSub" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
       <button class="mini" data-s="msg" onclick="ddSubShow('msg')">自動訊息</button>
       <button class="mini" data-s="grp" onclick="ddSubShow('grp')">DD 在的群${_ddGrps.length?'（'+_ddGrps.filter(g=>!g.gone&&!g.cfg.hide).length+'）':''}</button>
@@ -888,6 +891,7 @@ async function ddMsgSave(key, btn){
 function ddRenderGrps(box){
   const d = _ddD, esc = ddEsc
   if (!d.canEdit) { box.innerHTML = '<div class="hint">只有審核人能看／改群組清單。</div>'; return }
+  const aiHead = `<div class="hint" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">這些群裡 DD 回話用 ${aiTag('dd')}、翻譯模式用 ${aiTag('translate')}、舊對話濃縮用 ${aiTag('summary')}</div>` // v4.70.81 哪家 AI 處理
   const fmtT = t => { if (!t) return '－'; const dt = new Date(t); if (isNaN(dt)) return '－'; const dd = Math.floor((Date.now()-dt)/864e5); return dd<=0?'今天':dd===1?'昨天':dd+' 天前' }
   const row = g => { const c = g.cfg||{}; return `<div class="ddGRow" data-gid="${esc(g.gid)}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--card);${c.hide?'opacity:.55':''}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -1038,6 +1042,7 @@ async function aiCfgEdit(){
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:640px;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:17px">AI 模型設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('aiOv').remove()">✕</button></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pills}</div>
+    <div class="hint" style="margin-bottom:10px">每個用到 AI 的功能頁（行銷大師文案／生圖、耗損讀秤、食譜 AI 匯入、聊天室、拍菜單建檔、菜單 AI 圖、DD 群組設定）標題旁都有一顆「AI：哪家 · 哪個模型」小標籤，點它會回到這裡；下面每張卡的「用在哪」寫的就是那些頁面。</div>
     ${aiUsageHtml(d)}
     <div class="hint" style="margin-bottom:12px">每個功能各自選用哪家＋哪個模型。沒選＝走預設；選的那家壞了（額度／模型下架）會自動退回預設，不會卡住。${d.canEdit?'改完按該功能的「儲存」，「測試」會真的打一次給你看回覆與秒數。':'（只有審核人能改，目前唯讀）'}<br>金鑰只放伺服器端：要加／換金鑰跟 CC 說。</div>
     ${(d.routes||[]).map(card).join('')}${aiAbHtml(d)}</div>`

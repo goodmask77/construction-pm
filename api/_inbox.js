@@ -11,7 +11,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4762' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4786' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -140,7 +140,8 @@ export async function ingestEvent(a, ev, destination) {
   if (ev.type === 'message') {
     const m = ev.message || {}
     msg = { id: '', convId: conv.id, t: new Date(t).toISOString(), dir: 'in', type: m.type || 'text', name: conv.name }
-    if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text }
+    if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text
+      if (a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user') { if (text === '門市與客服' || text === '我要團體訂餐') { conv.replyUsed = true; cardAutoReply(a, uid, ev.replyToken, conv, text).catch(() => {}) } else if (/會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } } // v4.70.96 圖文選單第 6 格／團訂卡片 // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
     else if (m.type === 'sticker') { msg.sticker = { pkg: m.packageId, id: m.stickerId }; text = '（貼圖）' }
     else if (m.type === 'location') { msg.text = [m.title, m.address].filter(Boolean).join(' '); msg.loc = { lat: m.latitude, lng: m.longitude }; text = '（位置）' + (m.address || '') }
     else if (['image', 'video', 'audio', 'file'].includes(m.type)) {
@@ -157,7 +158,7 @@ export async function ingestEvent(a, ev, destination) {
     conv.unread = (conv.unread || 0) + 1
     if (conv.status === 'done') conv.status = 'new'
     conv.lastInT = msg.t
-  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new' }
+  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
   else if (ev.type === 'unfollow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '封鎖／刪除好友' }; text = msg.text; conv.follow = false }
   else if (ev.type === 'join') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號被加入這個群' }; text = msg.text }
   else if (ev.type === 'leave') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號離開這個群' }; text = msg.text }
@@ -203,8 +204,21 @@ export function ddInboxOut(text, to, mode) {
 }
 export async function ddInboxFlush() { const ps = _dd.pend.splice(0); _dd.ev = null; _dd.p = null; if (ps.length) await Promise.allSettled(ps) }
 
+async function memberAutoReply(a, uid, token, conv) {
+  const MB = await import('./_member.js')
+  let messages; try { messages = await MB.memberCardMessages(uid) } catch (_) { messages = [{ type: 'text', text: '點下面開啟會員卡查點數：\n' + MB.memberLiffUrl() }] }
+  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) })
+  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); const text = messages.map(m => m.type === 'text' ? m.text : '（卡片）' + m.altText).join('\n'); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text }) } // 收件匣看得到系統回了什麼
+}
+async function cardAutoReply(a, uid, token, conv, text) {
+  const MB = await import('./_member.js')
+  const messages = text === '門市與客服' ? await MB.storeCardMessages() : await MB.grporderCardMessages()
+  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) })
+  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text: '（卡片）' + messages[0].altText }) }
+}
+async function welcomeReply(a, token) { const MB = await import('./_member.js'); let messages; try { messages = await MB.welcomeMessages() } catch (_) { messages = [{ type: 'text', text: (await MB.welcomeText()).slice(0, 4900) }] }; await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) }) }
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──
-async function permRids(acct, forRemind) {
+export async function permRids(acct, forRemind) { // export：團體訂餐（_grporder.js）通知店家時沿用「誰看得到這個帳號」
   const [cfg, bind, def] = await Promise.all([loadCfg(), kvGet('sp_finance_pm_prep_bind'), kvGet('sp_finance_pm_sop_def')])
   const apr = (((def || {}).ground || {}).approvers || ['張良瑋'])
   // 新訊息通知＝看得到的人＋審核人；沒人回提醒＝設定「通知誰」有勾就只通知那些人，沒勾退回「可回覆的人＋審核人」
@@ -295,6 +309,24 @@ export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
   return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText: isImg ? '（圖片）' : `（檔案）${fileName}` })
 }
 
+// v4.70.85 團體訂餐計價圖：已上傳好的圖片網址一次傳多張＋一段文字（走同一條 deliver：reply 免費否則 push）
+export async function sendSystemMessages({ acct, uid, messages, lastText }) { // v4.70.99 系統主動傳（團訂送出確認卡片等）：不經權限（由伺服器流程觸發）
+  const a = acctOf(acct || 'gd'); if (!a || !uid || !configured(a)) return { ok: false, error: '帳號未設' }
+  const ck = convKey(a.key, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到對話' }
+  return deliver({ a, acct: a.key, uid, ck, conv, who: { name: '系統' }, messages, msgPatch: { type: 'text', text: lastText || (messages[0] && (messages[0].text || '（卡片）' + messages[0].altText)) }, lastText: lastText || '（系統訊息）' })
+}
+export async function sendImages({ who, mgr, cfg, id, urls, text }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!canReplyAcct(cfg, who, mgr, acct)) return { ok: false, error: '你只有查看權限，沒有回覆權限' }
+  if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
+  const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
+  const us = (urls || []).filter(u => /^https:\/\//.test(String(u))).slice(0, 4)
+  if (!us.length) return { ok: false, error: '沒有圖片' }
+  const messages = [...us.map(u => ({ type: 'image', originalContentUrl: u, previewImageUrl: u })), ...(text ? [{ type: 'text', text: String(text).slice(0, 4900) }] : [])]
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch: { type: 'text', text: `（計價圖 ${us.length} 張）${text ? '\n' + text : ''}` }, lastText: '（計價圖）' })
+}
 // ── 狀態／指派／備註 ──
 export async function convOp({ who, mgr, cfg, op, id, value }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)

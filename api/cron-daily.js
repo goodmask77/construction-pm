@@ -364,6 +364,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: pr.ok, prep: true, wd, to: tgt.slice(-6), lines: L.length })
     } catch (e) { return res.status(200).json({ ok: false, error: e?.message }) }
   }
+  // 📬 v4.70.79 信箱中樞每日自動整理：每天台灣 07:00 那一輪，對每個啟用的信箱套用「已確認」的規則（只封存／貼標／移垃圾桶，永不永久刪除）；?mailhub=1 手動跑（&dry=1 只算不動）
+  if (req.query?.mailhub === '1' || tpeH0 === 7) {
+    let mhR = null
+    try { const MH = await import('./_mailhub.js'); mhR = await MH.applyAll({ kvGet, kvPut: kvSave, days: 7, dry: req.query?.dry === '1' }); console.log('mailhub', JSON.stringify((mhR.boxes || []).map(x => ({ b: x.name, ok: x.ok, n: x.n, err: x.error })))) } catch (e) { console.log('mailhub err', e?.message); mhR = { ok: false, error: e?.message } }
+    if (req.query?.mailhub === '1') return res.status(200).json({ ok: true, mailhub: mhR })
+  }
   // 三個資料同步（只在早班跑）：失敗不影響速報，但要「留下失敗紀錄」（以前默默吞掉＝資料變舊都不知道）
   const syncErrs = []
   if (!evening && !req.query?.dry) {

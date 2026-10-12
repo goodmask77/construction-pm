@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#ce1611">
+<title>GROUN:D 會員卡</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Lora:wght@600;700&display=swap">
+<style>
+/* 🪪 GROUN:D 會員卡（LIFF 端點 /member）v4.70.83：入會同意→會員卡（60 秒 QR＋會員號碼）→點數／流水／券→個人資料→退會。計畫 docs/MEMBER_PLAN_v1.md */
+:root{--bg:#f5efe4;--paper:#fffaf2;--ink:#2b1d18;--mute:#7a6a62;--line:#d8c9b6;--red:#ce1611;--soft:#f3e4dd;--ok:#2f7a4a;--warn:#b4581a;--warnbg:#fdeedd;--num:'Lora','Noto Sans TC',serif}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font:14.5px/1.5 'Noto Sans TC',system-ui,sans-serif;padding-bottom:30px}
+.wrap{max-width:480px;margin:0 auto;padding:12px 14px}
+.brand{text-align:center;padding:6px 0 2px}.brand b{display:block;color:var(--red);font-size:20px;font-weight:900;letter-spacing:.06em}.brand small{color:var(--mute);font-size:11.5px;letter-spacing:.18em}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+h3{font-size:13px;margin:0 0 8px;font-weight:700;color:var(--mute);letter-spacing:.06em}.sub{font-size:12.5px;color:var(--mute)}
+input{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;width:100%}
+.btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:10px 14px;font:700 14px 'Noto Sans TC',sans-serif;cursor:pointer}.btn.red{background:var(--red);color:#fff;border-color:var(--red)}.btn.sm{padding:5px 10px;font-size:12.5px}.btn.line{background:#06c755;border-color:#06c755;color:#fff}.btn[disabled]{opacity:.5}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mcard{background:linear-gradient(135deg,#ce1611,#8f0e0a);color:#fff;border-radius:18px;padding:18px;margin-top:12px;box-shadow:0 10px 30px rgba(206,22,17,.25)}
+.mcard .nm{font-weight:900;font-size:18px}.mcard .mno{font-family:var(--num);font-size:26px;letter-spacing:.14em;font-weight:700}.mcard .lbl{font-size:11px;opacity:.85;letter-spacing:.14em}
+.mcard .pts{font-family:var(--num);font-size:40px;font-weight:700;line-height:1}
+.qrbox{background:#fff;border-radius:14px;padding:12px;display:grid;place-items:center;margin-top:12px}.qrbox canvas,.qrbox img{width:200px;height:200px}
+.led{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px}.led .p{font-family:var(--num);font-weight:700}.led .p.plus{color:var(--ok)}.led .p.minus{color:var(--red)}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;background:var(--soft);color:var(--red)}.pill.grey{background:var(--line);color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#166534;color:#fff;padding:8px 14px;border-radius:10px;font-weight:800;font-size:13.5px;opacity:0;transition:opacity .3s;z-index:9;pointer-events:none}.toast.bad{background:#b91c1c}
+.consent{font-size:12.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:160px;overflow:auto}
+details summary{cursor:pointer;font-weight:700;font-size:13.5px}
+.tabs{display:flex;background:var(--soft);border-radius:12px;padding:3px;margin-top:12px;position:sticky;top:0;z-index:3}.tabs button{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 4px;font:800 13.5px 'Noto Sans TC',sans-serif;color:var(--mute)}.tabs button.on{background:var(--paper);color:var(--red);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.ms{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--line)}.ms .ic{width:38px;height:38px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:900;color:var(--red);flex:0 0 auto}.ms .ic.done{background:var(--ok);color:#fff}.bar{height:8px;background:var(--soft);border-radius:999px;overflow:hidden;margin-top:5px}.bar i{display:block;height:100%;background:var(--red);border-radius:999px}
+.stars{display:flex;gap:6px}.stars button{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:20px;cursor:pointer}.stars button.on{background:var(--red);border-color:var(--red);color:#fff}
+.codebox{background:var(--bg);border:1.5px dashed var(--red);border-radius:12px;padding:12px;text-align:center}.codebox b{font-family:var(--num);font-size:30px;letter-spacing:.16em;color:var(--red)}
+/* 🎡 轉盤 */
+.wheelOv{position:fixed;inset:0;background:rgba(20,10,8,.88);z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;color:#fff}
+.wheelWrap{position:relative;width:280px;height:280px}
+.wheel{width:280px;height:280px;border-radius:50%;border:8px solid #fff;box-shadow:0 0 0 4px #ce1611,0 14px 40px rgba(0,0,0,.5);transition:transform 4.2s cubic-bezier(.12,.7,.08,1);position:relative;overflow:hidden}
+.wheel .lab{position:absolute;left:50%;top:50%;width:120px;margin-left:-60px;transform-origin:0 0;font-size:12px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);text-align:center;line-height:1.15}
+.wheelPin{position:absolute;left:50%;top:-10px;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:28px solid #fff;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));z-index:2}
+.wheelBtn{margin-top:22px;background:#ce1611;color:#fff;border:0;border-radius:999px;padding:14px 34px;font:900 17px 'Noto Sans TC',sans-serif;box-shadow:0 8px 24px rgba(206,22,17,.45)}
+.wheelBtn[disabled]{opacity:.6}
+.result{background:#fff;color:var(--ink);border-radius:16px;padding:18px 20px;text-align:center;margin-top:18px;max-width:300px}
+.result b{display:block;font-size:22px;color:var(--red)}
+@media (prefers-reduced-motion:reduce){.wheel{transition-duration:.6s}}
+</style>
+</head>
+<body>
+<div class="wrap" id="root"><div class="brand"><b>GROUN:D</b><small>會員卡</small></div><div class="card sub" id="loading">讀取中…</div></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script><!-- 跟 /prep 兌換券同一套 QR 產生器（原本用的 qrcode@1.5.3 路徑 404，QR 一片空白） -->
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script>
+(async () => {
+  const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const tw = (iso, d) => { try { return new Intl.DateTimeFormat(d ? 'sv-SE' : 'zh-TW', { timeZone: 'Asia/Taipei', ...(d ? { year: 'numeric', month: '2-digit', day: '2-digit' } : { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) }).format(new Date(iso)) } catch (_) { return String(iso || '').slice(0, 16) } }
+  const fmt = n => Math.round(Number(n) || 0).toLocaleString('zh-TW')
+  const LS = { get: k => { try { return JSON.parse(localStorage.getItem(k)) } catch (_) { return null } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch (_) {} }, del: k => { try { localStorage.removeItem(k) } catch (_) {} } }
+  const api = async (body) => { try { const r = await fetch('/api/mail-sync?mcard=1' + (body ? '' : '&r=' + Date.now()), body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); return await r.json() } catch (_) { return { ok: false, error: '連線失敗，請再試一次' } } }
+  function toast (t, bad) { const el = $('toast'); el.textContent = t; el.className = 'toast' + (bad ? ' bad' : ''); el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0' }, 2200) }
+  let SES = LS.get('gd_member_ses'), ME = null, qrTimer = null, W = null, TAB = 'card', REF = ''
+  const cfg = await api()
+  // v4.70.91 同一個 LIFF 中繼：/liff/?to=member 認完人 → 轉到這裡帶 #u=&mt=&n=&p=
+  try { const h = new URLSearchParams(location.hash.replace(/^#/, '')); if (h.get('ref')) REF = h.get('ref'); if (h.get('tab')) TAB = h.get('tab'); if (h.get('u') && h.get('mt')) { SES = { uid: h.get('u'), mt: h.get('mt') }; LS.set('gd_member_ses', SES); W = { ok: true, uid: SES.uid, mt: SES.mt, name: h.get('n') || '', pic: h.get('p') || '' }; history.replaceState(null, '', location.pathname) } } catch (_) {}
+  // 1) 身分：LIFF（在 LINE 內或 LINE Login）
+  async function login () {
+    if (!cfg.liff) { $('loading').innerHTML = '會員卡還在準備中（LINE 登入尚未開通）。請稍後再試，或到櫃檯請店員幫您建立會員。'; return false }
+    $('loading').innerHTML = `<div style="text-align:center"><div style="margin-bottom:10px">請用 LINE 開啟會員卡，會自動帶入你的 LINE 名字。</div><a class="btn line" href="${esc(cfg.liffUrl)}" style="display:inline-block;text-decoration:none">用 LINE 開啟會員卡</a></div>`
+    return false
+  }
+  async function loadMe () {
+    const d = await api({ op: 'me', ...SES })
+    if (d && d.ok) { ME = d; render(); return true }
+    if (d && d.needConsent) { const w2 = await api({ op: 'who2', ...SES }); if (w2 && w2.ok) W = { ...(W || {}), ...w2 }; renderConsent(); return true } // 中繼帶來的 W 沒有告知文字，先補
+    return false
+  }
+  // 試上次 session，不行再走 LIFF
+  let okS = false
+  if (SES && SES.uid) okS = await loadMe()
+  if (!okS) { if (W && W.ok && SES) { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } else { const w2 = await api({ op: 'who2', ...SES }); W = { ...W, consentText: (w2 && w2.consentText) || '', consentVer: (w2 && w2.consentVer) || '', needConsent: true }; renderConsent() } } else await login() }
+
+  function renderConsent () {
+    const name = (W && W.name) || ((ME || {}).member || {}).name || ''
+    const txt = (W && W.consentText) || ''
+    $('root').innerHTML = `<div class="brand"><b>GROUN:D</b><small>加入會員</small></div>
+      <div class="card"><h3>加入 GROUN:D 會員</h3><div class="sub" style="margin-bottom:8px">消費累點、點數換餐、團體訂餐自動歸戶。${REF ? `<div class="pill" style="margin-top:6px">朋友推薦（${esc(REF)}）：首次消費雙方都有點數</div>` : ''}</div>
+        <label class="sub">名字（店員會用這個稱呼您）</label><input id="cName" value="${esc(name)}" placeholder="名字">
+        <label class="sub" style="display:block;margin-top:8px">手機（選填，找回會員用）</label><input id="cPhone" inputmode="tel" placeholder="09xxxxxxxx">
+        <h3 style="margin-top:12px">個資告知</h3><div class="consent">${esc(txt)}</div>
+        <label class="row" style="margin-top:10px;font-size:13.5px"><input type="checkbox" id="cAgree" style="width:auto"> 我已閱讀並同意上述說明（版本 ${esc((W && W.consentVer) || '')}）</label>
+        <button class="btn red" id="cGo" style="width:100%;margin-top:12px;padding:13px;font-size:15px">同意並加入</button></div>`
+    $('cGo').onclick = async () => { if (!$('cAgree').checked) return toast('請先勾選同意', true); const n = $('cName').value.trim(); if (!n) return toast('請填名字', true); $('cGo').disabled = true; const d = await api({ op: 'consent', ...SES, name: n, phone: $('cPhone').value, pic: (W && W.pic) || '', ref: REF }); if (!d || !d.ok) { $('cGo').disabled = false; return toast((d && d.error) || '加入失敗', true) } ME = d; render(); toast(d.created ? '歡迎加入 GROUN:D！' : '歡迎回來！') }
+  }
+  function render () {
+    const m = ME.member
+    const tabs = `<div class="tabs">${[['card', '會員卡'], ['tasks', '任務'], ['offers', '優惠'], ['friends', '揪友']].map(([k, v]) => `<button class="${TAB === k ? 'on' : ''}" data-tab="${k}">${v}</button>`).join('')}</div>`
+    let body = ''
+    if (TAB === 'card') body = tabCard(m)
+    else if (TAB === 'tasks') body = tabTasks()
+    else if (TAB === 'offers') body = tabOffers()
+    else body = tabFriends()
+    $('root').innerHTML = `<div class="brand"><b>GROUN:D</b><small>會員卡</small></div>
+      <div class="mcard"><div class="row" style="justify-content:space-between"><div><div class="lbl">MEMBER</div><div class="nm">${esc(m.name)}</div></div>${m.pic ? `<img src="${esc(m.pic)}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.7)">` : ''}</div>
+        <div style="margin-top:12px" class="row"><div style="flex:1"><div class="lbl">可用點數</div><div class="pts">${fmt(ME.balance)}</div></div><div><div class="lbl">會員號碼</div><div class="mno">${esc(m.mno || '')}</div></div></div>
+        ${TAB === 'card' ? `<div class="qrbox"><img id="qr" alt="會員 QR"><div class="sub" style="margin-top:6px;color:#555">結帳時出示此 QR 或報會員號碼・<span id="qrT">60</span> 秒自動更新</div></div>` : ''}</div>
+      ${tabs}${body}`
+    document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); window.scrollTo(0, 0) })
+    if (TAB === 'card') { drawQR(); clearInterval(qrTimer); let left = 60; qrTimer = setInterval(async () => { left--; const t = $('qrT'); if (t) t.textContent = left; if (left <= 0) { left = 60; const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; drawQR(); const p = document.querySelector('.pts'); if (p) p.textContent = fmt(d.balance) } } }, 1000) } else clearInterval(qrTimer)
+    bindTab()
+  }
+  function tabCard (m) {
+    const led = (ME.ledger || []).map(l => `<div class="led"><div><div>${esc(l.note || ({ earn: '消費累點', spend: '兌換', adjust: '店家調整', welcome: '入會禮', game: '遊戲', reverse: '沖回', mission: '任務獎勵', referral: '推薦獎勵' })[l.kind] || l.kind)}${l.amount ? ` <span class="sub">消費 ${fmt(l.amount)}</span>` : ''}</div><div class="sub">${tw(l.created_at)}${l.store && ME.stores && ME.stores[l.store] && l.store !== 'gd' ? '・' + esc(ME.stores[l.store].name) : ''}</div></div><div class="p ${l.pts > 0 ? 'plus' : 'minus'}">${l.pts > 0 ? '+' : ''}${fmt(l.pts)}</div></div>`).join('') || '<div class="sub">還沒有紀錄。消費時出示會員號碼或 QR 給店員就能累點。</div>'
+    const stores = Object.values(ME.stores || {}).filter(s => s.active !== false).map(s => `${esc(s.name)} 每 ${s.perAmt} 元 1 點`).join('・')
+    return `<div class="card"><h3>怎麼累點</h3><div class="sub">${stores}。結帳時給店員掃 QR 或報會員號碼；兩家店共用同一個點數錢包，哪家都能用。團體訂餐用 LINE 登入點餐會自動累點。</div>${ME.invoiceScan ? `<button class="btn" id="btnInv" style="width:100%;margin-top:8px">掃發票自己集點（48 小時內）</button>` : ''}</div>
+      <div class="card"><h3>點數紀錄</h3>${led}</div>
+      <details class="card"><summary>個人資料</summary><div style="margin-top:8px"><label class="sub">名字</label><input id="pName" value="${esc(m.name || '')}"><label class="sub" style="display:block;margin-top:8px">手機</label><input id="pPhone" value="${esc(m.phone || '')}" inputmode="tel"><label class="sub" style="display:block;margin-top:8px">生日（填一次後不能自己改）</label><input id="pBday" type="date" value="${esc(m.birthday || '')}" ${m.birthday ? 'disabled' : ''}><button class="btn" id="pSave" style="margin-top:10px">儲存</button></div>
+        <div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:10px"><div class="sub">退會後個資會匿名化，點數與紀錄依法保留、不能再使用。</div><label class="row" style="margin-top:8px;font-size:13px"><input type="checkbox" id="pMkt" ${ME.mktOut ? 'checked' : ''} style="width:auto"> 不要收 GROUN:D 的行銷訊息（點數、訂單通知不受影響）</label><button class="btn sm" id="pLeave" style="margin-top:6px;color:var(--red)">退會</button></div></details>`
+  }
+  function tabTasks () {
+    const ms = (ME.missions || []).filter(m => m.type !== 'weekday_bonus')
+    const bonus = (ME.missions || []).find(m => m.type === 'weekday_bonus')
+    const rows = ms.map(m => { const pct = m.target ? Math.min(100, Math.round(m.progress / m.target * 100)) : 0; return `<div class="ms"><div class="ic ${m.done ? 'done' : ''}">${m.done ? '✓' : (m.type === 'referral_milestone' ? '友' : m.type === 'survey' ? '問' : m.type === 'first' ? '首' : '來')}</div><div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b>${esc(m.name)}</b><span class="pill ${m.done ? 'ok' : ''}">${m.done ? '已完成' : esc(m.reward)}</span></div><div class="sub">${esc(m.desc)}${!m.done && m.target > 1 ? `・已 ${m.progress}／${m.target}，再 ${Math.max(0, m.target - m.progress)} ${m.type === 'amount_month' ? '元' : '次'}` : ''}</div>${m.target > 1 ? `<div class="bar"><i style="width:${m.done ? 100 : pct}%"></i></div>` : ''}${m.type === 'survey' && !m.done ? `<button class="btn sm red" id="btnSurvey" style="margin-top:6px">填問卷 +${esc(m.reward)}</button>` : ''}</div></div>` }).join('')
+    return `<div class="card"><h3>任務闖關</h3><div class="sub" style="margin-bottom:4px">消費時出示會員卡，進度自動累計；達成就自動入帳，不用申請。</div>${rows || '<div class="sub">目前沒有任務</div>'}${bonus ? `<div class="banner info" style="margin-top:10px">${esc(bonus.name)}：${esc(bonus.desc)}</div>` : ''}</div>${surveyCard()}`
+  }
+  function surveyCard () { return `<div class="card" id="surveyCard" hidden><h3>用餐回饋</h3><div class="sub">好評壞評都一樣給點，我們要的是真話。</div><div style="margin-top:8px"><div class="sub">整體滿意度</div><div class="stars" id="svStars">${[1, 2, 3, 4, 5].map(n => `<button data-s="${n}">${n}</button>`).join('')}</div><input id="svDish" placeholder="今天吃了什麼？" style="margin-top:8px"><textarea id="svComment" rows="3" placeholder="想跟我們說的話（可空白）" style="width:100%;margin-top:8px"></textarea><button class="btn red" id="svGo" style="width:100%;margin-top:10px">送出</button></div></div>` }
+  function tabOffers () {
+    const cps = (ME.coupons || []).map(c => `<div class="led"><div><div>${esc(c.name)}</div><div class="sub">${tw(c.created_at, 1)}${c.redeemed_at ? '・已於櫃檯兌換' : c.expires_at ? '・' + tw(c.expires_at, 1) + ' 前到櫃檯使用' : ''}</div></div><span class="pill ${c.status === 'issued' ? 'ok' : 'grey'}">${({ issued: '可用', redeemed: '已兌換', expired: '已過期', void: '作廢' })[c.status] || c.status}</span></div>`).join('') || '<div class="sub">還沒有券。完成任務、轉盤抽獎都會拿到券。</div>'
+    const rws = (ME.rewards || []).map(r => `<div class="led"><div>${esc(r.name)}</div><b style="font-family:var(--num)">${r.pts} 點</b></div>`).join('')
+    const stores = Object.values(ME.stores || {}).filter(s => s.active !== false).map(s => esc(s.name)).join('、')
+    return `${ME.promoText ? `<div class="card" style="border-color:var(--red)"><h3 style="color:var(--red)">本週限定</h3><div style="white-space:pre-wrap">${esc(ME.promoText)}</div></div>` : ''}${gameCard()}
+      <div class="card"><h3>我的券</h3>${cps}</div>
+      <div class="card"><h3>點數可以換</h3>${rws}<div class="led"><div>直接折抵消費</div><b style="font-family:var(--num)">1 點＝${ME.pointValue || 1} 元</b></div><div class="sub" style="margin-top:6px">到櫃檯出示會員卡，請店員幫您兌換或折抵（直接扣點）。${stores} 都可以用。</div></div>`
+  }
+  function tabFriends () {
+    const r = ME.referral; if (!r || !r.active) return '<div class="card sub">推薦活動尚未開放</div>'
+    const list = (r.list || []).map(x => `<div class="led"><span>${esc(x.name)}</span><span class="pill ${x.status === 'done' ? 'ok' : 'grey'}">${x.status === 'done' ? '已完成首購' : x.status === 'pending' ? '已加入，等首購' : x.status}</span></div>`).join('') || '<div class="sub">還沒有人透過你的連結加入</div>'
+    const ms = (ME.missions || []).filter(m => m.type === 'referral_milestone')
+    return `<div class="card"><h3>揪朋友一起賺</h3><div class="sub">朋友用你的連結加入，<b>完成第一筆消費</b>後：你 +${r.referrerPts} 點、朋友 +${r.refereePts} 點。同事、親友都算，一人只能被推薦一次。</div>
+        <div class="codebox" style="margin-top:10px"><div class="sub">我的推薦碼</div><b>${esc(r.code)}</b></div>
+        <div class="row" style="margin-top:10px"><button class="btn red" id="btnShareRef" style="flex:1">分享給朋友</button><button class="btn" id="btnCopyRef">複製連結</button></div>
+        <div class="sub" style="margin-top:8px;word-break:break-all">${esc(r.link)}</div></div>
+      <div class="card"><h3>推薦進度</h3><div class="row" style="justify-content:space-between"><span>已完成首購</span><b style="font-family:var(--num);font-size:22px;color:var(--red)">${r.done}</b></div>${r.pending ? `<div class="sub">另有 ${r.pending} 位已加入、還沒消費</div>` : ''}${ms.map(m => `<div style="margin-top:8px"><div class="row" style="justify-content:space-between"><span>${esc(m.name)}</span><span class="pill ${m.done ? 'ok' : ''}">${m.done ? '已達成' : esc(m.reward)}</span></div><div class="bar"><i style="width:${Math.min(100, Math.round(m.progress / m.target * 100))}%"></i></div></div>`).join('')}</div>
+      <div class="card"><h3>我推薦的朋友</h3>${list}</div>`
+  }
+  function bindTab () {
+    const bw = $('btnWheel'); if (bw) bw.onclick = (ME.game && ME.game.campaign && ME.game.campaign.type === 'slot') ? openSlot : openWheel
+    const bi = $('btnInv'); if (bi) bi.onclick = scanInvoice
+    const pm = $('pMkt'); if (pm) pm.onchange = async () => { const d = await api({ op: 'mktout', ...SES, out: pm.checked }); toast(d && d.ok ? (d.mktOut ? '已關閉行銷訊息' : '已開啟行銷訊息') : '失敗', !(d && d.ok)) }
+    const ps = $('pSave'); if (ps) ps.onclick = async () => { const d = await api({ op: 'update', ...SES, name: $('pName').value, phone: $('pPhone').value, birthday: $('pBday').disabled ? null : $('pBday').value }); if (!d || !d.ok) return toast((d && d.error) || '儲存失敗', true); ME = d; render(); toast('已儲存') }
+    const pl = $('pLeave'); if (pl) pl.onclick = async () => { if (!window.confirm('確定退會？退會後點數與紀錄不能再使用。')) return; const d = await api({ op: 'leave', ...SES }); if (!d || !d.ok) return toast((d && d.error) || '失敗', true); LS.del('gd_member_ses'); $('root').innerHTML = '<div class="brand"><b>GROUN:D</b><small>會員卡</small></div><div class="card">已退會，謝謝您曾經的支持。要再加入隨時從官方帳號打開會員卡即可。</div>' }
+    const bs = $('btnSurvey'); if (bs) bs.onclick = () => { const c = $('surveyCard'); c.hidden = false; c.scrollIntoView({ behavior: 'smooth' }) }
+    let score = 0; document.querySelectorAll('#svStars button').forEach(b => b.onclick = () => { score = +b.dataset.s; document.querySelectorAll('#svStars button').forEach(x => x.classList.toggle('on', +x.dataset.s <= score)) })
+    const sg = $('svGo'); if (sg) sg.onclick = async () => { if (!score) return toast('請先選分數', true); sg.disabled = true; const d = await api({ op: 'survey', ...SES, score, dish: $('svDish').value, comment: $('svComment').value }); if (!d || !d.ok) { sg.disabled = false; return toast((d && d.error) || '送出失敗', true) } ME = d; render(); toast(d.got ? `謝謝回饋，+${d.got.pts} 點` : '謝謝回饋！') }
+    const sr = $('btnShareRef'); if (sr) sr.onclick = async () => { const r = ME.referral; const text = `我在 GROUN:D 當會員，用我的連結加入、第一次消費我們兩個都有點數：\n${r.link}`; if (navigator.share) { try { await navigator.share({ text }); return } catch (_) {} } location.href = 'https://line.me/R/share?text=' + encodeURIComponent(text) }
+    const cr = $('btnCopyRef'); if (cr) cr.onclick = async () => { try { await navigator.clipboard.writeText(ME.referral.link); toast('已複製') } catch (_) { window.prompt('複製這條連結', ME.referral.link) } }
+  }
+  function gameCard () {
+    const g = ME.game; if (!g || !g.campaign) return ''
+    const c = g.campaign, n = (g.rights || []).length
+    const pz = (c.prizes || []).filter(p => p.kind !== 'none').map(p => `${esc(p.name)}${p.total ? `（剩 ${p.left}/${p.total}）` : ''}`).join('、')
+    return `<div class="card" style="border-color:var(--red)"><div class="row" style="justify-content:space-between"><h3 style="margin:0;color:var(--red)">🎡 ${esc(c.name)}</h3>${c.endAt ? `<span class="sub">至 ${tw(c.endAt, 1)}</span>` : ''}</div>
+      <div style="margin-top:6px;font-size:13.5px">${n ? `你有 <b style="color:var(--red);font-size:18px">${n}</b> 次機會` : '目前沒有可用的機會，消費累點後就會多一次'}</div>
+      ${n ? `<button class="btn red" id="btnWheel" style="width:100%;margin-top:10px;padding:12px;font-size:15px">轉一次</button>` : ''}
+      <div class="sub" style="margin-top:8px">獎項：${pz || '—'}。${esc((c.rules || {}).note || '')}獎項數量有限，抽完為止；券請到櫃檯出示給店員核銷。</div>
+      ${(g.draws || []).length ? `<details style="margin-top:6px"><summary class="sub">我的抽獎紀錄</summary>${g.draws.map(d => `<div class="led"><span>${esc((d.prize || {}).name || '—')}${(d.prize || {}).capped ? ' <span class="sub">(已達全年上限)</span>' : ''}</span><span class="sub">${tw(d.created_at)}</span></div>`).join('')}</details>` : ''}</div>`
+  }
+  function openWheel () {
+    const g = ME.game, c = g.campaign, prizes = c.prizes || [], N = prizes.length || 1, seg = 360 / N
+    const colors = ['#ce1611', '#f0a35c', '#2f7a4a', '#2049c9', '#8f0e0a', '#b4581a', '#1f6f5f', '#6b4ac9']
+    const grad = prizes.map((p, i) => `${colors[i % colors.length]} ${i * seg}deg ${(i + 1) * seg}deg`).join(',')
+    const ov = document.createElement('div'); ov.className = 'wheelOv'; ov.id = 'wheelOv'
+    ov.innerHTML = `<div style="font-weight:900;font-size:18px;margin-bottom:12px">${esc(c.name)}</div><div class="wheelWrap"><div class="wheelPin"></div><div class="wheel" id="wheel" style="background:conic-gradient(${grad})">${prizes.map((p, i) => `<div class="lab" style="transform:rotate(${i * seg + seg / 2}deg) translateY(-118px) translateX(-50%)">${esc(p.name)}</div>`).join('')}</div></div>
+      <button class="wheelBtn" id="wheelGo">開始轉！</button><div id="wheelRes"></div><button class="btn" id="wheelClose" style="margin-top:14px;background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">關閉</button>`
+    document.body.appendChild(ov)
+    $('wheelClose').onclick = () => { ov.remove(); refreshMe() }
+    $('wheelGo').onclick = async () => {
+      const b = $('wheelGo'); b.disabled = true; b.textContent = '轉動中…'
+      const d = await api({ op: 'draw', ...SES, rightKey: (g.rights[0] || {}).key })
+      if (!d || !d.ok) { b.disabled = false; b.textContent = '開始轉！'; return toast((d && d.error) || '抽獎失敗', true) }
+      const idx = prizes.findIndex(p => p.idx === d.pidx); const center = (idx < 0 ? 0 : idx) * seg + seg / 2
+      const w = $('wheel'); const turns = 360 * 5 + (360 - center); w.style.transform = `rotate(${turns}deg)`
+      setTimeout(() => { const pz = d.prize || {}; $('wheelRes').innerHTML = `<div class="result">${pz.kind === 'none' ? `<div>這次沒中</div><b>銘謝惠顧</b>${pz.capped ? '<div class="sub">你今年中獎已達上限，下次再來</div>' : ''}` : `<div>恭喜！抽中</div><b>${esc(pz.name)}</b><div class="sub">${pz.kind === 'pts' ? '點數已入帳' : '券已放進你的兌換紀錄，到櫃檯出示給店員核銷'}</div>`}</div>`; b.style.display = 'none' }, 4300)
+    }
+  }
+  // 🎰 拉霸：三條直式捲軸，伺服器先決定結果，前端依序停在抽到的獎項
+  function openSlot () {
+    const g = ME.game, c = g.campaign, prizes = c.prizes || [], N = prizes.length || 1
+    const ov = document.createElement('div'); ov.className = 'wheelOv'; ov.id = 'wheelOv'
+    const reel = (k) => `<div style="width:84px;height:120px;overflow:hidden;background:#fff;border-radius:12px;border:3px solid #ce1611;position:relative"><div id="reel${k}" style="transition:transform 2.6s cubic-bezier(.15,.8,.1,1);display:flex;flex-direction:column">${[...prizes, ...prizes, ...prizes, ...prizes, ...prizes, ...prizes].map(p => `<div style="height:120px;display:grid;place-items:center;text-align:center;font-size:12.5px;font-weight:900;color:#2b1d18;padding:4px;line-height:1.2">${esc(p.name)}</div>`).join('')}</div></div>`
+    ov.innerHTML = `<div style="font-weight:900;font-size:18px;margin-bottom:12px">${esc(c.name)}</div><div style="display:flex;gap:8px;background:#8f0e0a;padding:14px;border-radius:18px;box-shadow:0 14px 40px rgba(0,0,0,.5)">${reel(0)}${reel(1)}${reel(2)}</div><button class="wheelBtn" id="wheelGo">拉！</button><div id="wheelRes"></div><button class="btn" id="wheelClose" style="margin-top:14px;background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">關閉</button>`
+    document.body.appendChild(ov)
+    $('wheelClose').onclick = () => { ov.remove(); refreshMe() }
+    $('wheelGo').onclick = async () => {
+      const b = $('wheelGo'); b.disabled = true; b.textContent = '轉動中…'
+      const d = await api({ op: 'draw', ...SES, rightKey: (g.rights[0] || {}).key })
+      if (!d || !d.ok) { b.disabled = false; b.textContent = '拉！'; return toast((d && d.error) || '抽獎失敗', true) }
+      const idx = Math.max(0, prizes.findIndex(p => p.idx === d.pidx))
+      ;[0, 1, 2].forEach(k => { const r = $('reel' + k); const stop = (3 + k) * N + idx; r.style.transitionDuration = (2.2 + k * 0.5) + 's'; r.style.transform = `translateY(-${stop * 120}px)` })
+      setTimeout(() => { const pz = d.prize || {}; $('wheelRes').innerHTML = `<div class="result">${pz.kind === 'none' ? `<div>這次沒中</div><b>銘謝惠顧</b>${pz.capped ? '<div class="sub">你今年中獎已達上限，下次再來</div>' : ''}` : `<div>恭喜！抽中</div><b>${esc(pz.name)}</b><div class="sub">${pz.kind === 'pts' ? '點數已入帳' : '券已放進你的兌換紀錄，到櫃檯出示給店員核銷'}</div>`}</div>`; b.style.display = 'none' }, 3600)
+    }
+  }
+  // 🧾 掃電子發票左邊那顆 QR 自己集點
+  function scanInvoice () {
+    if (typeof Html5Qrcode === 'undefined') return toast('掃描元件還沒載入，請再試一次', true)
+    const ov = document.createElement('div'); ov.className = 'wheelOv'; ov.id = 'invOv'
+    ov.innerHTML = `<div style="background:#fff;color:var(--ink);border-radius:16px;padding:14px;width:100%;max-width:380px"><div style="font-weight:900;margin-bottom:6px">掃發票左邊的 QR</div><div id="invReader" style="width:100%;border-radius:12px;overflow:hidden"></div><div id="invMsg" class="sub" style="margin-top:8px">對準發票左邊那顆 QR code…</div><div style="text-align:right;margin-top:10px"><button class="btn sm" id="invClose">關閉</button></div></div>`
+    document.body.appendChild(ov)
+    const h5 = new Html5Qrcode('invReader'); let busy = false
+    const stop = () => { try { h5.stop().then(() => { try { h5.clear() } catch (_) {} }).catch(() => {}) } catch (_) {} ov.remove() }
+    $('invClose').onclick = stop
+    h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => { if (busy) return; busy = true; $('invMsg').textContent = '登錄中…'; const d = await api({ op: 'invoice', ...SES, qr: txt }); if (!d || !d.ok) { busy = false; $('invMsg').innerHTML = `<span style="color:var(--red)">${esc((d && d.error) || '登錄失敗')}</span>`; return } stop(); ME = d; render(); toast(`發票 ${d.no} 已登錄，+${d.pts} 點`) }, () => {}).catch(() => { $('invMsg').innerHTML = '<span style="color:var(--red)">開不了鏡頭，請允許相機權限</span>' })
+  }
+  async function refreshMe () { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } }
+  function drawQR () { try { const c = $('qr'); if (!c || typeof qrcode !== 'function') return; const q = qrcode(0, 'M'); q.addData(ME.qr); q.make(); c.src = q.createDataURL(6, 2) } catch (e) { const c = $('qr'); if (c) c.alt = 'QR 產生失敗，請報會員號碼' } }
+  document.addEventListener('visibilitychange', async () => { if (!document.hidden && ME && SES) { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } } })
+})()
+</script>
+</body>
+</html>

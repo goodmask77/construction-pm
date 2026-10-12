@@ -71,6 +71,7 @@
       + `<button class="mini ${subTab === 'dash' ? 'on' : ''}" onclick="_socialSub('dash')">📊 儀表板</button>`
       + `<button class="mini ${subTab === 'lib' ? 'on' : ''}" onclick="_socialSub('lib')">內容庫</button>`
       + `<button class="mini ${subTab === 'assets' ? 'on' : ''}" onclick="_socialSub('assets')">📁 素材庫</button>`
+      + `<button class="mini ${subTab === 'lineoa' ? 'on' : ''}" onclick="_socialSub('lineoa')" title="官方帳號好友成長／封鎖／客群屬性／訊息額度（LINE 官方統計）">LINE 官方帳號</button>`
       + (d.canEdit ? `<button class="mini" id="soSyncBtn" onclick="_socialSync()" title="馬上抓最新數據＋偵測粉專已刪的貼文（平常每 3 小時自動跑）">🔄 立即同步</button>` : '')
       + `<span style="margin-left:auto;display:flex;gap:6px">`
       + `<button class="mini ${platFilter === 'all' ? 'on' : ''}" onclick="_socialPlat('all')">全部</button>`
@@ -154,6 +155,7 @@
     const el = document.getElementById('socialBody'); if (!el) return
     if (subTab === 'dash') { el.innerHTML = dashView(); return }
     if (subTab === 'assets') { el.innerHTML = assetsView(); return }
+    if (subTab === 'lineoa') { oaView(el); return }
     el.innerHTML = libView()
     if (document.getElementById('sfMediaWrap')) renderMedia() // 編輯器開著→初始化圖片牆＋拖曳排序
   }
@@ -298,7 +300,7 @@
     const isLater = !!v.scheduledAt
     const aiBox = DATA.aiReady === false ? '' : `
       <div style="border:1px dashed var(--primary);border-radius:12px;padding:12px;margin:4px 0 14px;background:#111A24">
-        <div style="font-weight:800;margin-bottom:3px">✨ AI 一鍵生成文案</div>
+        <div style="font-weight:800;margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">✨ AI 一鍵生成文案 ${aiTag('social')}</div>
         <div class="hint" style="margin-bottom:8px">上面有選圖的話，AI 會先看圖再寫。填要宣傳什麼、挑風格/語言/長度，按生成給 5 版選。</div>
         <textarea id="sfTopic" rows="2" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px" placeholder="要宣傳什麼？例：新品草莓千層上市、週末下午茶買一送一（只選圖不打字也行）"></textarea>
         <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">風格</span>${STYLES.map(s => `<button class="mini ${genStyle === s[0] ? 'on' : ''}" onclick="_socialPickStyle(this,'${s[0]}')">${s[1]}</button>`).join('')}</div>
@@ -508,7 +510,7 @@
     const ov = document.createElement('div'); ov.className = 'genImgOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:74;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => ov.remove()
     const AR = [['1:1', '正方形'], ['4:3', '橫式'], ['3:4', '直式'], ['16:9', '寬螢幕'], ['9:16', '限動／直立']]
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
-      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px">AI 生圖</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">AI 生圖 ${aiTag('image')}</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
       <div style="flex:1 1 auto;overflow:auto;padding:0 18px 10px">
         <textarea id="giPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 8px" placeholder="例：一盤拿坡里披薩放在木桌上，旁邊有一杯冰啤酒，海邊夕陽自然光，俯拍，質感要像美食雜誌"></textarea>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${AR.map(([v, l], i) => `<button class="mini ${i === 0 ? 'on' : ''}" data-ar="${v}" onclick="this.parentNode.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l} ${v}</button>`).join('')}</div>
@@ -823,6 +825,88 @@
     const rows = (posts || []).map(p => { const pl = PLAT(p.platform); return `<div onclick="_socialDetail('${p.id}')" style="display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid #222A35;cursor:pointer"><b style="color:var(--pdark);width:44px;flex:0 0 auto;font-variant-numeric:tabular-nums">${nf(INTER(p.metrics))}</b><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${esc((p.caption || '（無文字）').slice(0, 34))}</span><span style="font-size:11px;font-weight:800;color:${pl.c};flex:0 0 auto">${pl.n}</span></div>` }).join('')
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:460px;width:100%;max-height:82vh;overflow:auto;padding:18px"><h2 style="margin:0 0 4px">${esc(title)}</h2><div class="hint" style="margin-bottom:8px;line-height:1.6">${esc(desc)}</div><div class="hint" style="font-size:11px;margin-bottom:2px">數字＝該篇互動（讚+留言+分享）・點任一篇看完整數據</div>${rows || '<div class="hint" style="padding:12px">沒有貼文</div>'}<div style="text-align:right;margin-top:10px"><button class="mini on" onclick="this.closest('div[style*=fixed]').remove()">關閉</button></div></div>`
     document.body.appendChild(ov)
+  }
+
+  // ── LINE 官方帳號（v4.70.80 張良 2026-10-12「抓得到官方 LINE 的成長數字嗎」→「做」）──
+  // 讀 /api/lineoa-sync?lineoa=K：四個官方帳號（GROUN:D／A Beach／104招募／DD）每日好友／目標好友／封鎖＋屬性＋訊息額度；數字算法跟 DD 用同一份 sum（後端 summarize）
+  let OA = null, oaAcct = 'gd', oaRange = 90
+  const OA_GEN = { male: '男性', female: '女性', unknown: '不明' }
+  const OA_AGE = { from0to14: '0~14', from15to19: '15~19', from20to24: '20~24', from25to29: '25~29', from30to34: '30~34', from35to39: '35~39', from40to44: '40~44', from45to49: '45~49', from50to54: '50~54', from55to59: '55~59', from60to64: '60~64', from65to69: '65~69', from70: '70 以上', from50: '50 以上', unknown: '不明' }
+  const OA_APP = { ios: 'iPhone', android: 'Android', others: '其他' }
+  const OA_SUB = { within7days: '7 天內', within30days: '8~30 天', within90days: '31~90 天', within180days: '91~180 天', within365days: '181~365 天', over365days: '1 年以上', unknown: '不明' }
+  const OA_MSG = { broadcast: '群發', targeting: '分眾群發', autoResponse: '自動回應', welcomeResponse: '加入歡迎', chat: '聊天手動回', apiBroadcast: 'API 群發', apiPush: 'API 推播', apiMulticast: 'API 多人推播', apiNarrowcast: 'API 分眾', apiReply: 'API 回覆' }
+  const pct = v => (Math.round((v || 0) * 10) / 10) + '%'
+  const sgn = n => (n > 0 ? '+' : '') + nf(n)
+  async function oaView(el) {
+    el.innerHTML = '<section><div class="hint" style="padding:22px">讀取 LINE 官方帳號數據…</div></section>'
+    if (!OA) { try { const r = await fetch('/api/lineoa-sync?lineoa=' + encodeURIComponent(K)); OA = await r.json() } catch (e) { OA = null } }
+    if (!OA || !OA.ok) { el.innerHTML = '<section><div class="err">讀不到官方帳號數據（' + ((OA && OA.error) || '連線問題') + '）</div></section>'; return }
+    if (!OA.accts.find(a => a.key === oaAcct)) oaAcct = (OA.accts[0] || {}).key
+    el.innerHTML = oaHtml()
+  }
+  window._oaAcct = function (k) { oaAcct = k; socialBody() }
+  window._oaRange = function (n) { oaRange = n; socialBody() }
+  window._oaRefresh = async function () {
+    const b = document.getElementById('oaRefBtn'); if (b) { b.disabled = true; b.textContent = '更新中…' }
+    try { const r = await fetch('/api/lineoa-sync?lineoa=' + encodeURIComponent(K) + '&run=1'); OA = await r.json() } catch (e) { OA = null }
+    socialBody()
+  }
+  function oaHtml() {
+    const A = OA.accts.find(a => a.key === oaAcct); if (!A) return '<section><div class="hint">四個官方帳號都還沒設金鑰</div></section>'
+    const s = A.sum
+    const ds = Object.keys(A.days || {}).sort()
+    const cut = ds.length ? ds[Math.max(0, ds.length - oaRange)] : ''
+    const sel = ds.filter(d => d >= cut)
+    const D = d => A.days[d]
+    let h = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px">`
+      + OA.accts.map(a => `<button class="mini ${a.key === oaAcct ? 'on' : ''}" onclick="_oaAcct('${a.key}')"><span style="color:${a.color}">●</span> ${esc(a.name)}</button>`).join('')
+      + `<span style="margin-left:auto;display:flex;gap:6px;align-items:center">`
+      + [30, 90, 400].map(n => `<button class="mini ${oaRange === n ? 'on' : ''}" onclick="_oaRange(${n})">${n === 400 ? '全部' : n + ' 天'}</button>`).join('')
+      + `<button class="mini" id="oaRefBtn" onclick="_oaRefresh()" title="平常每小時自動抓；LINE 統計隔天才完成">立即更新</button></span></div>`
+    if (!s) return h + `<section><div class="hint" style="padding:18px">「${esc(A.name)}」還沒有數據。系統每小時自動向 LINE 要一次，LINE 的統計是隔天才完成；第一次會往回補一年（約十幾個小時補完）。${A.lastRun ? '上次嘗試 ' + esc(String(A.lastRun).slice(0, 16).replace('T', ' ')) : ''}</div></section>`
+    const dd = o => o ? `<span style="color:${o.f >= 0 ? COL.g : COL.r}">${sgn(o.f)}</span>` : '—'
+    const db = o => o ? `<span style="color:${o.b > 0 ? COL.r : 'var(--muted)'}">${sgn(o.b)}</span>` : '—'
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 14px">`
+      + kcard('加入好友', nf(s.f), `前一天 ${dd(s.d1)}・近 7 天 ${dd(s.d7)}・近 30 天 ${dd(s.d30)}`, COL.g)
+      + kcard('目標好友數', nf(s.t), '加入好友扣掉封鎖＝真的收得到訊息的人', COL.b)
+      + kcard('封鎖', nf(s.b), `近 7 天 ${db(s.d7)}・近 30 天 ${db(s.d30)}`, COL.r)
+      + kcard('本月新增', s.mtd ? sgn(s.mtd.f) : '—', s.mtd ? `本月封鎖 ${db(s.mtd)}` : '', COL.o)
+      + kcard('本月訊息額度', s.quota ? (s.quota.limit ? `${nf(s.quota.used)} / ${nf(s.quota.limit)}` : nf(s.quota.used)) : '—', s.quota && s.quota.limit ? `已用 ${Math.round(s.quota.used / s.quota.limit * 100)}%${s.quota.used / s.quota.limit >= 0.8 ? '・快用完了' : ''}` : (s.quota ? '無上限方案' : ''), COL.p)
+      + `</div>`
+    h += `<div class="hint" style="margin-bottom:10px">統計到 ${esc(s.date)}（LINE 隔天才完成統計，跟官方後台「統計完成資料」同一天）・資料從 ${esc(s.firstDay)} 起共 ${s.nDays} 天</div>`
+    // 曲線：加入好友＋目標好友（同一張）、封鎖（單獨）、每日淨增
+    const lab = sel, xf = d => d.slice(5).replace('-', '/')
+    const tip = d => { const r = D(d) || {}; return `${d}　加入 ${nf(r.f)}・目標 ${nf(r.t)}・封鎖 ${nf(r.b)}` }
+    const chart1 = lineChart({ labels: lab, series: [{ name: '加入好友', color: COL.g, vals: sel.map(d => D(d).f) }, { name: '目標好友', color: COL.b, vals: sel.map(d => D(d).t) }], h: 170, xFmt: xf, tipX: tip })
+    const chart2 = lineChart({ labels: lab, series: [{ name: '封鎖累計', color: COL.r, vals: sel.map(d => D(d).b) }], h: 120, zero: true, xFmt: xf, tipX: tip })
+    const net = sel.map((d, i) => i ? D(d).f - D(sel[i - 1]).f : null)
+    const chart3 = lineChart({ labels: lab, series: [{ name: '每日新增好友', color: COL.o, vals: net }], h: 120, zero: true, xFmt: xf, tipX: (d, i) => `${d}　新增 ${net[i] == null ? '—' : sgn(net[i])}` })
+    h += card('', '好友成長', '綠＝加入好友（累計，含已封鎖）、藍＝目標好友（還收得到訊息的）。兩條線距離拉大＝封鎖變多。', chart1)
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">`
+      + card('', '每日新增好友', '每天比前一天多幾個（扣掉當天封鎖）。衝高的那幾天對一下是不是有活動／群發。', chart3)
+      + card('', '封鎖累計', '被封鎖的人數累計。群發後隔天跳一截＝那則訊息讓人反感。', chart2)
+      + `</div>`
+    // 屬性
+    const dm = A.demo
+    if (dm) {
+      const gItems = (dm.genders || []).map(g => ({ l: OA_GEN[g.gender] || g.gender, v: g.percentage, t: pct(g.percentage), c: g.gender === 'female' ? '#2BB7A6' : g.gender === 'male' ? '#4D4DD9' : '#8C98A8' }))
+      const aItems = (dm.ages || []).filter(a => a.percentage > 0).sort((a, b) => b.percentage - a.percentage).map(a => ({ l: (OA_AGE[a.age] || a.age) + (a.age === 'unknown' ? '' : ' 歲'), v: a.percentage, t: pct(a.percentage) }))
+      const rItems = (dm.areas || []).filter(a => a.percentage > 0).sort((a, b) => b.percentage - a.percentage).slice(0, 8).map(a => ({ l: a.area === 'unknown' ? '不明' : a.area, v: a.percentage, t: pct(a.percentage) }))
+      const pItems = (dm.appTypes || []).map(a => ({ l: OA_APP[a.appType] || a.appType, v: a.percentage, t: pct(a.percentage) }))
+      const sItems = (dm.subs || []).filter(a => a.percentage > 0).map(a => ({ l: OA_SUB[a.subscriptionPeriod] || a.subscriptionPeriod, v: a.percentage, t: pct(a.percentage) }))
+      h += `<section><h2 style="margin:0 0 4px">好友屬性</h2><div class="hint" style="margin-bottom:12px;line-height:1.6">LINE 用使用者的行為推估出來的（不是客人自己填的），只算目標好友、延遲約 3 天；「不明」＝LINE 推不出來。看大方向用，不要拿來算精確人數。${A.demoAt ? '更新 ' + esc(String(A.demoAt).slice(0, 16).replace('T', ' ')) : ''}</div>`
+        + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">`
+        + `<div><b>性別</b>${bars(gItems, COL.b)}</div>`
+        + `<div><b>年齡</b>${bars(aItems, COL.g)}</div>`
+        + `<div><b>地區</b>${bars(rItems, COL.o)}</div>`
+        + `<div><b>手機系統</b>${bars(pItems, COL.p)}</div>`
+        + `<div><b>加入多久</b>${bars(sItems, COL.y)}</div>`
+        + `</div></section>`
+    } else h += `<section><h2 style="margin:0 0 4px">好友屬性</h2><div class="hint">${A.demoUnavailable ? 'LINE 說目標好友未滿 20 人，不提供屬性。' : '還沒抓到屬性，下一小時自動補。'}</div></section>`
+    // 訊息則數（近 30 天）
+    const mItems = Object.entries(s.msg30 || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ l: OA_MSG[k] || k, v }))
+    h += card('', '近 30 天發出的訊息', '依 LINE 分類；群發、API 推播會扣額度，自動回應／回覆不扣。', mItems.length ? bars(mItems, COL.b) : '<div class="hint">近 30 天沒發訊息，或資料還在補</div>')
+    return h
   }
 
   // 深層連結：DD 通知點進來 /prep#social → 自動開這頁

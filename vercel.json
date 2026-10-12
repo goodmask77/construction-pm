@@ -11,6 +11,14 @@
     {
       "source": "/v/:code",
       "destination": "/api/mail-sync?vgo=:code"
+    },
+    {
+      "source": "/order/:code",
+      "destination": "/order.html"
+    },
+    {
+      "source": "/member",
+      "destination": "/member.html"
     }
   ],
   "crons": [
@@ -77,6 +85,10 @@
     {
       "path": "/api/social-publish",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/lineoa-sync",
+      "schedule": "50 * * * *"
     }
   ]
 }

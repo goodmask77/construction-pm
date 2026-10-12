@@ -9,7 +9,7 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4762' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4786' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 const IB_STC = { new: '#2563eb', open: '#d97706', done: '#16a34a' } // 狀態色：新＝藍、處理中＝橘、已完成＝綠（張良 10-11「底色標籤直覺辨識」）
@@ -135,10 +135,11 @@ function ibRenderPane() {
   const people = (_ibD && _ibD.people) || []
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       ${mobile ? `<button class="mini" style="padding:6px 8px" onclick="ibBack()">${IB_ICON.back}</button>` : ''}
-      <div style="flex:1;min-width:140px"><b style="font-size:16px">${ibEsc(cv.alias || cv.name || '客人')}</b> ${ibTag(cv.acct)}<div class="hint" style="font-size:12px">${cv.alias && cv.name ? 'LINE 名稱：' + ibEsc(cv.name) + ' · ' : ''}${cv.follow === false ? '已封鎖官方帳號 · ' : ''}<span id="ibQuota"></span></div></div>
+      <div style="flex:1;min-width:140px"><b style="font-size:16px">${ibEsc(cv.alias || cv.name || '客人')}</b> ${ibTag(cv.acct)}<div class="hint" style="font-size:12px">${cv.alias && cv.name ? 'LINE 名稱：' + ibEsc(cv.name) + ' · ' : ''}${cv.follow === false ? '已封鎖官方帳號 · ' : ''}<span id="ibQuota"></span><span id="ibMember"></span></div></div>
       <span id="ibStBtns" style="display:flex;gap:4px">${ibStBtns(cv.status)}</span>
       <select id="ibAssign" class="mini" style="padding:5px 8px;font-size:12.5px;max-width:120px" onchange="ibOp('assign',this.value)" title="負責人"><option value="">未指派</option>${people.map(p => `<option${cv.assignee === p ? ' selected' : ''}>${ibEsc(p)}</option>`).join('')}</select>
       <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibNote()" title="內部備註（客人看不到）">備註${cv.note ? ' ●' : ''}</button>
+      <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="goFromInbox()" title="建團體訂餐單並把點餐連結傳給這個客人（v4.70.78）">點餐單</button>
     </div>
     <div id="ibMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
     ${(ibAcct(cv.acct).canReply === false) ? `<div class="hint" style="padding:12px;border-top:1px solid var(--line);font-size:13.5px;text-align:center">你有這個帳號的查看權限，沒有回覆權限。要回覆請主管在收件匣設定勾「可回覆」。</div>` : `<div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="document.getElementById('ibFile').click()" title="傳圖片或檔案（也可以直接把截圖貼到輸入框）">${IB_ICON.clip} 附件</button><input id="ibFile" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" style="display:none" onchange="ibUploadFiles(this.files);this.value=''"><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
@@ -147,6 +148,7 @@ function ibRenderPane() {
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="ibSend()">${IB_ICON.send}</button>
     </div>`}`
   ibModeLine()
+  try { if (cv.acct === 'gd' && typeof mbInboxBadge === 'function') mbInboxBadge(cv) } catch (_) {} // v4.70.86 會員徽章（點數／入點）
 }
 function ibModeLine() {
   const m = document.getElementById('ibMode'); if (!m) return

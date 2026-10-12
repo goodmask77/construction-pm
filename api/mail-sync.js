@@ -1433,7 +1433,9 @@ export default async function handler(req, res) {
     const hourDays = {}
     const hourUber = {} // AB 每小時 Uber {date:{hour:uber}}（張良 2026-10-12 熱力圖顯示 Uber）
     const fromHD = dOf(anchor, -120)
-    for (const e of entries) {
+    // v4.70.87（張良 2026-10-12「熱力圖怎麼沒有更新到現在週一」）：原本只跑 entries＝日結正式筆，今天盤中那筆（liveE9，喬亞每 15 分已帶時段表）被漏掉
+    // →每日數據表有今天、熱力圖沒有。改成跟 days2 同一份名單（正式＋今天盤中），打烊後自動換正式值
+    for (const e of [...entries, ...liveE9]) {
       if (e.date < fromHD) continue
       if (slotEx.has(e.date)) continue // 包場日不進熱力圖（那格隱藏）
       const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
@@ -1441,6 +1443,7 @@ export default async function handler(req, res) {
       if (!rows3.length) continue
       const hm = {}
       for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
+      for (const h of Object.keys(hm)) if (!(hm[h] > 0)) delete hm[h] // 0 元時段不給（盤中會帶 9 時＝0 的空列，熱力圖多一整列空白）
       if (Object.keys(hm).length) hourDays[e.date] = hm
     }
     // AB 沒有日結時段表（Eats365 日結無時段）→ ①主來源：後台 hourlySalesRecordMap 回補的直接每小時營收 sp_finance_pm_ab_hhrev_（可回補歷史＝熱力圖跟 GD 一樣滿，張良 2026-10-10）②補：盤中快照 sp_finance_pm_ab_hh_（joya-intraday 當天累計相鄰相減）補今天進行中的日子
@@ -2067,6 +2070,11 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
+  if (req.query?.aiwhich) { // v4.70.81 每個 AI 功能頁角落「這裡由哪家 AI 處理」小標籤；只回供應商＋模型名，不含金鑰
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aiwhich) !== ok2) return res.status(403).json({ ok: false })
+    try { const { aiWhich } = await import('./_ai.js'); res.setHeader('Cache-Control', 'no-store'); return res.status(200).json({ ok: true, routes: await aiWhich() }) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e) }) }
+  }
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.tabcfg) !== ok2) return res.status(403).json({ ok: false })
@@ -3373,14 +3381,35 @@ export default async function handler(req, res) {
         mig19 = true
       }
     }
-    if (mig18 || mig19) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
+    // v4.70.97 mig20（張良 2026-10-12「第一層工作站、第二層完全隸屬於某個工作站、不要共用」）：階段改成每站自己一份 stCats{站:[階段…]}，
+    // 由該站目前用到的階段（照舊全域 catOrder 順序）推出；舊 catOrder 留著不刪（回退用）。舊「階段負責人」catOwner → 轉成用到該階段且還沒負責人的站的站負責人
+    //（例：外場巡查→外場櫃檯）；站改名沒跟到的舊負責人鍵（披薩→Pizza、漢堡→漢堡療癒碗）順手對上。只跑一次（stCats 不存在才跑）。
+    let mig20 = false
+    if (!gdef.stCats) {
+      const co20 = gdef.catOrder || []
+      gdef.stCats = {}
+      for (const stX of gdef.stations) {
+        const used = [...new Set(gdef.items.filter(i => i.st === stX && i.tg).map(i => String(i.tg)))]
+        gdef.stCats[stX] = [...co20.filter(c => used.includes(c)), ...used.filter(c => !co20.includes(c))]
+      }
+      gdef.stOwner = { ...(gdef.stOwner || {}) }
+      for (const [k, v] of Object.entries(gdef.stOwner)) {
+        if (gdef.stations.includes(k)) continue
+        const hit = gdef.stations.find(s => s.includes(k) || k.includes(s) || (k === '披薩' && s === 'Pizza') || (k === 'Pizza' && s === '披薩'))
+        if (hit && !gdef.stOwner[hit]) gdef.stOwner[hit] = v
+        delete gdef.stOwner[k]
+      }
+      for (const [cg, who] of Object.entries(gdef.catOwner || {})) { for (const stX of gdef.stations) { if ((gdef.stCats[stX] || []).includes(cg) && !gdef.stOwner[stX]) gdef.stOwner[stX] = who } }
+      mig20 = true
+    }
+    if (mig18 || mig19 || mig20) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig20 ? 'SOP階段改每站自己一份' : mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
     const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
     const sugOpen = {}
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, handover: (logDoc || {}).handover || [], names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCats: gdef.stCats || {}, stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, handover: (logDoc || {}).handover || [], names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // v4.61.0 跨日歷史查詢（工作流程SOP改版第3期）：讀指定日完成紀錄（含快照 title/st/tg，改名/刪條目也能正確顯示）
   if (req.query?.sophist && req.method !== 'POST') {
@@ -3403,10 +3432,23 @@ export default async function handler(req, res) {
     const gS = curS.ground || { items: [] }
     gS.stations = (gS.stations && gS.stations.length) ? gS.stations : [...new Set((gS.items || []).map(i => i.st))]
     const nmS = String(bs.st || '').trim().slice(0, 20)
+    // v4.70.97 守門分兩層（張良 2026-10-12）：第一層「工作站」（增刪改名排序、指定負責人、舊全域階段操作）＝審核人／主管；
+    // 第二層「該站的階段」（tgadd/tgren/tgdel/tgord）＝該站負責人或審核人／主管。沒負責人的站只有主管能動。
+    const aprS9 = gS.approvers || ['張良瑋']
+    const mgrS9 = aprS9.includes(whoS.name) || whoS.role === '主管'
+    const canStS = st9 => mgrS9 || (!!(gS.stOwner || {})[st9] && (gS.stOwner || {})[st9] === whoS.name)
+    const stLayerOps = ['add', 'rename', 'del', 'restore', 'stord', 'ownset', 'catadd', 'catren', 'catdel', 'catord', 'catset', 'catown']
+    if (stLayerOps.includes(bs.op) && !mgrS9) return res.status(403).json({ ok: false, error: '工作站這一層（新增／改名／刪除／排序／指定負責人）由審核人／主管管理' })
+    if (['tgadd', 'tgren', 'tgdel', 'tgord', 'itord'].includes(bs.op)) {
+      if (!nmS || !gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個工作站' })
+      if (!canStS(nmS)) return res.status(403).json({ ok: false, error: (gS.stOwner || {})[nmS] ? '「' + nmS + '」由 ' + gS.stOwner[nmS] + ' 負責——想改請按站名旁「💡 提建議」' : '「' + nmS + '」還沒有負責人——請審核人／主管編輯或先指定負責人' })
+      gS.stCats = { ...(gS.stCats || {}) }
+    }
     if (bs.op === 'add') {
       if (!nmS) return res.status(400).json({ ok: false, error: '要給站名' })
       if (gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '已經有這個站了' })
       gS.stations.push(nmS)
+      gS.stCats = { ...(gS.stCats || {}), [nmS]: [] }
     } else if (bs.op === 'rename') {
       const nn = String(bs.newName || '').trim().slice(0, 20)
       if (!nmS || !nn) return res.status(400).json({ ok: false, error: '要給舊站名與新站名' })
@@ -3415,6 +3457,34 @@ export default async function handler(req, res) {
       gS.items = (gS.items || []).map(it => it.st === nmS ? { ...it, st: nn } : it)
       if ((gS.stCat || {})[nmS] != null) { gS.stCat = { ...gS.stCat, [nn]: gS.stCat[nmS] }; delete gS.stCat[nmS] }
       if ((gS.stOwner || {})[nmS] != null) { gS.stOwner = { ...gS.stOwner, [nn]: gS.stOwner[nmS] }; delete gS.stOwner[nmS] }
+      if ((gS.stCats || {})[nmS] != null) { gS.stCats = { ...gS.stCats, [nn]: gS.stCats[nmS] }; delete gS.stCats[nmS] }
+    } else if (bs.op === 'tgadd') { // v4.70.97 第二層：這一站自己的階段
+      const cn = String(bs.cat || '').trim().slice(0, 20); if (!cn) return res.status(400).json({ ok: false, error: '要給階段名' })
+      const L = gS.stCats[nmS] = [...(gS.stCats[nmS] || [])]
+      if (L.includes(cn)) return res.status(400).json({ ok: false, error: '這一站已經有「' + cn + '」了' })
+      L.push(cn)
+    } else if (bs.op === 'tgren') {
+      const co = String(bs.cat || '').trim(), cn = String(bs.newName || '').trim().slice(0, 20)
+      if (!co || !cn) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
+      const L = gS.stCats[nmS] || []
+      if (!L.includes(co)) return res.status(404).json({ ok: false, error: '這一站沒有「' + co + '」' })
+      if (cn !== co && L.includes(cn)) return res.status(400).json({ ok: false, error: '這一站已經有「' + cn + '」了' })
+      gS.stCats[nmS] = L.map(c2 => c2 === co ? cn : c2)
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && it.tg === co) it.tg = cn })
+    } else if (bs.op === 'tgdel') {
+      const cn = String(bs.cat || '').trim()
+      gS.stCats[nmS] = (gS.stCats[nmS] || []).filter(c2 => c2 !== cn)
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && it.tg === cn) delete it.tg }) // 動作不刪，變「未分階段」
+    } else if (bs.op === 'itord') { // v4.70.98 動作拖曳排序：同站同階段內照 list 順序寫 ord（張良 2026-10-12）
+      const ids = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x)).filter(Boolean)
+      if (!ids.length) return res.status(400).json({ ok: false, error: '缺順序清單' })
+      const posI = new Map(ids.map((id, i) => [id, i]))
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && posI.has(it.id)) it.ord = posI.get(it.id) })
+    } else if (bs.op === 'tgord') {
+      const want = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x).trim().slice(0, 20)).filter(Boolean)
+      const L = gS.stCats[nmS] || []
+      const keep = want.filter(x => L.includes(x))
+      gS.stCats[nmS] = [...keep, ...L.filter(x => !keep.includes(x))]
     } else if (bs.op === 'del') {
       if (!gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個站' })
       const moved = (gS.items || []).filter(it => it.st === nmS)
@@ -3422,12 +3492,14 @@ export default async function handler(req, res) {
       gS.stations = gS.stations.filter(s => s !== nmS)
       if (gS.stCat) delete gS.stCat[nmS]
       if (gS.stOwner) delete gS.stOwner[nmS]
+      if (gS.stCats) delete gS.stCats[nmS]
       gS.trash = [{ id: 'tr' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), by: whoS.name, st: nmS, items: moved }, ...(gS.trash || [])].slice(0, 20)
     } else if (bs.op === 'restore') {
       const tr = (gS.trash || []).find(t => t.id === bs.trashId)
       if (!tr) return res.status(404).json({ ok: false, error: '回收站找不到' })
       if (!gS.stations.includes(tr.st)) gS.stations.push(tr.st)
       gS.items = [...(gS.items || []).filter(it => it.st !== tr.st || !(tr.items || []).some(x => x.id === it.id)), ...(tr.items || [])]
+      gS.stCats = { ...(gS.stCats || {}) }; gS.stCats[tr.st] = [...new Set([...(gS.stCats[tr.st] || []), ...(tr.items || []).map(x => x.tg).filter(Boolean)])] // v4.70.97 復原站也把它的階段帶回來
       gS.trash = (gS.trash || []).filter(t => t.id !== bs.trashId)
     } else if (bs.op === 'catadd') { // v4.15.0 分類層
       const cn = String(bs.cat || '').trim().slice(0, 20); if (!cn) return res.status(400).json({ ok: false, error: '要給分類名' })
@@ -3953,7 +4025,7 @@ export default async function handler(req, res) {
   // 設定口（公開資訊）：GET ?webpushcfg=1 → VAPID 公鑰 + LIFF id（公鑰本來就是公開的，LIFF id 也是）
   if (req.query?.webpushcfg) {
     const { wpPubKey } = await import('./_webpush.js')
-    return res.status(200).json({ ok: true, key: wpPubKey() || null, liff: (process.env.LIFF_ID || '').trim() || null })
+    return res.status(200).json({ ok: true, key: wpPubKey() || null, liff: (process.env.LIFF_ID || '').trim() || null, liffStaff: (process.env.LIFF_STAFF_ID || '').trim() || null }) // v4.71.1 liffStaff=員工 LIFF（DD 同 Provider 的「DD LIFE」頻道），/liff/ 入口依 ?to= 決定用哪一個
   }
   // 訂閱口：POST ?pushsub=<OPS_BOARD_KEY> {token, sub, off} → 綁定者本人存訂閱（off=1 取消）
   if (req.method === 'POST' && req.query?.pushsub) {
@@ -4339,6 +4411,140 @@ export default async function handler(req, res) {
   // 權限模型：每個資料夾 acl={ roles:{角色:等級}, users:{rid:等級}, noExport }；等級 0=看不到 1=只能看/下載 2=可編輯（上傳/刪/改/排序）。
   // 管理者（approver／主管／prep admin）永遠 2，且唯一能「管理資料夾結構＋設權限」。個人覆蓋 > 角色預設 > 一般預設。
   // 💬 聊天室（v4.70.45 溝通中樞項目 3a；規則在 api/_chat.js）：GET ?chat=<OPS_BOARD_KEY>&me=token&op=rooms|msgs（&room=&after=&read=1）；POST ?chat=<K> {token, op:'send'|'read'|'create'|'rename'|'members'|'delete', ...}
+  // 🧾 團體訂餐 v4.70.78 批次 1（規格 docs/GROUP_ORDER_SPEC.md；張良 2026-10-12）：
+  //   店家：GET ?grporder=K&me=token&op=list|get(&id)|cfg ／ POST ?grporder=K {token, op:create|save|status|sendlink|parse|cfg, …}（寫入要「團體訂餐」分頁編輯權限 permWho(tk,'gorder')）
+  //   客人：GET ?gorder=<連結碼>（免登入，連結碼即授權）／ POST ?gorder=<碼> {op:save|parse|submit|confirm, …}
+  if (req.query?.grporder) {
+    const okG = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okG || String(req.query.grporder) !== okG) return res.status(403).json({ ok: false })
+    let bG = {}; if (req.method === 'POST') { try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkG = req.method === 'POST' ? bG.token : req.query.me
+    const whoG = await sopWho(tkG)
+    if (!whoG) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const canG = !!(await permWho(tkG, 'gorder'))
+    const GO = await import('./_grporder.js')
+    const opG = String(req.method === 'POST' ? bG.op : req.query.op || 'list')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        if (opG === 'list') return res.status(200).json({ ok: true, ver: GO.GO_VER, me: { name: whoG.name, canEdit: canG }, list: await GO.listOrders(), cfg: await GO.loadCfg(), menu: await GO.loadMenu() })
+        if (opG === 'get') { const o = await GO.getOrder(String(req.query.id || '')); if (!o) return res.status(404).json({ ok: false, error: '找不到這張單' }); return res.status(200).json({ ok: true, order: o, menu: await GO.loadMenu(), cfg: await GO.loadCfg(), link: GO.linkOf(o.id), me: { name: whoG.name, canEdit: canG } }) }
+        if (opG === 'cfg') return res.status(200).json({ ok: true, cfg: await GO.loadCfg() })
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (!canG) return res.status(403).json({ ok: false, error: '沒有「團體訂餐」的編輯權限（請主管在權限頁開）' })
+      if (opG === 'create') return res.status(200).json(await GO.createOrder({ who: whoG, ...bG }))
+      if (opG === 'save') return res.status(200).json(await GO.saveOrder({ who: whoG, id: String(bG.id || ''), patch: bG.patch || {} }))
+      if (opG === 'status') return res.status(200).json(await GO.setStatus({ who: whoG, id: String(bG.id || ''), status: String(bG.status || '') }))
+      if (opG === 'parse') return res.status(200).json(await GO.parseText({ text: bG.text }))
+      if (opG === 'cfg') return res.status(200).json(await GO.saveCfg(bG.cfg || {}, whoG))
+      if (opG === 'imgsave') return res.status(200).json(await GO.saveImgs({ who: whoG, id: String(bG.id || ''), p1: bG.p1, p2: bG.p2 }))
+      if (opG === 'sendimgs') {
+        const IB = await import('./_inbox.js')
+        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
+        return res.status(200).json(await GO.sendImgs({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
+      }
+      if (opG === 'sendlink') {
+        const IB = await import('./_inbox.js')
+        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
+        return res.status(200).json(await GO.sendLink({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
+      }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '團體訂餐暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
+  }
+  if (req.query?.gorder) {
+    const codeG = String(req.query.gorder || '').toLowerCase()
+    if (!/^[a-z0-9]{6,12}$/.test(codeG)) return res.status(404).json({ ok: false, error: '連結不對' })
+    const GO = await import('./_grporder.js')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        const o = await GO.getOrder(codeG); if (!o || o.status === 'void') return res.status(404).json({ ok: false, error: '找不到這張點餐單，請跟店家確認連結' })
+        const [menuG, cfgG] = await Promise.all([GO.loadMenu(), GO.loadCfg()])
+        return res.status(200).json({ ...GO.publicView(o, menuG, cfgG), menu: menuG })
+      }
+      let bG = {}; try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+      const opG = String(bG.op || '')
+      if (opG === 'save') return res.status(200).json(await GO.custSave({ code: codeG, body: bG }))
+      if (opG === 'who') return res.status(200).json(await GO.custWho({ code: codeG, at: bG.at }))
+      if (opG === 'mine') return res.status(200).json(await GO.custMine({ code: codeG, body: bG }))
+      if (opG === 'submit') return res.status(200).json(await GO.custSubmit({ code: codeG, body: bG }))
+      if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG, body: bG }))
+      if (opG === 'shared') return res.status(200).json(await GO.custShared({ code: codeG, body: bG }))
+      if (opG === 'parseadd') return res.status(200).json(await GO.custParseAdd({ code: codeG, body: bG }))
+      if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
+  }
+  // 🪪 會員 v4.70.83 第一批（docs/MEMBER_PLAN_v1.md；建表 supabase/migrations/0001_member.sql）：
+  //   店家：GET ?member=K&me=token&op=list(&q)|get(&id)|stats|cfg ／ POST ?member=K {token, op:find|earn|redeem|adjust|create|update|cfg}（寫入要「會員」分頁權限 permWho(tk,'member')；mgr＝審核人／主管可看完整手機、超限操作）
+  //   客人（LIFF）：GET ?mcard=1 → {liff}；POST ?mcard=1 {op:who|consent|me|update|leave, at|uid+mt, …}
+  if (req.query?.member) {
+    const okM = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okM || String(req.query.member) !== okM) return res.status(403).json({ ok: false })
+    let bM = {}; if (req.method === 'POST') { try { bM = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkM = req.method === 'POST' ? bM.token : req.query.me
+    const whoM = await sopWho(tkM)
+    if (!whoM) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const canM = !!(await permWho(tkM, 'member'))
+    const [defM, pmM] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    const IBm = await import('./_inbox.js'); const mgrM = IBm.isMgr(whoM, (((defM || {}).ground || {}).approvers || ['張良瑋']), pmM)
+    const MB = await import('./_member.js')
+    const opM = String(req.method === 'POST' ? bM.op : req.query.op || 'list')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        if (opM === 'list') return res.status(200).json({ ok: true, ver: MB.MEMBER_VER, me: { name: whoM.name, canEdit: canM, mgr: mgrM }, list: await MB.listMembers({ q: req.query.q, limit: req.query.limit }), stats: await MB.stats(), cfg: await MB.loadCfg(), liff: MB.liffId() })
+        if (opM === 'get') return res.status(200).json(await MB.getMember({ id: String(req.query.id || ''), mgr: mgrM }))
+        if (opM === 'stats') return res.status(200).json({ ok: true, stats: await MB.stats() })
+        if (opM === 'cfg') return res.status(200).json({ ok: true, cfg: await MB.loadCfg() })
+        if (opM === 'campaigns') return res.status(200).json({ ok: true, list: await MB.listCampaigns() })
+        if (opM === 'byuid') return res.status(200).json(await MB.byUid(String(req.query.uid || '')))
+        if (opM === 'settle') return res.status(200).json(await MB.settlement({ month: req.query.month }))
+        if (opM === 'surveys') return res.status(200).json(await MB.surveysList({ days: req.query.days }))
+        if (opM === 'report') return res.status(200).json(await MB.report({ days: req.query.days }))
+        if (opM === 'pushpreview') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json({ ...(await MB.pushPreview({ segment: String(req.query.segment || 'all') })), log: await MB.pushLog() }) }
+        if (opM === 'campaign') return res.status(200).json(await MB.campaignStats({ id: String(req.query.id || '') }))
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (opM === 'find') return res.status(200).json(await MB.resolveMember(bM.key))
+      if (!canM) return res.status(403).json({ ok: false, error: '沒有「會員」分頁的編輯權限（請主管在權限頁開）' })
+      if (opM === 'earn') return res.status(200).json(await MB.earn({ who: whoM, mgr: mgrM, key: bM.key, amount: bM.amount, posNo: bM.posNo, reqId: bM.reqId, note: bM.note, store: bM.store }))
+      if (opM === 'redeem') return res.status(200).json(await MB.redeem({ who: whoM, key: bM.key, rewardId: bM.rewardId, reqId: bM.reqId, store: bM.store, cashAmt: bM.cashAmt }))
+      if (opM === 'adjust') return res.status(200).json(await MB.adjust({ who: whoM, mgr: mgrM, id: String(bM.id || ''), pts: bM.pts, reason: bM.reason, reqId: bM.reqId }))
+      if (opM === 'create') return res.status(200).json(await MB.createByStaff({ who: whoM, name: bM.name, phone: bM.phone, note: bM.note }))
+      if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
+      if (opM === 'cfg') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改會員設定' }); return res.status(200).json(await MB.saveCfg(bM.cfg || {}, whoM)) }
+      if (opM === 'richmenu') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.richMenuSetup({ who: whoM })) }
+      if (opM === 'pushsend') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能推播' }); return res.status(200).json(await MB.pushSend({ who: whoM, segment: String(bM.segment || 'all'), text: bM.text, test: !!bM.test })) }
+      if (opM === 'couponuse') return res.status(200).json(await MB.couponUse({ who: whoM, couponId: String(bM.couponId || ''), ref: bM.ref }))
+      if (opM === 'campaign') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能建活動' }); return res.status(200).json(await MB.createCampaign({ who: whoM, ...bM })) }
+      if (opM === 'campaignstatus') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改活動狀態' }); return res.status(200).json(await MB.campaignStatus({ who: whoM, id: String(bM.id || ''), status: String(bM.status || '') })) }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }
+  }
+  if (req.query?.mcard) {
+    const MB = await import('./_member.js')
+    res.setHeader('Cache-Control', 'private, no-store')
+    if (req.method !== 'POST') return res.status(200).json({ ok: true, liff: MB.liffId(), liffUrl: MB.memberLiffUrl(), ver: MB.MEMBER_VER })
+    let bC = {}; try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const opC = String(bC.op || '')
+    try {
+      if (opC === 'who') return res.status(200).json(await MB.custWho({ at: bC.at }))
+      if (opC === 'who2') return res.status(200).json(await MB.custWho2({ body: bC }))
+      if (opC === 'consent') return res.status(200).json(await MB.custConsent({ body: bC }))
+      if (opC === 'me') return res.status(200).json(await MB.custMe({ body: bC }))
+      if (opC === 'update') return res.status(200).json(await MB.custUpdate({ body: bC }))
+      if (opC === 'leave') return res.status(200).json(await MB.custLeave({ body: bC }))
+      if (opC === 'draw') return res.status(200).json(await MB.custDraw({ body: bC }))
+      if (opC === 'invoice') return res.status(200).json(await MB.custInvoice({ body: bC }))
+      if (opC === 'survey') return res.status(200).json(await MB.custSurvey({ body: bC }))
+      if (opC === 'mktout') return res.status(200).json(await MB.custMktOut({ body: bC }))
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }
+  }
   // 📥 統一收件匣 v4.70.47（溝通中樞第三部 項目 5＋6）：GET ?inbox=K&me=token&op=list|conv|settings ／ POST ?inbox=K {token, op:send|status|assign|note|rename|cfg|connect}
   if (req.query?.inbox) {
     const okI = (process.env.OPS_BOARD_KEY || '').trim()
@@ -5189,6 +5395,53 @@ export default async function handler(req, res) {
     if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
     return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
   }
+  // ── 📬 信箱中樞（v4.70.79，api/_mailhub.js；張良 2026-10-12「重新建立信箱管理系統，很多個信箱要串接」）──
+  // GET  ?mailhub=<OPS_BOARD_KEY>&me=token&op=list | op=scan&box=&days= | op=preview&rule=<id>[&box=] | op=folders&box=
+  // POST ?mailhub=<OPS_BOARD_KEY> {token, op:boxadd|boxset|boxdel|boxtest|ruleadd|ruleset|ruledel|preview(rule草稿)|apply(box|'*',ids?,dry,days)}
+  // 全部主管限定（審核人／張良瑋／角色主管／perm admin）；密碼永遠不回前端；維護口 ?mailhubrun=<MENU_PROBE_KEY>[&dry=1] 給 cron／CC 跑每日套用
+  if (req.query?.mailhub || req.query?.mailhubrun) {
+    const MH = await import('./_mailhub.js')
+    if (req.query?.mailhubrun) {
+      const mkM = (process.env.MENU_PROBE_KEY || '').trim(), ckM = (process.env.CRON_SECRET || '').trim()
+      const kM = String(req.query.mailhubrun)
+      if (!((mkM && kM === mkM) || (ckM && kM === ckM))) return res.status(403).json({ ok: false })
+      try { return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' } })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+    }
+    const okM = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okM || String(req.query.mailhub) !== okM) return res.status(403).json({ ok: false })
+    let bM = {}
+    if (req.method === 'POST') { try { bM = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkM = String(req.method === 'POST' ? (bM.token || '') : (req.query.me || ''))
+    const [whoM, defM, pmM] = await Promise.all([sopWho(tkM), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
+    const aprM = (((defM || {}).ground || {}).approvers || ['張良瑋'])
+    if (!MH.isMgr(whoM, aprM, pmM)) return res.status(403).json({ ok: false, error: '信箱屬公司機密，只有主管／審核人能看' })
+    res.setHeader('Cache-Control', 'private, no-store')
+    const opM = String(req.method === 'POST' ? (bM.op || '') : (req.query.op || 'list'))
+    try {
+      if (req.method !== 'POST') {
+        if (opM === 'list') return res.status(200).json({ ...(await MH.overview({ kvGet })), me: { name: whoM.name } })
+        if (opM === 'scan') return res.status(200).json(await MH.scanBox({ kvGet, kvPut, id: String(req.query.box || ''), days: Math.min(60, +req.query.days || 7), who: whoM }))
+        if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: String(req.query.rule || ''), boxId: String(req.query.box || '') || null }))
+        if (opM === 'scanget') return res.status(200).json({ ok: true, scan: await MH.loadScan(kvGet, String(req.query.box || '')) })
+        return res.status(400).json({ ok: false, error: '不認得的操作' })
+      }
+      if (opM === 'boxadd') return res.status(200).json(await MH.boxAdd({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxset') return res.status(200).json(await MH.boxSet({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxdel') return res.status(200).json(await MH.boxDel({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxtest') { const hubT = await MH.loadHub(kvGet); const bxT = MH.boxById(hubT, String(bM.id || '')); if (!bxT) return res.status(200).json({ ok: false, error: '找不到這個信箱' }); const t = await MH.testBox(bxT); return res.status(200).json(t) }
+      if (opM === 'ruleadd') return res.status(200).json(await MH.ruleAdd({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'ruleset') return res.status(200).json(await MH.ruleSet({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'ruledel') return res.status(200).json(await MH.ruleDel({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: bM.id, rule: bM.rule, boxId: bM.box || null }))
+      if (opM === 'apply') {
+        const daysA = Math.min(60, +bM.days || 7), idsA = Array.isArray(bM.ids) && bM.ids.length ? bM.ids : null
+        if (!bM.box || bM.box === '*') return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: daysA, dry: !!bM.dry, who: whoM }))
+        return res.status(200).json(await MH.applyBox({ kvGet, kvPut, id: String(bM.box), days: daysA, dry: !!bM.dry, onlyIds: idsA, who: whoM, requireConfirmed: !idsA })) // 手動指定規則＝人在現場按＝不必先勾「已確認」
+      }
+      return res.status(400).json({ ok: false, error: '不認得的操作' })
+    } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+  }
   // ── 🥬 菜商報價比價（v4.70.67，api/_vegquote.js）──
   // GET  ?vegcmp=<OPS_BOARD_KEY>&me=token|probe=<MENU_PROBE_KEY>   → 兩家逐月報價＋市場行情＋叫貨單核對＋價格異常核對
   // POST ?vegcmp=<OPS_BOARD_KEY> {token, op:'confirm'(ids?)|'refreshMarket'} → 限採購權限；confirm 走偵錯中心同一條決定流程逐筆留紀錄
@@ -5368,9 +5621,11 @@ export default async function handler(req, res) {
     gA.items = gA.items || []
     const st = String(inp.st || '').trim().slice(0, 20)
     // 負責人守門（複用 sopedit 規則）：有主的站只有負責人/審核人/主管能改
-    const ownA = (gA.stOwner || {})[st] || (gA.catOwner || {})[(gA.stCat || {})[st]]
+    // v4.70.97（張良 2026-10-12「有編輯才出現」）：該站負責人或審核人／主管才能改；沒負責人的站只有主管能改（原本沒負責人＝綁定的人人都能改，跟畫面不一致）
+    const ownA = (gA.stOwner || {})[st]
     const aprA = gA.approvers || ['張良瑋']
-    if (ownA && ownA !== whoA.name && !aprA.includes(whoA.name) && whoA.role !== '主管') return res.status(403).json({ ok: false, error: '「' + st + '」由 ' + ownA + ' 負責——想改請按站名旁「💡 提建議」' })
+    const mgrA = aprA.includes(whoA.name) || whoA.role === '主管'
+    if (!mgrA && !(ownA && ownA === whoA.name)) return res.status(403).json({ ok: false, error: ownA ? '「' + st + '」由 ' + ownA + ' 負責——想改請按站名旁「💡 提建議」' : '「' + st + '」還沒有負責人——請審核人／主管編輯或先指定負責人' })
     const now8a = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
     if (ba.del === true) { // 刪一條（有歷史的靠每日快照保留，範本直接移除）
       if (!inp.id) return res.status(400).json({ ok: false, error: '缺 id' })
@@ -5387,8 +5642,10 @@ export default async function handler(req, res) {
       const desc = String(inp.desc || '').trim().slice(0, 500); if (desc) o.desc = desc
       if (refsIn.length) { o.refs = refsIn; o.ref = refsIn[0] } // ref 鏡像=相容舊單張讀取
       if (subsIn.length) o.subs = subsIn
+      if (o.tg) { gA.stCats = { ...(gA.stCats || {}) }; const Lt = gA.stCats[st] = [...(gA.stCats[st] || [])]; if (!Lt.includes(o.tg)) Lt.push(o.tg) } // v4.70.97 動作填了這站沒有的階段＝自動加進這站的階段清單
       if (Array.isArray(inp.prereq) && inp.prereq.length) o.prereq = inp.prereq.filter(x => typeof x === 'string' && x).slice(0, 20) // v4.66.0 前置動作
       const prevA = gA.items.find(x => x.id === o.id)
+      if (prevA && Number.isFinite(prevA.ord)) o.ord = prevA.ord // v4.70.98 編輯不洗掉拖曳順序
       gA.items = [...gA.items.filter(x => x.id !== o.id), o]
       gA.edits = [{ ts: new Date().toISOString(), by: whoA.name, st, op: 'actset', prev: prevA ? [prevA] : [] }, ...(gA.edits || [])].slice(0, 30)
     }
@@ -5466,9 +5723,10 @@ export default async function handler(req, res) {
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g6 = cur6.ground || { items: [] }
     { // v4.17.0 有效負責人=站負責人||分類負責人：有主的只有負責人/審核人/主管能編
-      const own6 = (g6.stOwner || {})[b6.st] || (g6.catOwner || {})[(g6.stCat || {})[b6.st]]
+      const own6 = (g6.stOwner || {})[b6.st]
       const apr6 = g6.approvers || ['張良瑋']
-      if (own6 && own6 !== who6.name && !apr6.includes(who6.name) && who6.role !== '主管') return res.status(403).json({ ok: false, error: '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' })
+      const mgr6 = apr6.includes(who6.name) || who6.role === '主管'
+      if (!mgr6 && !(own6 && own6 === who6.name)) return res.status(403).json({ ok: false, error: own6 ? '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' : '「' + b6.st + '」還沒有負責人——請審核人／主管編輯或先指定負責人' }) // v4.70.97 與 sopact 同規則
     }
     const prev6 = (g6.items || []).filter(it => it.st === b6.st) // 改前快照＝歷史紀錄可回溯
     const prevIt6 = {}; ((cur6.ground || {}).items || []).forEach(it => { prevIt6[it.id] = it })

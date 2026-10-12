@@ -380,7 +380,8 @@ function renderBoard(d, store, view){
       hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
       if (heatEditOn && canEd) hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點各時段的 ✕ 隱藏非營業／測試時段（存起來後全店都看不到、再點「恢復」拿回來）</span>${hidArr.length?`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>`:''}</div>`
       hh += `<div class="scroll" style="overflow-x:auto;overflow-y:visible"><table style="border-collapse:collapse"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th><th style="position:sticky;top:0;z-index:2;background:var(--psoft,var(--soft));color:var(--pdark,var(--ink));text-align:right">平均</th>`  // v4.70.0 字體14px同營收；v4.70.2 加各時段日均欄（色階基準，張良）
-      hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}</span></th>` }).join('')
+      const liveSet = new Set((d.days||[]).filter(x=>x.live).map(x=>x.date)) // v4.70.87 今天盤中那欄標「盤中」（數字還會變，打烊後自動換正式值）
+      hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); const lv=liveSet.has(dt); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}" title="${lv?'盤中更新中：數字之後還會變，打烊後自動換成最終值':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}${lv?'・盤中':''}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
       hrsVis.forEach(hr=>{
         const isHid = hid.has(hr)
@@ -656,3 +657,13 @@ window._lcHover = function(ev, svg){
   if (px > r.width*0.55) { tip.style.left = ''; tip.style.right = (r.width - px + 10) + 'px' } else { tip.style.right = ''; tip.style.left = (px + 10) + 'px' }
 }
 window._lcLeave = function(svg){ const g = svg.querySelector('.lcCur'); if (g) g.style.display='none'; const tip = svg.parentNode.querySelector('.lcTip'); if (tip) tip.style.display='none' }
+
+// ── AI 標籤 v4.70.81（張良 2026-10-12「app功能頁面哪裡是用什麼ai處理都幫我顯示出來」）────
+// 用法：在任何 AI 功能的標題旁放 ${aiTag('social')}（route 代碼同設定頁「AI 模型」卡片）→ 自動填成「AI：OpenAI ChatGPT · gpt-6.1-sol」。
+// 資料來源 ?aiwhich（只有供應商＋模型名）一頁只抓一次；設定頁改了模型重整就跟著變。審核人點標籤直接跳到設定頁「AI 模型」。
+let _aiWhichP = null
+function aiWhichLoad(force){ if (!_aiWhichP || force) _aiWhichP = fetch('/api/mail-sync?aiwhich=' + encodeURIComponent(K) + '&_=' + Date.now()).then(r=>r.json()).then(d=>(d&&d.ok&&d.routes)||{}).catch(()=>({})); return _aiWhichP }
+function aiTagFill(){ aiWhichLoad().then(R=>{ document.querySelectorAll('[data-aitag]:not([data-aidone])').forEach(el=>{ const r=R[el.dataset.aitag]; if(!r) return; el.dataset.aidone='1'; el.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/></svg>AI：${r.co.replace(/ 的 /,' ')} · ${r.model}`; el.title = `${r.label}：由 ${r.co}「${r.model}」處理${r.custom?'（設定頁手動指定）':'（預設）'}。審核人可到設定頁「AI 模型」切換。` }) }) }
+function aiTag(route){ setTimeout(aiTagFill, 0); return `<span class="aitag" data-aitag="${route}" onclick="aiTagGo(event)" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--soft);font-size:11px;font-weight:700;color:var(--muted,#64748b);white-space:nowrap;cursor:pointer;vertical-align:middle;line-height:1.4">AI…</span>` }
+function aiTagGo(ev){ ev.stopPropagation(); ev.preventDefault(); fetch('/api/mail-sync?aicfg=' + encodeURIComponent(K) + (typeof TK==='function'&&TK()?'&me='+encodeURIComponent(TK()):'')).then(r=>r.json()).then(d=>{ if (d && d.ok && typeof aiCfgEdit === 'function') aiCfgEdit(); else alert('只有審核人能切換 AI 模型（設定頁「AI 模型」）') }).catch(()=>{}) }
+window.aiTag = aiTag; window.aiTagFill = aiTagFill; window.aiWhichLoad = aiWhichLoad

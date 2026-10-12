@@ -40,7 +40,7 @@
     const s = WD.stats || {}, t = s.total || {}
     const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const todayN = (WD.rows || []).filter(r => r.date === today && !r.voidOf).length
-    let h = `<h1 style="display:flex;align-items:center;gap:10px">${IC.trash} 耗損紀錄</h1><div class="sub">拍照 → AI 讀秤＋認物料 → 你確認才入帳；只用來解釋盤差，不扣庫存（庫存以盤點為準）</div>`
+    let h = `<h1 style="display:flex;align-items:center;gap:10px">${IC.trash} 耗損紀錄 ${aiTag('waste')}</h1><div class="sub">拍照 → AI 讀秤＋認物料 → 你確認才入帳；只用來解釋盤差，不扣庫存（庫存以盤點為準）</div>`
     h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">`
       + `<button class="mini on" style="padding:10px 16px;font-size:15px" onclick="wasteShot()">${IC.cam} 拍耗損</button>`
       + `<button class="mini" style="padding:10px 14px" onclick="wasteManual()">${IC.pen} 手打一筆</button>`
