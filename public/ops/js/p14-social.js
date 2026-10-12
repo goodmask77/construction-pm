@@ -8,7 +8,7 @@
   let connEditOn = false // 連接卡「編輯」模式：預設藏操作鈕（連接/斷開/✕/編號），按編輯才顯示
   let genStyle = 'warm', genLang = 'zh', genLen = 'medium', genVers = [] // AI 生成文案：風格／語言／長度／最近 5 版
   let multiDraft = [] // v4.70.26 分品牌各生一版：[{brand,caption,dests}]
-  const STYLES = [['warm', '溫馨日常'], ['promo', '促銷強打'], ['chic', '文青質感'], ['fun', '活潑俏皮'], ['pro', '專業正式']]
+  const STYLES = [['warm', '溫馨日常'], ['promo', '促銷強打'], ['chic', '文青質感'], ['fun', '活潑俏皮'], ['pro', '專業正式'], ['spirit', '標語精神']] // v4.71.5 標語精神＝學「靈感庫」的 slogan 語感
   const LANGS = [['zh', '繁中'], ['en', '英文'], ['bi', '中英雙語']]
   const LENS = [['short', '簡短(1-2句)'], ['medium', '適中(3-4句)'], ['long', '較長(5句+)']]
   const INTER = m => (m ? (m.reactions || 0) + (m.comments || 0) + (m.shares || 0) : 0)
@@ -71,6 +71,7 @@
       + `<button class="mini ${subTab === 'dash' ? 'on' : ''}" onclick="_socialSub('dash')">📊 儀表板</button>`
       + `<button class="mini ${subTab === 'lib' ? 'on' : ''}" onclick="_socialSub('lib')">內容庫</button>`
       + `<button class="mini ${subTab === 'assets' ? 'on' : ''}" onclick="_socialSub('assets')">📁 素材庫</button>`
+      + `<button class="mini ${subTab === 'slogans' ? 'on' : ''}" onclick="_socialSub('slogans')" title="貼很多句短劇 slogan／精神標語進來，AI 文案選「標語精神」就會學這些語感">靈感庫${(d.slogans||[]).length?'（'+d.slogans.length+'）':''}</button>`
       + `<button class="mini ${subTab === 'lineoa' ? 'on' : ''}" onclick="_socialSub('lineoa')" title="官方帳號好友成長／封鎖／客群屬性／訊息額度（LINE 官方統計）">LINE 官方帳號</button>`
       + (d.canEdit ? `<button class="mini" id="soSyncBtn" onclick="_socialSync()" title="馬上抓最新數據＋偵測粉專已刪的貼文（平常每 3 小時自動跑）">🔄 立即同步</button>` : '')
       + `<span style="margin-left:auto;display:flex;gap:6px">`
@@ -155,6 +156,7 @@
     const el = document.getElementById('socialBody'); if (!el) return
     if (subTab === 'dash') { el.innerHTML = dashView(); return }
     if (subTab === 'assets') { el.innerHTML = assetsView(); return }
+    if (subTab === 'slogans') { el.innerHTML = slogansView(); return }
     if (subTab === 'lineoa') { oaView(el); return }
     el.innerHTML = libView()
     if (document.getElementById('sfMediaWrap')) renderMedia() // 編輯器開著→初始化圖片牆＋拖曳排序
@@ -165,9 +167,9 @@
     const assets = DATA.assets || []
     const isAdmin = !!(DATA.me && DATA.me.admin)
     let h = ''
-    if (DATA.canEdit) h += `<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="mini on" id="sfUpBtn" style="padding:8px 16px" onclick="_socialUploadAsset()">＋ 上傳素材（可一次多張）</button><button class="mini" style="padding:8px 16px" onclick="_socialGenImg()">AI 生圖</button><span id="sfUpProg" class="hint">上傳的圖存這裡，新增貼文時可一鍵選用、不用每次重傳</span></div>`
+    if (DATA.canEdit) h += `<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="mini on" id="sfUpBtn" style="padding:8px 16px" onclick="_socialUploadAsset()">＋ 上傳素材（可一次多張）</button><button class="mini" style="padding:8px 16px" onclick="_socialGenImg()">AI 生圖</button><button class="mini" style="padding:8px 16px" onclick="_socialPinImport()" title="貼 Pinterest 釘圖或圖版連結，圖直接存進素材庫">貼 Pinterest 連結</button><button class="mini" style="padding:8px 16px" onclick="_socialPinBoards()" title="登記圖版，每小時自動抓新圖（不重複）">Pinterest 自動抓${(DATA.pinBoards||[]).length?'（'+DATA.pinBoards.length+'）':''}</button><span id="sfUpProg" class="hint">上傳的圖存這裡，新增貼文時可一鍵選用、不用每次重傳</span></div>`
     if (!assets.length) return h + '<section><div class="hint" style="padding:18px">素材庫還是空的。按「＋ 上傳素材」放圖片進來，之後新增貼文時就能重複選用。</div></section>'
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetView('${esc(a.url)}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--line);cursor:zoom-in">${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('') + '</div>'
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetView('${esc(a.url)}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--line);cursor:zoom-in">${a.src === 'pinterest' ? `<a href="${esc(a.pinUrl || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="來源：Pinterest${a.board ? '・' + esc(a.board) : ''}（點開原釘圖）" style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.62);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;text-decoration:none;letter-spacing:.3px">Pinterest</a>` : ''}${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('') + '</div>'
     return h
   }
   // 壓縮單張成 dataURL（長邊 1280、jpeg 0.82）
@@ -540,6 +542,92 @@
       ${forPost ? `<div style="margin-top:8px;text-align:right"><button class="mini on" onclick="_socialAssetUse('${esc(j.url)}');document.querySelectorAll('.genImgOv,.assetOv').forEach(o=>o.remove())">加入這則貼文</button></div>` : ''}</div>`
     if (!forPost && subTab === 'assets') { try { socialBody() } catch (_) {} }
   }
+  // ── Pinterest（v4.71.5 張良 2026-10-12「做 存＆貼連結」）：貼連結立刻存、登記圖版每小時自動抓（釘圖編號＋圖片指紋去重）──
+  function ovBox(inner, maxW) {
+    const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:74;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => ov.remove()
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:${maxW || 560}px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">${inner}</div>`
+    document.body.appendChild(ov); return ov
+  }
+  window._socialPinImport = function () {
+    const ov = ovBox(`
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px">貼 Pinterest 連結</h2><div class="hint">貼釘圖連結（一張）或圖版連結（整版），一行一個、可一次貼多個。圖會存進素材庫並記下來源；已經有的不會重複存。</div></div>
+      <div style="flex:1;overflow:auto;padding:0 18px"><textarea id="pinUrls" rows="5" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:inherit" placeholder="https://www.pinterest.com/pin/…&#10;https://www.pinterest.com/帳號/圖版名/"></textarea><div id="pinOut" class="hint" style="margin:8px 0"></div></div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)"><button class="mini" onclick="this.closest('div[style*=fixed]').remove()">關閉</button><button class="mini on" id="pinGoBtn" style="padding:8px 18px" onclick="_socialPinGo(this)">存進素材庫</button></div>`)
+    setTimeout(() => { const t = ov.querySelector('#pinUrls'); if (t) t.focus() }, 50)
+  }
+  window._socialPinGo = async function (btn) {
+    const urls = (document.getElementById('pinUrls') || {}).value || '', out = document.getElementById('pinOut')
+    if (!/pinterest\.|pin\.it/i.test(urls)) { alert('請貼 Pinterest 的連結'); return }
+    btn.disabled = true; btn.textContent = '抓圖中…（整版可能要 1 分鐘）'
+    try {
+      const j = await sPost({ op: 'pinimport', urls })
+      if (!j.ok) { out.textContent = j.error || '失敗'; return }
+      DATA.assets = j.assets || DATA.assets
+      out.innerHTML = `<b>新存 ${j.added} 張</b>・已有略過 ${j.dup} 張${j.failed ? `・失敗 ${j.failed} 張` : ''}` + (j.results || []).map(r => `<div style="margin-top:3px">${r.ok ? (r.kind === 'board' ? `圖版「${esc(r.board || '')}」：看到 ${r.found} 張，新存 ${r.added.length}` : `釘圖：${r.added.length ? '已存' : '已經有了'}`) : `<span style="color:#F07373">${esc(r.url || '')}：${esc(r.error || '失敗')}</span>`}</div>`).join('')
+      if (subTab === 'assets') { try { socialBody() } catch (_) {} }
+    } catch (e) { out.textContent = '失敗：' + (e.message || e) } finally { btn.disabled = false; btn.textContent = '存進素材庫' }
+  }
+  function pinBoardsHtml() {
+    const bs = DATA.pinBoards || [], isAdmin = !!(DATA.me && DATA.me.admin)
+    const fmt = t => { if (!t) return '還沒跑'; const d = new Date(t); if (isNaN(d)) return '—'; const m = Math.round((Date.now() - d) / 60000); return m < 60 ? m + ' 分鐘前' : m < 1440 ? Math.round(m / 60) + ' 小時前' : Math.round(m / 1440) + ' 天前' }
+    const rows = bs.length ? bs.map(b => `<tr><td><b>${esc(b.name || b.slug)}</b><div class="hint" style="font-size:11px"><a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.user)}/${esc(b.slug)}</a></div></td><td style="white-space:nowrap">${b.total || 0} 張</td><td style="white-space:nowrap">${fmt(b.lastAt)}${b.lastNew ? `<div class="hint" style="font-size:11px">上次新 ${b.lastNew} 張</div>` : ''}${b.err ? `<div style="color:#F07373;font-size:11px">${esc(b.err)}</div>` : ''}</td><td>${isAdmin ? `<button class="mini" onclick="_socialPinBoardDel('${esc(b.id)}')">移除</button>` : ''}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="hint" style="padding:14px">還沒登記圖版。貼一個圖版連結，之後每小時自動看一次、只抓新圖。</td></tr>'
+    return `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left"><th>圖版</th><th>已存</th><th>上次檢查</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+  }
+  window._socialPinBoards = function () {
+    ovBox(`
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px">Pinterest 自動抓</h2><div class="hint">登記的圖版每小時自動檢查一次，有新釘圖就存進素材庫（同一張圖不會重複存），有新圖會 LINE 私訊張良。圖版要是公開的。</div></div>
+      <div style="flex:1;overflow:auto;padding:0 18px"><div id="pinBoardsBox">${pinBoardsHtml()}</div>
+        <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap"><input id="pinBoardUrl" placeholder="https://www.pinterest.com/帳號/圖版名/" style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><button class="mini on" id="pinBoardAddBtn" onclick="_socialPinBoardAdd(this)">登記並先抓一次</button></div>
+        <div id="pinBoardOut" class="hint" style="margin-bottom:10px"></div></div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:space-between;padding:12px 18px;border-top:1px solid var(--line)"><button class="mini" id="pinSyncBtn" onclick="_socialPinSync(this)" ${(DATA.pinBoards || []).length ? '' : 'disabled'}>現在檢查</button><button class="mini" onclick="this.closest('div[style*=fixed]').remove()">關閉</button></div>`, 640)
+  }
+  window._socialPinBoardAdd = async function (btn) {
+    const url = (document.getElementById('pinBoardUrl') || {}).value || '', out = document.getElementById('pinBoardOut')
+    if (!/pinterest\./i.test(url)) { alert('請貼 Pinterest 圖版連結'); return }
+    btn.disabled = true; btn.textContent = '抓圖中…'
+    try {
+      const j = await sPost({ op: 'pinboardadd', url })
+      if (!j.ok) { out.textContent = j.error || '失敗'; return }
+      DATA.assets = j.assets || DATA.assets; await socialLoad(); // 重抓 pinBoards
+      const box = document.getElementById('pinBoardsBox'); if (box) box.innerHTML = pinBoardsHtml(); const sb = document.getElementById('pinSyncBtn'); if (sb) sb.disabled = false
+      out.innerHTML = `已登記「${esc(j.board.name)}」：看到 ${j.found} 張，新存 ${j.added} 張，已有略過 ${j.dup} 張。之後每小時自動抓新的。`; document.getElementById('pinBoardUrl').value = ''
+    } catch (e) { out.textContent = '失敗：' + (e.message || e) } finally { btn.disabled = false; btn.textContent = '登記並先抓一次' }
+  }
+  window._socialPinBoardDel = async function (id) {
+    if (!confirm('移除這個圖版的自動抓？（已存進素材庫的圖不會刪）')) return
+    const j = await sPost({ op: 'pinboarddel', id }); if (!j.ok) { alert(j.error || '失敗'); return }
+    DATA.pinBoards = j.boards || []; const box = document.getElementById('pinBoardsBox'); if (box) box.innerHTML = pinBoardsHtml()
+  }
+  window._socialPinSync = async function (btn) {
+    btn.disabled = true; btn.textContent = '檢查中…'; const out = document.getElementById('pinBoardOut')
+    try {
+      const j = await sPost({ op: 'pinsync' }); if (!j.ok) { out.textContent = j.error || '失敗'; return }
+      DATA.pinBoards = j.boards || DATA.pinBoards; DATA.assets = j.assets || DATA.assets
+      const box = document.getElementById('pinBoardsBox'); if (box) box.innerHTML = pinBoardsHtml()
+      out.textContent = j.totalNew ? `新存 ${j.totalNew} 張` : '沒有新圖'
+      if (subTab === 'assets') { try { socialBody() } catch (_) {} }
+    } catch (e) { out.textContent = '失敗：' + (e.message || e) } finally { btn.disabled = false; btn.textContent = '現在檢查' }
+  }
+  // ── 靈感標語庫（v4.71.5 張良「我會貼上很多短劇slogan 主要文字＆精神標語 ai幫我產出文案相關內容」）：一行一句貼進來，AI 文案風格選「標語精神」就會學這些語感 ──
+  function slogansView() {
+    const list = DATA.slogans || [], isAdmin = !!(DATA.me && DATA.me.admin)
+    let h = `<section><h2 style="margin:0 0 4px">靈感標語庫</h2><div class="hint" style="margin-bottom:10px">把看到的短劇 slogan、主文字、精神標語一行一句貼進來（可一次貼幾十句）。之後寫貼文時，AI 文案風格選「<b>標語精神</b>」，AI 會學這些句子的語感、節奏、態度，每版給你「主標語＋副標語＋貼文」。不會照抄，只學精神。</div>`
+    if (DATA.canEdit) h += `<textarea id="slgText" rows="6" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:inherit" placeholder="一行一句，例：&#10;人生沒有白走的路，只有白吃的披薩&#10;別急，好的東西都在慢火裡&#10;今天的你，值得一份熱的"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0 14px;flex-wrap:wrap"><input id="slgTag" placeholder="標籤（選填，例：短劇／品牌精神）" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><button class="mini on" id="slgAddBtn" style="padding:8px 18px" onclick="_socialSloganAdd(this)">存進靈感庫</button><span id="slgOut" class="hint"></span></div>`
+    h += `<div class="hint" style="margin-bottom:6px">目前 ${list.length} 句${list.length ? '（新的在上面）' : ''}</div>`
+    if (!list.length) return h + '<div class="hint" style="padding:14px 0">還是空的，先貼幾句進來。</div></section>'
+    h += '<div style="display:flex;flex-direction:column;gap:6px">' + list.map(x => `<div style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--card)"><div style="flex:1"><div style="font-weight:700">${esc(x.text)}</div><div class="hint" style="font-size:11px">${x.tag ? esc(x.tag) + '・' : ''}${esc((x.addedBy || ''))}・${esc(String(x.addedAt || '').slice(0, 10))}</div></div>${isAdmin || DATA.canEdit ? `<button class="mini" style="padding:4px 9px" onclick="_socialSloganDel('${esc(x.id)}')">刪</button>` : ''}</div>`).join('') + '</div></section>'
+    return h
+  }
+  window._socialSloganAdd = async function (btn) {
+    const text = (document.getElementById('slgText') || {}).value || '', tag = (document.getElementById('slgTag') || {}).value || '', out = document.getElementById('slgOut')
+    if (!text.trim()) { alert('先貼幾句進來'); return }
+    btn.disabled = true
+    try { const j = await sPost({ op: 'sloganadd', text, tag }); if (!j.ok) { alert(j.error || '失敗'); return } DATA.slogans = j.slogans || []; socialRender(); setTimeout(() => { const o = document.getElementById('slgOut'); if (o) o.textContent = `新增 ${j.added} 句${j.dup ? '、重複略過 ' + j.dup + ' 句' : ''}` }, 0) }
+    catch (e) { alert('失敗：' + (e.message || e)) } finally { btn.disabled = false }
+  }
+  window._socialSloganDel = async function (id) { const j = await sPost({ op: 'slogandel', id }); if (!j.ok) { alert(j.error || '失敗'); return } DATA.slogans = j.slogans || []; socialRender() }
   // ── 素材庫（可重複選用的圖片）──
   window._socialAssets = function () {
     const assets = DATA.assets || []
