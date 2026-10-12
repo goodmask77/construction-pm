@@ -1232,8 +1232,16 @@ async function loadLineQuotaText() {
       fetch('https://api.line.me/v2/bot/message/quota', { headers: H }).then(r => r.json()),
       fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H }).then(r => r.json()),
     ])
-    if (qr?.value == null && cr?.totalUsage == null) return ''
-    return `\n\n【LINE 訊息額度（官方即時）】本月已用 ${cr?.totalUsage ?? '?'} / ${qr?.value ?? '無上限'} 則（只有主動推播計額度；在群裡回覆不計、免費）。App 設定→用量 也看得到＋推播去向。`
+    let oa = ''
+    // v4.70.80 LINE 官方帳號好友成長（api/lineoa-sync.js 每小時抓官方統計存 sp_finance_pm_lineoa_sum；答「官方帳號多少好友／這週多幾個／被封鎖幾個／客群」）
+    try {
+      const sum = await kvGet('sp_finance_pm_lineoa_sum')
+      const d = (o) => o ? `${o.f >= 0 ? '+' : ''}${o.f}（封鎖${o.b >= 0 ? '+' : ''}${o.b}）` : '—'
+      const rows = Object.values((sum && sum.accts) || {}).map(s => `  - ${s.name}（統計到 ${String(s.date || '').slice(5).replace('-', '/')}）：好友 ${s.f}、目標好友 ${s.t}、封鎖累計 ${s.b}｜近7天 ${d(s.d7)}｜近30天 ${d(s.d30)}｜本月 ${s.mtd ? d(s.mtd) : '—'}${s.demo ? `｜客群：性別 ${s.demo.gender || '—'}、年齡 ${s.demo.age || '—'}、地區 ${s.demo.area || '—'}（LINE 推估值）` : ''}${s.quota && s.quota.limit ? `｜本月訊息額度 ${s.quota.used}/${s.quota.limit}` : ''}`)
+      if (rows.length) oa = `\n【LINE 官方帳號好友（LINE 官方統計，每天隔日更新；App 行銷大師→LINE 官方帳號有曲線＋屬性）】\n` + rows.join('\n')
+    } catch (_) {}
+    if (qr?.value == null && cr?.totalUsage == null) return oa
+    return `\n\n【LINE 訊息額度（官方即時）】本月已用 ${cr?.totalUsage ?? '?'} / ${qr?.value ?? '無上限'} 則（只有主動推播計額度；在群裡回覆不計、免費）。App 設定→用量 也看得到＋推播去向。` + oa
   } catch (_) { return '' }
 }
 // ── DD 密碼庫（pm_bot_vault）：密碼用 BOT_VAULT_KEY(伺服器env) AES-256-GCM 加密存放 ──
