@@ -227,6 +227,24 @@ export default async function handler(req, res) {
         await act('社群AI生成5版', String(body.topic || '').slice(0, 24))
         return res.status(200).json({ ok: true, versions, caption: versions[0] })
       }
+      if (op === 'imgbrief') { // v4.71.6 張良 2026-10-12「都要描述有點麻煩」：選參考圖→AI 看圖自動寫生圖描述（老闆只要說想換成什麼，或什麼都不說）
+        const hint = String(body.hint || '').trim().slice(0, 300)
+        const imgs = []
+        for (const u of (Array.isArray(body.refUrls) ? body.refUrls : []).slice(0, 3)) {
+          try { const ir = await fetch(String(u)); if (!ir.ok) continue; const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]; const buf = Buffer.from(await ir.arrayBuffer()); if (/^image\/(jpeg|png|webp|gif)$/.test(ct) && buf.length < 4 * 1024 * 1024) imgs.push({ type: 'image', media_type: ct, data: buf.toString('base64') }) } catch (_) {}
+        }
+        if (!imgs.length && !hint) return res.status(200).json({ ok: false, error: '先勾一張參考圖，或打幾個字說想要什麼' })
+        const brand = '品牌 GROUN:D（海邊的披薩／漢堡／早午餐小店，品牌紅 #CE1611 配奶油色）與 A Beach 101&Pizza（海灘邊的披薩店）'
+        const sys = `你是餐飲品牌的食物攝影／視覺美術指導。任務：替圖像生成模型寫一段「可以直接拿去生圖」的描述。${imgs.length ? '附圖是老闆喜歡的參考圖：先看懂它的風格（構圖、角度、光線、色調、質感、背景、版面／文字的擺法、氛圍），描述要能重現這種風格。' : ''}規則：①老闆有說要換成什麼商品／場景就照換（主體換掉，風格留著）；沒說就以我們自家餐點（披薩、漢堡、炸物、飲料任選最合適的一種）當主體，不要照抄參考圖裡別家的品牌名或商品。②描述要具體：主體與細節、容器／擺盤、構圖與鏡頭角度、光線、色調、背景、材質、氛圍；參考圖若是海報／看板／包裝那種設計類，要寫清楚版面結構（色塊、字體感、文字位置）並把文字改成我們自家的（品牌名可用 GROUN:D）。③用繁體中文寫，120～220 字，一段，不要標題、不要條列、不要解釋。只輸出描述本身。`
+        const txt = [brand, hint ? `老闆的要求：${hint}` : '老闆沒有特別說，照參考圖的風格換成我們自家的餐點。'].join('\n')
+        try {
+          const { aiCall } = await import('./_ai.js')
+          const r = await aiCall('app', { system: sys, messages: [{ role: 'user', content: imgs.length ? [...imgs, { type: 'text', text: txt }] : txt }], maxTokens: 700, effort: 'low' })
+          const brief = String(r.text || '').trim().replace(/^```[\s\S]*?\n|```$/g, '').trim()
+          if (!brief) return res.status(200).json({ ok: false, error: 'AI 沒寫出來，再試一次' })
+          return res.status(200).json({ ok: true, brief, model: r.provider + '/' + r.model })
+        } catch (e) { return res.status(200).json({ ok: false, error: '寫描述失敗：' + (e.message || '未知') }) }
+      }
       if (op === 'genimg') {
         // v4.70.29 AI 生圖（張良「做圖就得用 Gemini」）：走 AI 中樞 route=image（設定頁可改 Gemini／ChatGPT），生好直接上傳 photos 桶＋入素材庫
         const prompt = String(body.prompt || '').trim().slice(0, 1500)

@@ -512,14 +512,14 @@
     const ov = document.createElement('div'); ov.className = 'genImgOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:74;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => ov.remove()
     const AR = [['1:1', '正方形'], ['4:3', '橫式'], ['3:4', '直式'], ['16:9', '寬螢幕'], ['9:16', '限動／直立']]
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
-      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">AI 生圖 ${aiTag('image')}</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">AI 生圖 ${aiTag('image')}</h2><div class="hint">最省事：勾下面一張參考圖直接按「生成」，AI 會先看圖幫你寫描述再畫。想換主體就打幾個字（例：換成我們的瑪格麗特披薩）。生好的圖自動進素材庫。</div></div>
       <div style="flex:1 1 auto;overflow:auto;padding:0 18px 10px">
-        <textarea id="giPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 8px" placeholder="例：一盤拿坡里披薩放在木桌上，旁邊有一杯冰啤酒，海邊夕陽自然光，俯拍，質感要像美食雜誌"></textarea>
+        <textarea id="giPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 8px" placeholder="可以空著。勾參考圖後按生成，AI 自動寫描述；或只打幾個字：換成我們的漢堡、文字改成 GROUN:D…"></textarea>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${AR.map(([v, l], i) => `<button class="mini ${i === 0 ? 'on' : ''}" data-ar="${v}" onclick="this.parentNode.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l} ${v}</button>`).join('')}</div>
         ${assets.length ? `<div class="hint" style="margin-bottom:4px">參考圖（可選，最多 3 張）：</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin-bottom:8px">${assets.map(a => `<img src="${esc(a.url)}" data-ref="${esc(a.url)}" onclick="_socialGenRef(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`).join('')}</div>` : ''}
         <div id="giOut"></div>
       </div>
-      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" onclick="this.closest('.genImgOv').remove()">關閉</button><button class="mini on" id="giGo" onclick="_socialGenImgGo(${forPost ? 1 : 0})">生成</button></div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" id="giBrief" onclick="_socialGenBrief()" title="AI 看勾選的參考圖，幫你把描述寫好（可再改）">AI 幫我寫描述</button><span style="flex:1"></span><button class="mini" onclick="this.closest('.genImgOv').remove()">關閉</button><button class="mini on" id="giGo" onclick="_socialGenImgGo(${forPost ? 1 : 0})">生成</button></div>
     </div>`
     document.body.appendChild(ov)
   }
@@ -528,9 +528,27 @@
     if (i >= 0) { genImgRefs.splice(i, 1); el.style.outline = 'none' }
     else { if (genImgRefs.length >= 3) return; genImgRefs.push(u); el.style.outline = '3px solid var(--green)'; el.style.outlineOffset = '-1px' }
   }
+  // v4.71.6 張良 2026-10-12「都要描述有點麻煩」：AI 看參考圖自動寫描述；生成時描述空著（或只打幾個字）又有參考圖 → 先自動寫再畫
+  window._socialGenBrief = async function (silent) {
+    const ov = document.querySelector('.genImgOv'); if (!ov) return ''
+    const ta = ov.querySelector('#giPrompt'), hint = (ta.value || '').trim(), btn = ov.querySelector('#giBrief'), out = ov.querySelector('#giOut')
+    if (!genImgRefs.length && !hint) { if (!silent) alert('先勾一張參考圖（或打幾個字說想要什麼）'); return '' }
+    if (btn) { btn.disabled = true; btn.textContent = 'AI 看圖寫描述中…' }
+    let j; try { j = await sPost({ op: 'imgbrief', refUrls: genImgRefs, hint: hint.length <= 300 ? hint : '' }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    if (btn) { btn.disabled = false; btn.textContent = 'AI 幫我寫描述' }
+    if (!j || !j.ok) { if (out) out.innerHTML = `<div class="hint" style="color:#F07373">${esc((j && j.error) || '寫描述失敗')}</div>`; return '' }
+    ta.value = j.brief; ta.dataset.ai = '1'; return j.brief
+  }
   window._socialGenImgGo = async function (forPost) {
     const ov = document.querySelector('.genImgOv'); if (!ov) return
-    const prompt = (ov.querySelector('#giPrompt').value || '').trim(); if (!prompt) { alert('先描述想要的畫面'); return }
+    let prompt = (ov.querySelector('#giPrompt').value || '').trim()
+    if (genImgRefs.length && prompt.length < 40 && !ov.querySelector('#giPrompt').dataset.ai) { // 有參考圖、描述空著或只打幾個字 → AI 先寫
+      const g = ov.querySelector('#giGo'); g.disabled = true; g.textContent = 'AI 看圖寫描述中…'
+      prompt = await _socialGenBrief(true)
+      g.disabled = false; g.textContent = '生成'
+      if (!prompt) return
+    }
+    if (!prompt) { alert('先勾一張參考圖，或描述想要的畫面'); return }
     const ar = (ov.querySelector('[data-ar].on') || {}).dataset ? ov.querySelector('[data-ar].on').dataset.ar : '1:1'
     const btn = ov.querySelector('#giGo'); const out = ov.querySelector('#giOut')
     btn.disabled = true; btn.textContent = '生成中（約 10–40 秒）…'; out.innerHTML = ''
