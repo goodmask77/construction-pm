@@ -27,7 +27,7 @@ export async function loadMenu () { return C.normMenu(await kvGet('sp_finance_pm
 // ── 索引 ──
 async function idxPut (o) {
   const d = (await kvGet(IDX)) || { list: [] }
-  const row = { id: o.id, acct: o.acct, convId: o.convId, custName: o.custName, company: o.company, when: o.when, status: o.status, n: (o.rows || []).length, total: o.totalCache || 0, assignee: o.assignee || '', updatedAt: o.updatedAt, createdAt: o.createdAt }
+  const row = { id: o.id, acct: o.acct, convId: o.convId, custName: o.custName, company: o.company, when: o.when, status: o.status, n: (o.rows || []).length, total: o.totalCache || 0, assignee: o.assignee || '', updatedAt: o.updatedAt, createdAt: o.createdAt, demo: !!o.demo }
   d.list = [row, ...(d.list || []).filter(x => x.id !== o.id)].slice(0, 500)
   await kvSet(IDX, d, '團體訂餐索引')
 }
@@ -39,10 +39,10 @@ const ORIGIN = 'https://ground-pm.vercel.app'
 export const linkOf = (id) => `${ORIGIN}/order/${id}`
 
 // ── 建單（從收件匣對話）──
-export async function createOrder ({ who, acct, convId, custName, company, taxId, when, mode, contact, phone, uid, deadline }) {
+export async function createOrder ({ who, acct, convId, custName, company, taxId, when, mode, contact, phone, uid, deadline, demo }) {
   let id = ''; for (let i = 0; i < 5; i++) { id = Math.random().toString(36).slice(2, 10); if (!(await kvGet(KEY(id)))) break }
   const o = { id, acct: String(acct || 'gd'), convId: String(convId || ''), uid: String(uid || ''), custName: String(custName || '').slice(0, 40), company: String(company || custName || '').slice(0, 60), taxId: String(taxId || '').replace(/\D/g, '').slice(0, 8), when: String(when || '').slice(0, 16), mode: String(mode || '外帶自取').slice(0, 10), deadline: String(deadline || '').slice(0, 16), contact: String(contact || custName || '').slice(0, 30), phone: String(phone || '').slice(0, 20),
-    rows: [], shared: [], disc: '', dep: 0, pay: { status: '未付', method: '現場', amount: 0 }, status: 'draft', frozen: false, assignee: who.name, createdBy: who.name, createdAt: nowIso(), edits: [] }
+    rows: [], shared: [], disc: '', dep: 0, pay: { status: '未付', method: '現場', amount: 0 }, status: demo ? 'sent' : 'draft', frozen: false, demo: !!demo, assignee: who.name, createdBy: who.name, createdAt: nowIso(), edits: [] } // demo＝模擬試用：不通知、完成不累點、列表另篩
   log(o, who.name, '建單')
   await putOrder(o, '團體訂餐建單(' + who.name + ')')
   return { ok: true, id, link: linkOf(id), order: o }
@@ -81,7 +81,7 @@ export async function setStatus ({ who, id, status }) {
     o.frozen = true; o.status = 'locked'; o.lockedAt = nowIso(); o.lockedTotal = t.total
   }
   else if (status === 'unlock') { if (!['locked', 'done'].includes(o.status)) return { ok: false, error: '沒有鎖著' }; o.frozen = false; o.status = 'priced' }
-  else if (status === 'done') { if (o.status !== 'locked') return { ok: false, error: '先鎖單再標完成' }; o.status = 'done'; o.doneAt = nowIso(); try { const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); if (r && r.n) log(o, '系統', `會員入點：${r.n} 人共 ${r.pts} 點`) } catch (e) { log(o, '系統', '會員入點失敗：' + String(e.message || e).slice(0, 60)) } } // v4.70.86 完成＝有 LINE 身分的人自動累點
+  else if (status === 'done') { if (o.status !== 'locked') return { ok: false, error: '先鎖單再標完成' }; o.status = 'done'; o.doneAt = nowIso(); try { if (o.demo) throw new Error('模擬單不累點'); const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); if (r && r.n) log(o, '系統', `會員入點：${r.n} 人共 ${r.pts} 點`) } catch (e) { log(o, '系統', '會員入點失敗：' + String(e.message || e).slice(0, 60)) } } // v4.70.86 完成＝有 LINE 身分的人自動累點
   else if (status === 'void') { o.status = 'void'; o.voidAt = nowIso() }
   else if (status === 'reopen') { if (o.status !== 'void') return { ok: false, error: '只有作廢的單能復原' }; o.status = (o.rows || []).length ? 'submitted' : 'draft' }
   else return { ok: false, error: '不認識的狀態' }
@@ -107,7 +107,7 @@ const deadlinePassed = (o) => !!(o.deadline && (Date.now() + 8 * 3600e3) > new D
 export function publicView (o, menu, cfg) {
   const t = C.totals(menu, o)
   const expired = cfg && cfg.expireDays && o.createdAt && (Date.now() - new Date(o.createdAt).getTime()) > cfg.expireDays * 86400e3 && !['locked', 'done'].includes(o.status)
-  return { ok: true, id: o.id, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
+  return { ok: true, id: o.id, demo: !!o.demo, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
 }
 export async function custSave ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單，請跟店家確認連結' }
@@ -131,7 +131,7 @@ export async function custSubmit ({ code }) {
   o.status = 'submitted'; o.submittedAt = nowIso(); log(o, '客人', '送出')
   await putOrder(o, '團體訂餐(客人送出)')
   const t = C.totals(menu, o)
-  orderReceiptCard(o, menu, t).catch(() => {}) // v4.70.99 張良：客人要在 LINE 對話框看到「已送出」
+  if (!o.demo) orderReceiptCard(o, menu, t).catch(() => {}) // v4.70.99 張良：客人要在 LINE 對話框看到「已送出」
   notifyStaff(o, { title: '團體訂餐：客人送出了', body: `${o.company || o.custName}｜${(o.rows || []).length} 人${(o.shared || []).length ? '＋共用 ' + o.shared.length + ' 項' : ''}｜暫計 ${t.total.toLocaleString()}${t.pend ? '（' + t.pend + ' 項待確認）' : ''}｜取餐 ${o.when || '待定'}` }).catch(() => {})
   return publicView(o, menu, cfg)
 }
@@ -147,6 +147,7 @@ export async function custConfirm ({ code }) {
 }
 // ── 通知店家（通知鐵則：鈴鐺＋推播，關鍵節點加 LINE 私訊）：設定「通知誰」有填就通知那些人，沒填＝這張單負責人＋收件匣有權限的人＋審核人 ──
 async function notifyStaff (o, msg) {
+  if (o.demo) return // 模擬單不吵人
   const cfg = await loadCfg()
   const IB = await import('./_inbox.js')
   const base = await IB.permRids(o.acct || 'gd')
@@ -231,6 +232,7 @@ export async function saveImgs ({ who, id, p1, p2 }) {
 export async function sendImgs ({ who, mgr, cfgIB, IB, id }) {
   const o = await getOrder(id); if (!o) return { ok: false, error: '找不到這張單' }
   if (!o.imgs || !o.imgs.p1) return { ok: false, error: '先產生計價圖' }
+  if (o.demo) { if (['submitted', 'draft', 'sent'].includes(o.status)) { o.status = 'priced'; o.pricedAt = nowIso() } log(o, who.name, '（模擬）計價圖視同已傳'); await putOrder(o, '團體訂餐(' + who.name + ')'); return { ok: true, order: o, mode: 'demo' } } // 模擬單不真的傳 LINE
   if (!o.convId) return { ok: false, error: '這張單沒綁收件匣對話' }
   const menu = await loadMenu(); const t = C.totals(menu, o)
   const text = `${o.company || o.custName} 計價表（全單 ${t.total.toLocaleString()} 元${t.disc ? '，含折扣' : ''}）\n取餐 ${o.when || '待定'}（${o.mode || ''}）\n確認無誤請在點餐頁按「確認無誤」：${linkOf(o.id)}`
