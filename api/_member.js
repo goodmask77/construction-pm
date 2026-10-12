@@ -318,3 +318,25 @@ export async function report ({ days }) {
   const mids = [...new Set(flags.map(f => f.memberId))]; const ms = mids.length ? await sel('members', `id=in.(${mids.join(',')})&select=id,name,mno`) : []; const mm = {}; ms.forEach(m => { mm[m.id] = m })
   return { ok: true, days: rows, staff: Object.entries(staff).map(([name, x]) => ({ name, ...x })).sort((a, b) => b.amount - a.amount), flags: flags.slice(0, 50).map(f => ({ ...f, member: mm[f.memberId] || {} })) }
 }
+
+// ── 🪪 LINE Flex 卡片（v4.70.93 張良：會員資訊用卡片不要純文字）──
+const RED = '#ce1611'
+const flexBtn = (label, uri, style) => ({ type: 'button', style: style || 'primary', color: style === 'secondary' ? undefined : RED, height: 'sm', action: { type: 'uri', label, uri } })
+const kv = (k, v, big) => ({ type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: k, size: 'sm', color: '#8a7a70', flex: 3 }, { type: 'text', text: String(v), size: big ? 'xxl' : 'sm', weight: 'bold', color: big ? RED : '#2b1d18', align: 'end', flex: 5 }] })
+export async function memberCardMessages (uid) {
+  const url = memberLiffUrl(); const r = await byUid(uid); const m = r && r.member
+  const tw = (iso) => { try { return new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric' }).format(new Date(iso)) } catch (_) { return '' } }
+  if (!m) {
+    return [{ type: 'flex', altText: '加入 GROUN:D 會員，消費累點', contents: { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: 'GROUN:D 會員', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: '還沒加入會員', color: '#ffd9d6', size: 'xs' }] }, body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: [{ type: 'text', text: '一鍵加入，會自動帶入你的 LINE 名字。消費出示會員卡就能累點，點數可以換餐點，還有轉盤活動。', wrap: true, size: 'sm', color: '#2b1d18' }] }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: [flexBtn('加入會員', url)] } } }]
+  }
+  const body = [kv('會員', m.name || '—'), kv('會員號碼', m.mno || '—'), { type: 'separator', margin: 'md' }, { type: 'box', layout: 'vertical', margin: 'md', contents: [kv('可用點數', m.balance, true)] }]
+  if (m.lastVisit) body.push(kv('最近消費', `${tw(m.lastVisit.created_at)}・${m.lastVisit.amount} 元`))
+  const card = { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: 'GROUN:D 會員卡', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: 'MEMBER CARD', color: '#ffd9d6', size: 'xxs' }] }, body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: body }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: [flexBtn('開啟會員卡（出示 QR）', url), flexBtn('點數紀錄', url, 'secondary')] } }
+  return [{ type: 'flex', altText: `${m.name || ''} 目前 ${m.balance} 點（會員號碼 ${m.mno}）`, contents: card }]
+}
+export async function welcomeMessages () {
+  const cfg = await loadCfg(); const url = memberLiffUrl()
+  const intro = String(cfg.welcomeText || DEF_CFG.welcomeText).replace(/\n?\{link\}/, '').trim()
+  const card = { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: '歡迎加入 GROUN:D', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: 'MEMBER', color: '#ffd9d6', size: 'xxs' }] }, body: { type: 'box', layout: 'vertical', paddingAll: '14px', contents: [{ type: 'text', text: intro || '點下面開啟會員卡，消費出示會員號碼或 QR 就能累點。', wrap: true, size: 'sm', color: '#2b1d18' }] }, footer: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: [flexBtn('開啟會員卡', url)] } }
+  return [{ type: 'flex', altText: '歡迎加入 GROUN:D！點開會員卡開始累點', contents: card }]
+}
