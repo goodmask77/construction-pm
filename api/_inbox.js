@@ -141,7 +141,7 @@ export async function ingestEvent(a, ev, destination) {
     const m = ev.message || {}
     msg = { id: '', convId: conv.id, t: new Date(t).toISOString(), dir: 'in', type: m.type || 'text', name: conv.name }
     if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text
-      if (a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user' && /會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
+      if (a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user') { if (text === '門市與客服' || text === '我要團體訂餐') { conv.replyUsed = true; cardAutoReply(a, uid, ev.replyToken, conv, text).catch(() => {}) } else if (/會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } } // v4.70.96 圖文選單第 6 格／團訂卡片 // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
     else if (m.type === 'sticker') { msg.sticker = { pkg: m.packageId, id: m.stickerId }; text = '（貼圖）' }
     else if (m.type === 'location') { msg.text = [m.title, m.address].filter(Boolean).join(' '); msg.loc = { lat: m.latitude, lng: m.longitude }; text = '（位置）' + (m.address || '') }
     else if (['image', 'video', 'audio', 'file'].includes(m.type)) {
@@ -209,6 +209,12 @@ async function memberAutoReply(a, uid, token, conv) {
   let messages; try { messages = await MB.memberCardMessages(uid) } catch (_) { messages = [{ type: 'text', text: '點下面開啟會員卡查點數：\n' + MB.memberLiffUrl() }] }
   const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) })
   if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); const text = messages.map(m => m.type === 'text' ? m.text : '（卡片）' + m.altText).join('\n'); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text }) } // 收件匣看得到系統回了什麼
+}
+async function cardAutoReply(a, uid, token, conv, text) {
+  const MB = await import('./_member.js')
+  const messages = text === '門市與客服' ? await MB.storeCardMessages() : await MB.grporderCardMessages()
+  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) })
+  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text: '（卡片）' + messages[0].altText }) }
 }
 async function welcomeReply(a, token) { const MB = await import('./_member.js'); let messages; try { messages = await MB.welcomeMessages() } catch (_) { messages = [{ type: 'text', text: (await MB.welcomeText()).slice(0, 4900) }] }; await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) }) }
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──

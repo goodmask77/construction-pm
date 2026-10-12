@@ -4448,6 +4448,7 @@ export default async function handler(req, res) {
       if (opM === 'create') return res.status(200).json(await MB.createByStaff({ who: whoM, name: bM.name, phone: bM.phone, note: bM.note }))
       if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
       if (opM === 'cfg') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改會員設定' }); return res.status(200).json(await MB.saveCfg(bM.cfg || {}, whoM)) }
+      if (opM === 'richmenu') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.richMenuSetup({ who: whoM })) }
       if (opM === 'pushsend') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能推播' }); return res.status(200).json(await MB.pushSend({ who: whoM, segment: String(bM.segment || 'all'), text: bM.text, test: !!bM.test })) }
       if (opM === 'couponuse') return res.status(200).json(await MB.couponUse({ who: whoM, couponId: String(bM.couponId || ''), ref: bM.ref }))
       if (opM === 'campaign') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能建活動' }); return res.status(200).json(await MB.createCampaign({ who: whoM, ...bM })) }
