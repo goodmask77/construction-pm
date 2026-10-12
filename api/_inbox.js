@@ -205,15 +205,12 @@ export function ddInboxOut(text, to, mode) {
 export async function ddInboxFlush() { const ps = _dd.pend.splice(0); _dd.ev = null; _dd.p = null; if (ps.length) await Promise.allSettled(ps) }
 
 async function memberAutoReply(a, uid, token, conv) {
-  const MB = await import('./_member.js'); const url = MB.memberLiffUrl()
-  let text
-  try { const r = await MB.byUid(uid); const m = r && r.member
-    text = m ? `${m.name || ''} 你目前有 ${m.balance} 點（會員號碼 ${m.mno}）。\n點下面開啟會員卡看明細、出示 QR 累點：\n${url}` : `還沒加入 GROUN:D 會員嗎？點下面一鍵加入（會自動帶入你的 LINE 名字），之後消費出示會員卡就能累點：\n${url}`
-  } catch (_) { text = `點下面開啟會員卡查點數：\n${url}` }
-  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: text.slice(0, 4900) }] }) })
-  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text }) } // 收件匣看得到系統回了什麼
+  const MB = await import('./_member.js')
+  let messages; try { messages = await MB.memberCardMessages(uid) } catch (_) { messages = [{ type: 'text', text: '點下面開啟會員卡查點數：\n' + MB.memberLiffUrl() }] }
+  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) })
+  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); const text = messages.map(m => m.type === 'text' ? m.text : '（卡片）' + m.altText).join('\n'); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text }) } // 收件匣看得到系統回了什麼
 }
-async function welcomeReply(a, token) { const { welcomeText } = await import('./_member.js'); const text = await welcomeText(); await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }) }) }
+async function welcomeReply(a, token) { const MB = await import('./_member.js'); let messages; try { messages = await MB.welcomeMessages() } catch (_) { messages = [{ type: 'text', text: (await MB.welcomeText()).slice(0, 4900) }] }; await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages }) }) }
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──
 export async function permRids(acct, forRemind) { // export：團體訂餐（_grporder.js）通知店家時沿用「誰看得到這個帳號」
   const [cfg, bind, def] = await Promise.all([loadCfg(), kvGet('sp_finance_pm_prep_bind'), kvGet('sp_finance_pm_sop_def')])
