@@ -3,7 +3,7 @@
 // 掃 QR 沿用排行榜那套 Html5Qrcode（index 已載）；後端 api/_member.js；客人卡 /member（LIFF）
 let _mbD = null, _mbCur = null, _mbQ = '', _mbT = null
 const mbEsc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
-const mbT = iso => { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso)).replace(/^(\d{2})-(\d{2})\s/, '$1-$2 ') } catch (_) { return String(iso || '').slice(5, 16) } } // 台灣時間 MM-DD HH:mm（v4.70.88 張良：顯示 03:23 是世界時）
+const mbT = iso => { try { return new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)) } catch (_) { return String(iso || '').slice(5, 16) } } // 台灣時間 MM-DD HH:mm（v4.70.88 張良：顯示 03:23 是世界時）
 const mbD = iso => { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)) } catch (_) { return String(iso || '').slice(0, 10) } }
 const mbN = n => Math.round(Number(n) || 0).toLocaleString('zh-TW')
 async function mbGet (q) { try { const r = await fetch('/api/mail-sync?member=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&' + q + '&r=' + Date.now()); return await r.json() } catch (_) { return null } }
