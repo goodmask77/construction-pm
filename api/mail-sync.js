@@ -9,6 +9,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 // 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
+import { VOID_KEY, voidsFromSnapshots, negHoursFromSheetRows, recordVoidDay } from './_voids.js' // ⚠️ GD 退單／作廢偵測（v4.71.6 張良 2026-10-12）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
@@ -494,6 +495,23 @@ export default async function handler(req, res) {
       out2[dk] = { rows: (t.r || []).length, statuses, voidLike: (t.r || []).filter(row => row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))).length }
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
+  }
+  // ⚠️ 退單／作廢回補口（v4.71.6）：GET ?voidscan=<MENU_PROBE_KEY>&from=YYYY-MM-DD（預設近 30 天）→ 用已存的 15 分快照 pm_pos_q_ 重算每天的退單事件寫進月檔（不發通知）；&date=YYYY-MM-DD 看單日明細
+  if (req.query?.voidscan) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.voidscan) !== mk) return res.status(403).json({ ok: false })
+    const todayV = taipeiToday()
+    if (req.query.date) { const qd = await kvGet('sp_finance_pm_pos_q_' + String(req.query.date)); return res.status(200).json({ ok: true, date: req.query.date, nSlots: ((qd || {}).slots || []).length, slots: ((qd || {}).slots || []).map(s => ({ t: s.t, at: s.at, rev: s.rev, tx: s.tx })), events: voidsFromSnapshots(qd) }) }
+    const fromV = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : new Date(Date.now() - 30 * 86400e3 + 8 * 3600e3).toISOString().slice(0, 10)
+    const out = []
+    for (let d0 = new Date(fromV + 'T00:00:00Z'); d0.toISOString().slice(0, 10) <= todayV; d0.setUTCDate(d0.getUTCDate() + 1)) {
+      const dt = d0.toISOString().slice(0, 10)
+      const qd = await kvGet('sp_finance_pm_pos_q_' + dt).catch(() => null)
+      if (!qd || !(qd.slots || []).length) continue
+      const r = await recordVoidDay({ kvGet, kvPut, date: dt, qdoc: qd, editor: '退單回補' })
+      if (r.snap.length) out.push({ date: dt, events: r.snap })
+    }
+    return res.status(200).json({ ok: true, from: fromV, to: todayV, daysWithEvents: out.length, out })
   }
   // 👥 班表「非常態」名單維護口（v4.71.4 張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）：GET ?shiftoff=<MENU_PROBE_KEY> 讀；&rm=姓名 恢復常態；&add=姓名 標非常態
   if (req.query?.shiftoff) {
@@ -1458,8 +1476,34 @@ export default async function handler(req, res) {
       if (!rows3.length) continue
       const hm = {}
       for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
-      for (const h of Object.keys(hm)) if (!(hm[h] > 0)) delete hm[h] // 0 元時段不給（盤中會帶 9 時＝0 的空列，熱力圖多一整列空白）
+      for (const h of Object.keys(hm)) if (!hm[h]) delete hm[h] // 0 元時段不給（盤中會帶 9 時＝0 的空列，熱力圖多一整列空白）；v4.71.6 負數（退單／作廢）要留著顯示，不然格子加總≠日營收（張良 2026-10-12 10/12 16時 −6,090 被吃掉）
       if (Object.keys(hm).length) hourDays[e.date] = hm
+    }
+    // ⚠️ 退單／作廢紀錄（v4.71.6 張良 2026-10-12「每一筆都要清楚」）：GD 限定。每天＝{hours:時段表負數小時, snap:盤中快照相減事件, gap:時段表加總−實收(≠0 代表喬亞報表本身有跨日/沖帳差)}
+    let voids = null
+    if (!isAB2) {
+      try {
+        voids = {}
+        const revOf = {}; for (const e of [...entries, ...liveE9]) revOf[e.date] = Number(e.revenue) || 0
+        for (const e of [...entries, ...liveE9]) {
+          if (e.date < fromHD) continue
+          const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
+          const rows3 = Array.isArray(sheet) && sheet[0] ? (sheet[0].rows || []) : []
+          if (!rows3.length) continue
+          const hrsN = negHoursFromSheetRows(rows3)
+          const sumH = rows3.reduce((t, r) => t + (Number(r[r.length - 1]) || 0), 0)
+          const gap = sumH - revOf[e.date]
+          if (hrsN.length || gap) voids[e.date] = { hours: hrsN, snap: [], gap }
+        }
+        const ymsV = [...new Set([...entries, ...liveE9].filter(e => e.date >= fromHD).map(e => e.date.slice(0, 7)))]
+        const vdocs = await Promise.all(ymsV.map(ym => kvGet(VOID_KEY(ym)).catch(() => null)))
+        for (const vd of vdocs) for (const [dt, v] of Object.entries((vd || {}).days || {})) {
+          if (!(v.snap || []).length) continue
+          voids[dt] = voids[dt] || { hours: v.hours || [], snap: [], gap: 0 }
+          voids[dt].snap = v.snap
+        }
+        if (!Object.keys(voids).length) voids = null
+      } catch (_) { voids = null }
     }
     // AB 沒有日結時段表（Eats365 日結無時段）→ ①主來源：後台 hourlySalesRecordMap 回補的直接每小時營收 sp_finance_pm_ab_hhrev_（可回補歷史＝熱力圖跟 GD 一樣滿，張良 2026-10-10）②補：盤中快照 sp_finance_pm_ab_hh_（joya-intraday 當天累計相鄰相減）補今天進行中的日子
     if (isAB2 && !Object.keys(hourDays).length) {
@@ -1562,6 +1606,7 @@ export default async function handler(req, res) {
         const mo9 = e.date.slice(0, 7)
         const o = byMoH[mo9] = byMoH[mo9] || { month: mo9, revenue: 0, bills: 0, customers: 0, days: 0, uber: 0 }
         o.revenue += Number(e.revenue) || 0; o.bills += Number(e.txCount) || 0; o.customers += Number(e.guests) || 0; o.days++; o.uber += Number(e.uber) || 0 // uber=月 Uber Eats 合計（KPI 第四卡，張良 2026-10-12；與每日數據 Uber 欄同源）
+        if (slotEx.has(e.date)) { o.exRev = (o.exRev || 0) + (Number(e.revenue) || 0); o.exDays = (o.exDays || 0) + 1 } // v4.71.6 包場日：計入總營收、KPI 日均要排除（與每日數據平均列同口徑；張良 2026-10-10 拍板、10-12 抓包 KPI 沒排）
       }
       if (storeQ === 'abeach') {
         const revmD = (await kvGet('sp_finance_pm_boss_revm')) || {}
@@ -1578,6 +1623,7 @@ export default async function handler(req, res) {
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,
+      voids, // v4.71.6 退單／作廢紀錄 {date:{hours,snap,gap}}（GD）
       hourUber: Object.keys(hourUber).length ? hourUber : null, // AB 每小時 Uber（張良 2026-10-12）
       slotEx: [...slotEx], // 包場/異常大單日（張良 2026-10-10：10/4 隱藏不入每日列、計入總營收、不拉平均）：每日數據表用它排除平均並隱藏該列
       heatHide: ((await kvGet('sp_finance_pm_heat_hide')) || {})[storeQ] || {}, // v4.70.1 熱力圖隱藏時段（全店一致、限有權限者改）：{時段:1}

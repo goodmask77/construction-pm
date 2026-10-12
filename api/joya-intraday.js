@@ -307,6 +307,20 @@ export default async function handler(req, res) {
         qdoc.updatedAt = new Date().toISOString()
         await kvPut(qid, qdoc, '喬亞15分快照 ' + slotHit)
       }
+      // v4.71.6 退單／作廢偵測（張良 2026-10-12「每一筆都要清楚」）：快照相減（營收／單數／品項變少）＋時段表負數 → 月檔 pm_pos_void_；新事件私訊審核人（金額敏感不進群）
+      try {
+        const { recordVoidDay, voidAlertText } = await import('./_voids.js')
+        const vr = await recordVoidDay({ kvGet, kvPut, date: today, qdoc, slots: day.slots || [], editor: '退單偵測 ' + hm })
+        const tkV = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        if (tkV && vr.fresh.length) {
+          const [defV, rosV] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+          for (const an of (((defV || {}).ground || {}).approvers || ['張良瑋'])) {
+            const ap = ((rosV || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)
+            if (!ap) continue
+            for (const ev of vr.fresh.slice(0, 3)) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: voidAlertText(today, ev) }] }) })
+          }
+        }
+      } catch (e) { console.log('void detect err', e?.message) }
       // ② 整/半點 {t,rev,tx} → 月檔（既有半小時圖與 DD 的口徑不動、檔案不變肥）
       if (/:(00|30)$/.test(slotHit)) {
         const hid = 'sp_finance_pm_pos_hh_' + today.slice(0, 7)

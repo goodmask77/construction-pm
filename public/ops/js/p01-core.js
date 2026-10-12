@@ -233,15 +233,18 @@ function renderBoard(d, store, view){
     const mDays = Number(moH9.days)||0
     const yDaysArr = yrM9.filter(m=>Number(m.days))
     const yDays = yDaysArr.reduce((t,m)=>t+Number(m.days),0)
-    const mAvg = mDays ? Math.round(mRev/mDays) : 0
-    const yAvg = yDays ? Math.round(sum9(yDaysArr,m=>m.revenue)/yDays) : 0
+    // v4.71.6（張良 2026-10-12 抓包：KPI 日均把 10/4 包場 76,500 算進去＝38,146，每日數據平均列卻排除）：日均一律排除包場日（總營收照舊計入）＝跟每日數據同一套算法
+    const mExR = Number(moH9.exRev)||0, mExD = Number(moH9.exDays)||0
+    const yExR = sum9(yDaysArr,m=>m.exRev), yExD = sum9(yDaysArr,m=>m.exDays)
+    const mAvg = (mDays-mExD) > 0 ? Math.round((mRev-mExR)/(mDays-mExD)) : 0
+    const yAvg = (yDays-yExD) > 0 ? Math.round((sum9(yDaysArr,m=>m.revenue)-yExR)/(yDays-yExD)) : 0
     const kv9 = n => n >= 1e6 ? Math.round(n/1e4).toLocaleString()+'<span style="font-size:.62em;font-weight:700"> 萬</span>' : Math.round(n||0).toLocaleString()
     const bigLbl9 = yearOnly9 ? `${kY9}年` : `${parseInt(kM9.slice(5),10)}月`
     const subLbl9 = kY9 === curY9 ? '今年' : `${kY9}年`
     const card9 = (label,big,small) => `<div class="kpi"><div class="l">${label} <span class="hint" style="font-weight:700">${bigLbl9}</span></div><div class="v">${kv9(yearOnly9 ? small : big)}</div>${yearOnly9 ? '' : `<div class="sub2">${subLbl9} ${kv9(small)}</div>`}</div>`
     h += `<div class="kpis four">
       ${card9('總營收', mRev, yRev)}
-      ${card9('日均營收', mAvg, yAvg)}
+      ${card9('日均營收', mAvg, yAvg).replace('</div></div>', (mExD||yExD) ? '<div class="hint" style="font-size:10.5px;opacity:.75">不含包場日</div></div></div>' : '</div></div>')}
       ${card9('總單數', mTx, yTx)}
       ${card9('Uber Eats', mUber, yUber)}
     </div>`
@@ -365,8 +368,8 @@ function renderBoard(d, store, view){
       const hrs = [...new Set(hdDates.flatMap(dt => Object.keys(d.hourDays[dt]).map(Number)))].sort((a,b)=>a-b)
       // v4.70.0（張良「熱力圖顏色跟營收一樣、都不要那麼亮」）：每格跟「該時段日均」比，共用上面 heatBg＝紅=高/綠=低、±3%不上色、封頂0.38柔和
       const rowAvg = {}; hrs.forEach(hr => { const vs = hdDates.map(dt=>d.hourDays[dt][hr]||0).filter(v=>v>0); rowAvg[hr] = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : 0 })
-      const heatC = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return 'background:rgba(255,255,255,.02)'; return heatBg((v-avg)/avg) || 'background:rgba(255,255,255,.02)' }
-      const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${Math.round(avg).toLocaleString()}（${p>0?'+':''}${p}%）` }
+      const heatC = (v,hr) => { if (v<0) return 'background:rgba(220,60,60,.28);color:#ff8a8a;font-weight:800' /* v4.71.6 負數＝退單／作廢，紅字 */; const avg=rowAvg[hr]; if(!v||!avg) return 'background:rgba(255,255,255,.02)'; return heatBg((v-avg)/avg) || 'background:rgba(255,255,255,.02)' }
+      const devTip = (v,hr) => { if (v<0) return '・負數＝這小時有退單／作廢（看下方「退單／作廢紀錄」）'; const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${Math.round(avg).toLocaleString()}（${p>0?'+':''}${p}%）` }
       const wd7 = ['日','一','二','三','四','五','六']
       const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
       // 🙈 隱藏非營業／測試時段：存伺服器 d.heatHide（全店一致）；只有 board 編輯權的人看得到「編輯時段」鈕、按下才顯示 ✕（張良「X只有我能編輯、不要直接顯示、按編輯才打開」）
@@ -415,6 +418,28 @@ function renderBoard(d, store, view){
     } else {
       h += `<section><h2 style="margin-top:14px">時段營收熱力圖</h2><div class="mut" style="padding:8px">這個期間沒有時段明細（熱力圖僅近約 4 個月有日結時段資料）；切「本月／上月」可看。</div></section>`
     }
+  }
+  // ⚠️ 退單／作廢紀錄（v4.71.6 張良 2026-10-12「每一筆都要清楚 才知道問題在哪 以後也可能會發生」）：GD 限定；跟期間 chips 連動
+  // 來源三種：喬亞時段表負數小時（金額/單數準）、盤中 15 分快照相減（時間到 15 分、品項推估）、時段表加總與實收的差（喬亞報表本身的跨日/沖帳差）
+  if (isGD && d.voids !== undefined) {
+    const vRows = []
+    for (const [dt, v] of Object.entries(d.voids || {})) {
+      if (!inPer({date:dt})) continue
+      for (const hr of (v.hours||[])) vRows.push({ dt, tm: `${hr.h}時`, ord: hr.h*60, amt: hr.amt, tx: -Math.abs(hr.orders||0), items: '', src: '喬亞時段表', note: '這小時營業額為負＝該小時有退單／作廢（金額、單數準確；品項喬亞不給）' })
+      for (const ev of (v.snap||[])) vRows.push({ dt, tm: `${ev.prev}～${ev.t}`, ord: Number(String(ev.t).slice(0,2))*60+Number(String(ev.t).slice(3,5)), amt: ev.rev, tx: ev.tx, items: Object.entries(ev.items||{}).map(([n,q])=>`${n} ${q}`).join('、'), src: '盤中快照', note: '15 分快照相減：營收／單數／品項「變少」＝這 15 分內有退單／作廢；同時段若有新單會互相抵銷，實際退的可能更多' })
+      if (v.gap) vRows.push({ dt, tm: '全日', ord: 9999, amt: v.gap, tx: 0, items: '', src: '時段表 vs 實收', note: '喬亞時段表加總與實收金額的差（例：跨日 0 時的單、預付款沖帳），不是退單' })
+    }
+    vRows.sort((a,b)=> a.dt!==b.dt ? (a.dt<b.dt?1:-1) : a.ord-b.ord)
+    const sN = n => (n>0?'+':'') + Math.round(n).toLocaleString()
+    const vCol = n => n<0 ? 'color:#ff8a8a;font-weight:800' : (n>0 ? 'color:#8fd19e' : '')
+    h += `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">退單／作廢紀錄 <span class="hint" style="font-weight:600;font-size:11px">自動偵測・金額負數＝退掉</span></h2>`
+    if (!vRows.length) h += `<div class="mut" style="padding:8px">這個期間沒有偵測到退單／作廢。</div>`
+    else {
+      h += `<div class="scroll" style="overflow-x:auto"><table style="border-collapse:collapse"><thead><tr><th style="text-align:left">日期</th><th style="text-align:left">時間</th><th style="text-align:right">金額</th><th style="text-align:right">單數</th><th style="text-align:left">品項（推估）</th><th style="text-align:left">來源</th></tr></thead><tbody>`
+      for (const r of vRows) h += `<tr title="${r.note}"><td style="white-space:nowrap">${r.dt.slice(5)}</td><td style="white-space:nowrap">${r.tm}</td><td style="text-align:right;font-variant-numeric:tabular-nums;${vCol(r.amt)}">${sN(r.amt)}</td><td style="text-align:right;${vCol(r.tx)}">${r.tx?sN(r.tx):'—'}</td><td style="font-size:12.5px">${r.items||'—'}</td><td style="font-size:12px;white-space:nowrap" class="mut">${r.src}</td></tr>`
+      h += `</tbody></table></div><div class="hint" style="padding:6px 8px;font-size:11.5px">喬亞行動報表沒有逐筆訂單，這裡是用「時段表負數」＋「盤中 15 分快照相減」推出來的；要看單號／誰操作／原因，要向喬亞要 POS 後台的作廢報表。</div>`
+    }
+    h += `</section>`
   }
   // 📜 歷史月營收（張良 2026-10-04「補在哪？現在主要都用prep」）：AB=2021-02 開店起全史（iCHEF 時代只有月彙總）；
   // 有日結的月份=日結加總（跟上表/KPI 同口徑），更早=阿桑系統 /revenue/monthly
