@@ -62,10 +62,10 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, fbjAI, menuAI, fcAI, soAbAI, posAbLiveAI, posLaborAI, inlPmoAI, inlMoAI, inlNmoAI, inlSumAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, fbjAI, menuAI, fcAI, soAbAI, posAbLiveAI, posLaborAI, inlPmoAI, inlMoAI, inlNmoAI, inlSumAI, inlOlAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
       recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_fb"), g("sp_finance_pm_fbj"), g("sp_finance_pm_menu"), g("sp_finance_pm_fc_" + mo.replace("-", "")), g("sp_finance_pm_absoldout"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
-      g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline_" + mo), g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline"),
+      g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline_" + mo), g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline"), g("sp_finance_pm_inline_outlook"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -390,6 +390,13 @@ async function loadSpaceAIContext() {
             ls.push(`- 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.cx}/其他${agg.rest}`);
           }
           if (inlSumAI?.months) { const ms = Object.entries(inlSumAI.months); ls.push(`- 歷史總量：${ms.length}個月 ${ms.reduce((t, [, v]) => t + (v.resv || 0), 0)}筆（最後同步 ${String(inlSumAI.lastSync || "").slice(0, 16).replace("T", " ")}）`); }
+          // 近期展望（inline-sync 每小時快照；跟 /prep inline 首頁與 DD 同一份；v4.70.81）
+          if (inlOlAI && Array.isArray(inlOlAI.days) && inlOlAI.days.length) {
+            const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`;
+            ls.push(`- 近期展望（未來14天：日期(星期) 已訂→預估最終／去年同週同日(預估÷去年%)；預估=已訂÷近8週同類日子同樣剩N天時的進單比例）：` + inlOlAI.days.map(x => { const base = x.ly?.pos || x.ly?.g || 0; const pc = base ? Math.round((x.est || x.g) / base * 100) : null; return `${md(x.d)}(${"日一二三四五六"[new Date(x.d + "T00:00:00Z").getUTCDay()]})${x.hol || ""} ${x.g}→${x.est}${base ? `／${base}(${pc}%)` : ""}${x.uc ? `・待確認${x.uc}組` : ""}${x.wx ? `・${x.wx.n}${x.wx.pop >= 30 ? x.wx.pop + "%" : ""}` : ""}`; }).join("、"));
+            if ((inlOlAI.hols || []).length) ls.push(`- 連假倒數：` + inlOlAI.hols.map(h => `${h.name}（${md(h.from)}${h.from !== h.to ? "～" + md(h.to) : ""}，倒數${h.left}天）已訂${h.g}人${h.ly?.then ? `／去年同樣剩${h.left}天時已訂${h.ly.then}（${h.ratio}%，${h.status === "behind" ? "落後" : h.status === "ahead" ? "超前" : "正常"}）` : ""}${h.ly?.final ? `／去年最終${h.ly.final}／預估最終${h.est}` : ""}`).join("；"));
+            if ((inlOlAI.acts || []).length) ls.push(`- 要你做的事：` + inlOlAI.acts.map((a, i) => `${i + 1}.${String(a.t).replace(/\*\*/g, "")}`).join("　"));
+          }
           parts.push(ls.join("\n"));
         }
       }

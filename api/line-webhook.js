@@ -787,7 +787,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor', 'sp_finance_pm_inline_' + mo, 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline', 'sp_finance_pm_inline_insights', 'sp_finance_pm_sop_sugs'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor', 'sp_finance_pm_inline_' + mo, 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline', 'sp_finance_pm_inline_insights', 'sp_finance_pm_inline_outlook', 'sp_finance_pm_inline_actst', 'sp_finance_pm_sop_sugs'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -861,6 +861,16 @@ async function loadPosText() {
         if (insD && (insD.src || insD.purpose)) {
           const top6 = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${k}${v}`).join('、')
           lines.push(`  - 洞察（全史聚合）：來源=${top6(insD.src) || '無'}｜目的=${top6(insD.purpose) || '無'}${insD.lead ? `｜提前訂:當天${insD.lead.d0 || 0}/1-3天${insD.lead.d1_3 || 0}/4-7天${insD.lead.d4_7 || 0}/8-30天${insD.lead.d8_30 || 0}/31天+${insD.lead.d31 || 0}` : ''}${insD.bigY ? `｜大組(≥20人)年趨勢:${Object.entries(insD.bigY).sort().slice(-3).map(([y, b]) => `${y}年${b.cnt}次${b.guests}人`).join('、')}` : ''}`)
+        }
+        // 近期展望（inline-sync 每小時快照 pm_inline_outlook；跟 /prep inline 首頁同一份；v4.70.81 第 2 項）：答「這週末訂位怎樣／連假有沒有落後／該做什麼」
+        const olD = kv['sp_finance_pm_inline_outlook']
+        if (olD && Array.isArray(olD.days) && olD.days.length) {
+          const stD = (kv['sp_finance_pm_inline_actst'] || {}).keys || {}
+          const md = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}`
+          lines.push(`  - 近期展望（未來14天；格式=日期(星期)假名 已訂→預估最終／去年同週同日到店(預估÷去年%)・待確認組數・天氣；「預估最終」=已訂÷近8週同類日子在同樣剩N天時的進單比例；${String(olD.builtAt || '').slice(0, 16).replace('T', ' ')} 算）：` + olD.days.map((x) => { const base = x.ly?.pos || x.ly?.g || 0; const pc = base ? Math.round((x.est || x.g) / base * 100) : null; return `${md(x.d)}(${'日一二三四五六'[new Date(x.d + 'T00:00:00Z').getUTCDay()]})${x.hol || ''} ${x.g}→${x.est}${base ? `／${base}(${pc}%)` : ''}${x.uc ? `・待確認${x.uc}組` : ''}${x.big ? `・大組${x.big}` : ''}${x.wx ? `・${x.wx.n}${x.wx.pop >= 30 ? x.wx.pop + '%' : ''}` : ''}${x.sh?.n ? `・班${x.sh.n}人${x.sh.h}h` : ''}` }).join('、'))
+          if ((olD.hols || []).length) lines.push(`  - 連假倒數：` + olD.hols.map((h) => `${h.name}（${md(h.from)}${h.from !== h.to ? '～' + md(h.to) : ''}，倒數${h.left}天）已訂${h.g}人${h.r ? h.r + '組' : ''}${h.ly?.then ? `／去年同樣剩${h.left}天時已訂${h.ly.then}（${h.ratio}%，${h.status === 'behind' ? '落後' : h.status === 'ahead' ? '超前' : '正常'}）` : '／去年此時沒可比資料'}${h.ly?.final ? `／去年最終${h.ly.final}${h.ly.pos ? `、POS來客${h.ly.pos}` : ''}／預估最終${h.est}` : ''}`).join('；'))
+          if ((olD.week || []).length) { const tot = olD.week.reduce((t, x) => t + x.g, 0), tb = olD.week.reduce((t, x) => t + (x.base || 0), 0); lines.push(`  - 近7天回顧：到店${tot}人${tb ? `，近8週同週幾平均${Math.round(tb)}（${Math.round(tot / tb * 100)}%）` : ''}；逐日=${olD.week.map((x) => `${md(x.d)} ${x.g}${x.ratio != null ? `(${x.ratio}%)` : ''}${x.pos ? `POS${x.pos}` : ''}`).join('、')}`) }
+          if ((olD.acts || []).length) lines.push(`  - 要你做的事（跟首頁同一份；✓=已勾完成或已派任務）：` + olD.acts.map((a, i) => `${i + 1}.${stD[a.k]?.st ? '✓' : ''}${String(a.t).replace(/\*\*/g, '')}`).join('　'))
         }
       }
     }
