@@ -71,17 +71,20 @@ cfg 預設：主餐＋薯條一份＝1 袋位；每袋 4 袋位；披薩 1 盒�
 - 店家頁：走 permWho＋EDIT_FN 新 fn `grporder`；改價／鎖單／改付款＝主管或被授權者；看＝正職以上。
 - 個資（電話、統編）不進 DD 給未綁定者（沿用 secretOK 守門）。
 
-## 9. 金流（第三批，先不做，但欄位先留）
-- 選項：**LINE Pay**（客人就在 LINE 裡、免跳出，建議首選）／綠界 ECPay（信用卡＋轉帳虛擬帳號都有）。
-- 設計：訂單 `pay.orderNo`＝`GO-<id>`；金流回呼只改 `pay`＋寫 edits，不碰餐點內容；先用 sandbox 測一單小額。
-- 張良拍板哪家後再開 env 與回呼端點。
+## 9. 金流（第三批）— v4.71.1 程式已做（LINE Pay，沙盒先測；2026-10-12）
+- 選擇：**LINE Pay**（規格建議首選；張良未另指定，先做這家，綠界之後要加再說）。
+- 程式：共用模組 `api/_linepay.js`（request／confirm、HMAC 簽章、沙盒／正式切換）；`api/_grporder.js` `custPayReq`（客人頁 op=payreq）＋ `payConfirm`（導回 `?gorder=<碼>&payok=1`）；`publicView.pay`＝{status, method, amount, due, enabled, env}。
+- 流程：客人確認金額（confirmed）或店家鎖單（locked）後 → **只有主辦人**在客人頁看到「LINE Pay 付款 $應付」→ 整頁導去 LINE Pay → 付完導回點餐單頁顯示「付款完成」→ 後端確認扣款、`pay` 改成 已付清／已付訂金＋method=LINE Pay＋paidAt＋txId，寫 edits，店家收鈴鐺＋LINE 通知；GD 團訂分頁側欄顯示「已收款 金額・LINE Pay・時間」。
+- 應付金額＝鎖單快照總額（沒鎖＝即時總額）− 已收金額；付清後按鈕消失；模擬單不開付款。
+- 安全：建立付款時把 transactionId 存 `pay.tx`，導回時 id 要對得上才確認；導回頁重新整理不會重扣（已確認過直接回成功）；金流只改 `pay`，不碰餐點內容。
+- **張良前置（沒設就整個付款功能不出現，其他流程照舊）**：到 LINE Pay 商家後台（沙盒：pay.line.me/tw/developers/techsupport/sandbox/creation 申請測試商家）拿 Channel ID／Channel Secret → Vercel env `LINEPAY_CHANNEL_ID`、`LINEPAY_CHANNEL_SECRET`；正式上線再加 `LINEPAY_ENV=prod`（沒設＝沙盒，客人頁會標「沙盒測試」）。
 
 ## 10. 開發批次（一次做一批，改程式開 PR）
 | 批次 | 內容 | 驗收 |
 |---|---|---|
 | 1 | 資料三鍵＋客人點餐頁（即時讀最新菜單）＋計價算法＋收件匣「建立點餐單」發連結＋/prep「團體訂餐」列表與核價頁＋通知 | 用台灣連線這單實際跑一次（貼文字 AI 解析，舊品項要被標待確認） |
 | 2 | 兩張圖模板＋出圖＋傳客人＋雙方確認＋鎖單＋搬運建議 | 出圖跟 10/12 那兩張對得上，總額 6,901 一致 |
-| 3 | 金流 sandbox（張良選家）＋付款狀態自動回寫 | 小額測一單 |
+| 3 | ✅ v4.71.1 LINE Pay 沙盒＋付款狀態自動回寫（第 9 節） | 張良填 env 後沙盒小額測一單 |
 
 ## 11. 待張良拍板
 1. 客人填單方式：A 主辦人一人代填全部／B 每人自己開連結填自己／**C 兩者都要（建議，同一連結）**。

@@ -4460,6 +4460,12 @@ export default async function handler(req, res) {
     const GO = await import('./_grporder.js')
     res.setHeader('Cache-Control', 'private, no-store')
     try {
+      // 💳 v4.71.1 LINE Pay 導回：付完 → ?payok=1&transactionId=…（LINE Pay 自己加）→ 確認扣款 → 回點餐單頁顯示結果；取消 → ?paycancel=1
+      if (req.method !== 'POST' && (req.query.payok || req.query.paycancel)) {
+        let frag = 'paycancel=1'
+        if (req.query.payok) { try { const pr = await GO.payConfirm({ code: codeG, transactionId: String(req.query.transactionId || '') }); frag = pr.ok ? `paid=${pr.amount || 1}` : 'payfail=' + encodeURIComponent(String(pr.error || '付款確認失敗').slice(0, 80)) } catch (e) { frag = 'payfail=' + encodeURIComponent(String(e?.message || e).slice(0, 80)) } }
+        res.setHeader('Location', `/order/${codeG}#${frag}`); return res.status(302).end()
+      }
       if (req.method !== 'POST') {
         const o = await GO.getOrder(codeG); if (!o || o.status === 'void') return res.status(404).json({ ok: false, error: '找不到這張點餐單，請跟店家確認連結' })
         const [menuG, cfgG] = await Promise.all([GO.loadMenu(), GO.loadCfg()])
@@ -4474,6 +4480,7 @@ export default async function handler(req, res) {
       if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG, body: bG }))
       if (opG === 'shared') return res.status(200).json(await GO.custShared({ code: codeG, body: bG }))
       if (opG === 'parseadd') return res.status(200).json(await GO.custParseAdd({ code: codeG, body: bG }))
+      if (opG === 'payreq') return res.status(200).json(await GO.custPayReq({ code: codeG, body: bG })) // 💳 v4.71.1 主辦人建立 LINE Pay 付款 → 回付款網址
       if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })
     } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
@@ -4518,6 +4525,7 @@ export default async function handler(req, res) {
       if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
       if (opM === 'cfg') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改會員設定' }); return res.status(200).json(await MB.saveCfg(bM.cfg || {}, whoM)) }
       if (opM === 'richmenu') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.richMenuSetup({ who: whoM })) }
+      if (opM === 'bdayrun') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.birthdayRun({ who: whoM })) } // 🎂 v4.71.1 手動跑一次生日禮（每天 08:00 cron-daily 也會跑；冪等不會重發）
       if (opM === 'pushsend') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能推播' }); return res.status(200).json(await MB.pushSend({ who: whoM, segment: String(bM.segment || 'all'), text: bM.text, test: !!bM.test })) }
       if (opM === 'couponuse') return res.status(200).json(await MB.couponUse({ who: whoM, couponId: String(bM.couponId || ''), ref: bM.ref }))
       if (opM === 'campaign') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能建活動' }); return res.status(200).json(await MB.createCampaign({ who: whoM, ...bM })) }

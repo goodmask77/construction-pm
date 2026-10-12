@@ -127,6 +127,13 @@ export default async function handler(req, res) {
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
   // 🥬 v4.70.68 菜商報價自動同步（張良 2026-10-12「他們每個月會在試算表更新報價」）：每天台灣 08:00 那一輪直接讀上展／尚太的 Google 試算表，有變動才私訊張良摘要；?vegsync=1 可手動跑（只跑這段）
   const tpeH0 = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
+  // 🎂 v4.71.1 會員生日禮：每天台灣 08:00 那一輪發「生日月＝本月、今年還沒領」的會員（api/_member.js birthdayRun，冪等）；?bdayrun=<MENU_PROBE_KEY> 手動跑
+  const bdayKey = (process.env.MENU_PROBE_KEY || '').trim()
+  if ((bdayKey && req.query?.bdayrun === bdayKey) || tpeH0 === 8) {
+    let bR = null
+    try { const MB = await import('./_member.js'); bR = await MB.birthdayRun(); console.log('member birthday', JSON.stringify({ n: bR.n, cand: bR.candidates, skip: bR.skipped })) } catch (e) { console.log('member birthday err', e?.message); bR = { ok: false, error: e?.message } }
+    if (req.query?.bdayrun) return res.status(200).json({ ok: true, birthday: bR })
+  }
   if (req.query?.vegsync === '1' || tpeH0 === 8) {
     let vegR = null
     try {

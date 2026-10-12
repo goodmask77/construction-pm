@@ -108,7 +108,7 @@ const deadlinePassed = (o) => !!(o.deadline && (Date.now() + 8 * 3600e3) > new D
 export function publicView (o, menu, cfg) {
   const t = C.totals(menu, o)
   const expired = cfg && cfg.expireDays && o.createdAt && (Date.now() - new Date(o.createdAt).getTime()) > cfg.expireDays * 86400e3 && !['locked', 'done'].includes(o.status)
-  return { ok: true, id: o.id, demo: !!o.demo, host: o.hostUid || o.uid || null, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
+  return { ok: true, id: o.id, demo: !!o.demo, host: o.hostUid || o.uid || null, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ pay: payPub(o, t), totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
 }
 export async function custSave ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單，請跟店家確認連結' }
@@ -159,6 +159,44 @@ export async function custSubmit ({ code, body }) {
   if (!o.demo) orderReceiptCard(o, menu, t).catch(() => {}) // v4.70.99 張良：客人要在 LINE 對話框看到「已送出」
   notifyStaff(o, { title: '團體訂餐：客人送出了', body: `${o.company || o.custName}｜${(o.rows || []).length} 人${(o.shared || []).length ? '＋共用 ' + o.shared.length + ' 項' : ''}｜暫計 ${t.total.toLocaleString()}${t.pend ? '（' + t.pend + ' 項待確認）' : ''}｜取餐 ${o.when || '待定'}` }).catch(() => {})
   return publicView(o, menu, cfg)
+}
+// ── 💳 LINE Pay 付款 v4.71.1（第三批金流；api/_linepay.js）：核價確認後（confirmed／locked）主辦人可在客人頁按「LINE Pay 付款」；付完由 LINE Pay 導回 ?gorder=<碼>&payok=1 → payConfirm 改 pay 欄＋留痕＋通知店家；模擬單不開 ──
+const payDueOf = (o, t) => { const total = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total; return Math.max(0, Math.round(total) - Math.round(Number((o.pay || {}).amount) || 0)) }
+const lpOn = () => !!(String(process.env.LINEPAY_CHANNEL_ID || '').trim() && String(process.env.LINEPAY_CHANNEL_SECRET || '').trim()) // 跟 _linepay.js enabled() 同口徑（publicView 是同步的，這裡不 import）
+const lpEnv = () => (/^prod/i.test(String(process.env.LINEPAY_ENV || '').trim()) ? '正式' : '沙盒測試')
+function payPub (o, t) { const p = o.pay || {}; return { status: p.status || '未付', method: p.method || '', amount: Number(p.amount) || 0, paidAt: p.paidAt || null, due: payDueOf(o, t), enabled: !o.demo && ['confirmed', 'locked'].includes(o.status) && lpOn(), env: lpEnv() } }
+let _LP = null; async function LP () { if (!_LP) _LP = await import('./_linepay.js'); return _LP }
+export async function custPayReq ({ code, body }) {
+  const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  if (o.demo) return { ok: false, error: '模擬單不能付款' }
+  if (!isHost(o, body || {})) return { ok: false, error: '只有主辦人能付款' }
+  if (!['confirmed', 'locked'].includes(o.status)) return { ok: false, error: '要先確認金額、店家鎖單後才能付款' }
+  const L = await LP(); if (!L.enabled()) return { ok: false, error: '店家尚未開通線上付款' }
+  const menu = await loadMenu(); const t = C.totals(menu, o); const due = payDueOf(o, t)
+  if (due <= 0) return { ok: false, error: '這張單已經付清了' }
+  const orderNo = `GO-${o.id}-${Date.now().toString(36)}`
+  const base = `${ORIGIN}/api/mail-sync?gorder=${o.id}`
+  const r = await L.request({ orderId: orderNo, amount: due, name: `GROUN:D 團體訂餐 ${o.company || o.custName || ''}`.trim(), confirmUrl: `${base}&payok=1`, cancelUrl: `${base}&paycancel=1` })
+  if (!r.ok) return r
+  o.pay = { ...(o.pay || {}), tx: { id: r.transactionId, orderNo, amount: due, at: nowIso() } }
+  log(o, '客人', `建立 LINE Pay 付款 ${due} 元（${L.envLabel()}）`)
+  await putOrder(o, '團體訂餐(付款)')
+  return { ok: true, url: r.url, amount: due }
+}
+export async function payConfirm ({ code, transactionId }) {
+  const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  const tx = (o.pay || {}).tx; transactionId = String(transactionId || '')
+  if (transactionId && (o.pay || {}).txId === transactionId) return { ok: true, dup: true, amount: (o.pay || {}).lastAmt || (o.pay || {}).amount || 0, status: (o.pay || {}).status } // 導回頁被重新整理：已確認過就直接回成功，不再打 LINE Pay
+  if (!tx || !transactionId || tx.id !== transactionId) return { ok: false, error: '付款資料對不上，請回點餐單重新付款' }
+  const L = await LP(); const r = await L.confirm({ transactionId, amount: tx.amount })
+  if (!r.ok) { log(o, '系統', `LINE Pay 確認失敗：${r.error}`); await putOrder(o, '團體訂餐(付款)'); return r }
+  const menu = await loadMenu(); const t = C.totals(menu, o)
+  const paid = Math.round(Number((o.pay || {}).amount) || 0) + tx.amount; const total = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total
+  o.pay = { status: paid >= Math.round(total) ? '已付清' : '已付訂金', method: 'LINE Pay', amount: paid, lastAmt: tx.amount, paidAt: nowIso(), txId: transactionId, orderNo: tx.orderNo, env: L.envLabel(), payType: r.info.payType || '' } // tx 用掉就移除，下次付款重建
+  log(o, '客人', `LINE Pay 付款 ${tx.amount} 元（${L.envLabel()}）`)
+  await putOrder(o, '團體訂餐(付款)')
+  notifyStaff(o, { title: '團體訂餐：客人已用 LINE Pay 付款', body: `${o.company || o.custName}｜${tx.amount.toLocaleString()} 元（${o.pay.status}）｜取餐 ${o.when || '待定'}${L.isProd() ? '' : '｜沙盒測試'}` }).catch(() => {})
+  return { ok: true, amount: tx.amount, status: o.pay.status }
 }
 export async function custConfirm ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
