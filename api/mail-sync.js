@@ -4439,6 +4439,8 @@ export default async function handler(req, res) {
       if (opG === 'parse') return res.status(200).json(await GO.parseText({ text: bG.text }))
       if (opG === 'cfg') return res.status(200).json(await GO.saveCfg(bG.cfg || {}, whoG))
       if (opG === 'imgsave') return res.status(200).json(await GO.saveImgs({ who: whoG, id: String(bG.id || ''), p1: bG.p1, p2: bG.p2 }))
+      if (opG === 'invoice') return res.status(200).json(await GO.invoiceIssue({ who: whoG, id: String(bG.id || ''), taxId: bG.taxId, title: bG.title, addr: bG.addr, email: bG.email, phone: bG.phone })) // 🧾 v4.71.3 手動開發票
+      if (opG === 'invoicevoid') return res.status(200).json(await GO.invoiceVoid({ who: whoG, id: String(bG.id || ''), reason: bG.reason }))
       if (opG === 'sendimgs') {
         const IB = await import('./_inbox.js')
         const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
@@ -4461,6 +4463,12 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store')
     try {
       // 💳 v4.71.1 LINE Pay 導回：付完 → ?payok=1&transactionId=…（LINE Pay 自己加）→ 確認扣款 → 回點餐單頁顯示結果；取消 → ?paycancel=1
+      // 💳🧾 v4.71.3 綠界：ecpaygo=交易號 → 自動送出表單頁；ecpayret（背景付款結果）／ecpayinfo（ATM 帳號、超商代碼）要回純文字 1|OK；ecpayback／ecpayclient → 導回點餐單頁
+      if (req.query.ecpaygo) { const html = await GO.ecpayFormHtml({ code: codeG, no: String(req.query.ecpaygo) }); if (!html) return res.status(404).send('付款連結已失效，請回點餐單重新按付款'); res.setHeader('content-type', 'text/html; charset=utf-8'); return res.status(200).send(html) }
+      const formG = () => { if (req.body && typeof req.body === 'object') return req.body; try { return Object.fromEntries(new URLSearchParams(String(req.body || ''))) } catch (_) { return {} } }
+      if (req.query.ecpayret) { const t = await GO.ecpayReturn({ code: codeG, params: formG() }); res.setHeader('content-type', 'text/plain'); return res.status(200).send(t) }
+      if (req.query.ecpayinfo) { const t = await GO.ecpayInfo({ code: codeG, params: formG() }); res.setHeader('content-type', 'text/plain'); return res.status(200).send(t) }
+      if (req.query.ecpayback || req.query.ecpayclient) { const frag = await GO.ecpayBackFrag({ code: codeG, params: req.method === 'POST' ? formG() : null, client: !!req.query.ecpayclient }); res.setHeader('Location', `/order/${codeG}#${frag}`); return res.status(302).end() }
       if (req.method !== 'POST' && (req.query.payok || req.query.paycancel)) {
         let frag = 'paycancel=1'
         if (req.query.payok) { try { const pr = await GO.payConfirm({ code: codeG, transactionId: String(req.query.transactionId || '') }); frag = pr.ok ? `paid=${pr.amount || 1}` : 'payfail=' + encodeURIComponent(String(pr.error || '付款確認失敗').slice(0, 80)) } catch (e) { frag = 'payfail=' + encodeURIComponent(String(e?.message || e).slice(0, 80)) } }
@@ -4480,7 +4488,8 @@ export default async function handler(req, res) {
       if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG, body: bG }))
       if (opG === 'shared') return res.status(200).json(await GO.custShared({ code: codeG, body: bG }))
       if (opG === 'parseadd') return res.status(200).json(await GO.custParseAdd({ code: codeG, body: bG }))
-      if (opG === 'payreq') return res.status(200).json(await GO.custPayReq({ code: codeG, body: bG })) // 💳 v4.71.1 主辦人建立 LINE Pay 付款 → 回付款網址
+      if (opG === 'payreq') return res.status(200).json(await GO.custPayReq({ code: codeG, body: bG }))
+      if (opG === 'ecpayreq') return res.status(200).json(await GO.custEcpayReq({ code: codeG, body: bG })) // 💳 v4.71.3 綠界（信用卡／ATM／超商） // 💳 v4.71.1 主辦人建立 LINE Pay 付款 → 回付款網址
       if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })
     } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }

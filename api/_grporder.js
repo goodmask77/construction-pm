@@ -18,8 +18,9 @@ async function kvSet (id, obj, editor) {
 }
 const KEY = id => 'pm_grpord_' + id
 const IDX = 'pm_grpord_idx', CFG = 'pm_grpord_cfg'
-export const GO_VER = '4778'
-const DEF_CFG = { carry: { bag: 6, cup: 6, pz: 2, hand: 3 }, notify: { people: [] }, expireDays: 14, linkTpl: '您好，這是{company}的團體訂餐連結，大家可以自己填或由一人代填，填好按「送出給店家」我們就核價：\n{link}\n取餐：{when}（{mode}）' }
+export const GO_VER = '4813'
+// v4.71.3 ecpay.test＝沒 env 時用綠界測試商家；choose＝ALL/Credit/ATM/CVS；invoice.auto＝付款成功自動開發票
+const DEF_CFG = { ecpay: { test: false, choose: 'ALL' }, invoice: { auto: true, test: false }, carry: { bag: 6, cup: 6, pz: 2, hand: 3 }, notify: { people: [] }, expireDays: 14, linkTpl: '您好，這是{company}的團體訂餐連結，大家可以自己填或由一人代填，填好按「送出給店家」我們就核價：\n{link}\n取餐：{when}（{mode}）' }
 export async function loadCfg () { const c = (await kvGet(CFG)) || {}; return { ...DEF_CFG, ...c, carry: { ...DEF_CFG.carry, ...(c.carry || {}) }, notify: { ...DEF_CFG.notify, ...(c.notify || {}) } } }
 export async function saveCfg (patch, who) { const c = await loadCfg(); const n = { ...c, ...(patch || {}), carry: { ...c.carry, ...((patch || {}).carry || {}) }, notify: { ...c.notify, ...((patch || {}).notify || {}) }, by: who && who.name, at: nowIso() }; await kvSet(CFG, n, '團體訂餐設定(' + ((who && who.name) || '') + ')'); return { ok: true, cfg: n } }
 export async function loadMenu () { return C.normMenu(await kvGet('sp_finance_pm_menu')) }
@@ -108,7 +109,7 @@ const deadlinePassed = (o) => !!(o.deadline && (Date.now() + 8 * 3600e3) > new D
 export function publicView (o, menu, cfg) {
   const t = C.totals(menu, o)
   const expired = cfg && cfg.expireDays && o.createdAt && (Date.now() - new Date(o.createdAt).getTime()) > cfg.expireDays * 86400e3 && !['locked', 'done'].includes(o.status)
-  return { ok: true, id: o.id, demo: !!o.demo, host: o.hostUid || o.uid || null, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ pay: payPub(o, t), totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
+  return { ok: true, id: o.id, demo: !!o.demo, host: o.hostUid || o.uid || null, company: o.company, custName: o.custName, taxId: o.taxId, addr: o.addr || '', email: o.email || '', when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ pay: payPub(o, t, cfg), totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
 }
 export async function custSave ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單，請跟店家確認連結' }
@@ -164,10 +165,103 @@ export async function custSubmit ({ code, body }) {
 const payDueOf = (o, t) => { const total = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total; return Math.max(0, Math.round(total) - Math.round(Number((o.pay || {}).amount) || 0)) }
 const lpOn = () => !!(String(process.env.LINEPAY_CHANNEL_ID || '').trim() && String(process.env.LINEPAY_CHANNEL_SECRET || '').trim()) // 跟 _linepay.js enabled() 同口徑（publicView 是同步的，這裡不 import）
 const lpEnv = () => (/^prod/i.test(String(process.env.LINEPAY_ENV || '').trim()) ? '正式' : '沙盒測試')
-function payPub (o, t) { const p = o.pay || {}; return { status: p.status || '未付', method: p.method || '', amount: Number(p.amount) || 0, paidAt: p.paidAt || null, due: payDueOf(o, t), enabled: !o.demo && ['confirmed', 'locked'].includes(o.status) && lpOn(), env: lpEnv() } }
+function payPub (o, t, cfg) { const p = o.pay || {}; const can = !o.demo && ['confirmed', 'locked'].includes(o.status); const ec = ecpayOn(cfg); return { status: p.status || '未付', method: p.method || '', amount: Number(p.amount) || 0, paidAt: p.paidAt || null, due: payDueOf(o, t), enabled: can && lpOn(), env: lpEnv(), ecpay: can && !!ec, ecpayTest: !!(ec && ec.test), ecpayChoose: ((cfg || {}).ecpay || {}).choose || 'ALL', pending: p.pending || null, invoice: o.invoice ? { no: o.invoice.no, date: o.invoice.date, taxId: o.invoice.taxId || '', test: !!o.invoice.test } : null } }
+const ecpayOn = (cfg) => { try { const id = String(process.env.ECPAY_MERCHANT_ID || '').trim(); if (id && String(process.env.ECPAY_HASH_KEY || '').trim()) return { test: false }; return ((cfg || {}).ecpay || {}).test ? { test: true } : null } catch (_) { return null } }
+let _EC = null; async function EC () { if (!_EC) _EC = await import('./_ecpay.js'); return _EC }
+// 付款成功（LINE Pay／綠界共用）：改 pay 欄＋留痕＋通知店家＋自動開發票；冪等靠呼叫端先比對交易號
+async function markPaid (o, { amount, method, ref, env, extra }) {
+  const menu = await loadMenu(); const t = C.totals(menu, o)
+  const paid = Math.round(Number((o.pay || {}).amount) || 0) + amount; const total = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total
+  o.pay = { ...(o.pay || {}), status: paid >= Math.round(total) ? '已付清' : '已付訂金', method, amount: paid, lastAmt: amount, paidAt: nowIso(), txId: ref, env, pending: null, ...(extra || {}) }
+  delete o.pay.tx; delete o.pay.ecp
+  log(o, '客人', `${method} 付款 ${amount} 元（${env}）`)
+  await putOrder(o, '團體訂餐(付款)')
+  notifyStaff(o, { title: `團體訂餐：客人已用 ${method} 付款`, body: `${o.company || o.custName}｜${amount.toLocaleString()} 元（${o.pay.status}）｜取餐 ${o.when || '待定'}${/正式/.test(env) ? '' : '｜' + env}` }).catch(() => {})
+  try { const cfg = await loadCfg(); if ((cfg.invoice || {}).auto !== false && o.pay.status === '已付清' && !o.invoice) await invoiceIssue({ who: { name: '系統' }, id: o.id, auto: true }) } catch (_) {}
+}
+// ── 🧾 電子發票（綠界）：有統編開公司發票；付清自動開（cfg.invoice.auto），店家也可在 GD 側欄手動開／作廢 ──
+export async function invoiceIssue ({ who, id, taxId, title, addr, email, phone, auto }) {
+  const o = await getOrder(id); if (!o) return { ok: false, error: '找不到這張單' }
+  if (o.demo) return { ok: false, error: '模擬單不開發票' }
+  if (o.invoice && o.invoice.no) return { ok: false, error: `已開過發票 ${o.invoice.no}，要重開先作廢` }
+  const cfg = await loadCfg(); const E = await EC(); const creds = E.invCreds(!!(cfg.invoice || {}).test); if (!creds) return { ok: false, error: '綠界電子發票還沒設定（env ECPAY_INV_* 或設定頁勾測試）' }
+  const menu = await loadMenu(); const t = C.totals(menu, o); const amount = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total
+  const tid = String(taxId != null ? taxId : o.taxId || '').replace(/\D/g, '').slice(0, 8); const ttl = String(title != null ? title : (tid ? o.company : '') || '').trim()
+  const adr = String(addr != null ? addr : o.addr || '').trim().slice(0, 100); if (adr && !o.addr) o.addr = adr; if (email && !o.email) o.email = String(email).trim().slice(0, 80)
+  const r = await E.issueInvoice({ creds, relateNumber: 'GO' + o.id + Date.now().toString(36), taxId: tid, title: ttl, addr: adr, email: email || o.email || '', phone: phone || o.phone || '', amount, itemName: `團體訂餐（${t.n} 人）`, remark: `${o.company || o.custName || ''} 取餐 ${o.when || ''}`.trim() })
+  if (!r.ok) { o.invoiceErr = { at: nowIso(), error: r.error }; log(o, who.name, `開發票失敗：${r.error}`); await putOrder(o, '團體訂餐(發票)'); return r }
+  o.invoice = { no: r.no, date: r.date, random: r.random, amount, taxId: tid, title: ttl, at: nowIso(), by: who.name, test: !!r.test }; delete o.invoiceErr
+  if (tid && !o.taxId) o.taxId = tid; if (ttl && tid && !o.company) o.company = ttl
+  log(o, who.name, `開發票 ${r.no}（${amount} 元${tid ? '，統編 ' + tid : ''}${r.test ? '，測試' : ''}）${auto ? '（自動）' : ''}`)
+  await putOrder(o, '團體訂餐(發票)')
+  return { ok: true, invoice: o.invoice, order: o }
+}
+export async function invoiceVoid ({ who, id, reason }) {
+  const o = await getOrder(id); if (!o || !o.invoice || !o.invoice.no) return { ok: false, error: '這張單沒有發票' }
+  const cfg = await loadCfg(); const E = await EC(); const creds = E.invCreds(!!(cfg.invoice || {}).test || !!o.invoice.test); if (!creds) return { ok: false, error: '綠界電子發票還沒設定' }
+  const r = await E.voidInvoice({ creds, no: o.invoice.no, date: o.invoice.date, reason }); if (!r.ok) return r
+  o.invoiceVoided = [...(o.invoiceVoided || []), { ...o.invoice, voidAt: nowIso(), voidBy: who.name, reason }]; delete o.invoice
+  log(o, who.name, `作廢發票 ${o.invoiceVoided[o.invoiceVoided.length - 1].no}（${String(reason || '').slice(0, 20)}）`)
+  await putOrder(o, '團體訂餐(發票)'); return { ok: true, order: o }
+}
+// ── 💳 綠界金流：客人選信用卡／ATM／超商 → 自動送表單到綠界 → 綠界背景回呼 ReturnURL（付款結果）／PaymentInfoURL（ATM 帳號、超商代碼）→ 客人導回 OrderResultURL／ClientBackURL ──
+export async function custEcpayReq ({ code, body }) {
+  const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  if (o.demo) return { ok: false, error: '模擬單不能付款' }
+  if (!isHost(o, body || {})) return { ok: false, error: '只有主辦人能付款' }
+  if (!['confirmed', 'locked'].includes(o.status)) return { ok: false, error: '要先確認金額、店家鎖單後才能付款' }
+  takeInvFields(o, body)
+  const cfg = await loadCfg(); const ec = ecpayOn(cfg); if (!ec) return { ok: false, error: '店家尚未開通綠界付款' }
+  const menu = await loadMenu(); const t = C.totals(menu, o); const due = payDueOf(o, t); if (due <= 0) return { ok: false, error: '這張單已經付清了' }
+  const choose = ['ALL', 'Credit', 'ATM', 'CVS'].includes(String((body || {}).choose)) ? String(body.choose) : ((cfg.ecpay || {}).choose || 'ALL')
+  const no = ('GO' + o.id + Date.now().toString(36)).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20)
+  o.pay = { ...(o.pay || {}), ecp: { no, amount: due, at: nowIso(), choose, test: ec.test } }
+  log(o, '客人', `建立綠界付款 ${due} 元（${(await EC()).CHOOSE[choose]}${ec.test ? '，測試商家' : ''}）`)
+  await putOrder(o, '團體訂餐(付款)')
+  return { ok: true, url: `${ORIGIN}/api/mail-sync?gorder=${o.id}&ecpaygo=${no}`, amount: due }
+}
+export async function ecpayFormHtml ({ code, no }) {
+  const o = await getOrder(code); const ecp = o && (o.pay || {}).ecp; if (!o || !ecp || ecp.no !== String(no || '')) return null
+  const cfg = await loadCfg(); const E = await EC(); const creds = E.payCreds(!!(cfg.ecpay || {}).test); if (!creds) return null
+  const base = `${ORIGIN}/api/mail-sync?gorder=${o.id}`
+  return E.checkoutHtml({ creds, tradeNo: ecp.no, amount: ecp.amount, desc: 'GROUN:D 團體訂餐', itemName: `GROUN:D 團體訂餐 ${o.company || o.custName || ''}`.trim().replace(/#/g, ' '), returnUrl: `${base}&ecpayret=1`, orderResultUrl: `${base}&ecpayback=1`, clientBackUrl: `${base}&ecpayclient=1`, paymentInfoUrl: `${base}&ecpayinfo=1`, choose: ecp.choose })
+}
+async function ecpayVerify (o, params) { const cfg = await loadCfg(); const E = await EC(); const creds = E.payCreds(!!(cfg.ecpay || {}).test || !!((o.pay || {}).ecp || {}).test); if (!creds || !E.verifyMac(params || {}, creds)) return null; return creds }
+// 綠界背景通知（ReturnURL）：RtnCode 1＝付款成功；要回純文字 1|OK
+export async function ecpayReturn ({ code, params }) {
+  const o = await getOrder(code); if (!o) return '0|order'
+  const creds = await ecpayVerify(o, params); if (!creds) return '0|mac'
+  const no = String(params.MerchantTradeNo || ''); const ecp = (o.pay || {}).ecp
+  if ((o.pay || {}).txId === no) return '1|OK' // 重送＝已處理
+  if (!ecp || ecp.no !== no) { log(o, '系統', `綠界回呼交易號對不上 ${no}`); await putOrder(o, '團體訂餐(付款)'); return '1|OK' }
+  if (String(params.RtnCode) === '1') { const amt = Math.round(Number(params.TradeAmt) || ecp.amount); await markPaid(o, { amount: amt, method: '綠界' + ({ Credit: '信用卡', ATM: 'ATM', CVS: '超商', BARCODE: '超商條碼', WebATM: '網路 ATM' })[String(params.PaymentType || '').split('_')[0]] || '', ref: no, env: creds.test ? '綠界測試' : '正式', extra: { ecTradeNo: params.TradeNo || '', payType: params.PaymentType || '' } }) }
+  else { log(o, '系統', `綠界付款未成功（${params.RtnCode}：${String(params.RtnMsg || '').slice(0, 60)}）`); await putOrder(o, '團體訂餐(付款)') }
+  return '1|OK'
+}
+// 取號通知（PaymentInfoURL）：ATM 虛擬帳號／超商代碼，存 pay.pending 給客人頁顯示
+export async function ecpayInfo ({ code, params }) {
+  const o = await getOrder(code); if (!o) return '0|order'
+  const creds = await ecpayVerify(o, params); if (!creds) return '0|mac'
+  const pt = String(params.PaymentType || ''); const pending = { type: pt.startsWith('ATM') ? 'ATM' : pt.startsWith('CVS') ? 'CVS' : pt, amount: Math.round(Number(params.TradeAmt) || 0), bank: params.BankCode || '', account: params.vAccount || '', code: params.PaymentNo || '', expire: params.ExpireDate || '', at: nowIso(), no: params.MerchantTradeNo || '' }
+  o.pay = { ...(o.pay || {}), pending }
+  log(o, '系統', `綠界取號：${pending.type === 'ATM' ? '轉帳 ' + pending.bank + '-' + pending.account : '超商代碼 ' + pending.code}，${pending.amount} 元，期限 ${pending.expire}`)
+  await putOrder(o, '團體訂餐(付款)')
+  notifyStaff(o, { title: '團體訂餐：客人取得付款帳號（尚未付款）', body: `${o.company || o.custName}｜${pending.type === 'ATM' ? 'ATM 轉帳' : '超商代碼'} ${pending.amount.toLocaleString()} 元｜期限 ${pending.expire}` }).catch(() => {})
+  return '1|OK'
+}
+// 客人導回（OrderResultURL：信用卡付完 POST 回來；ClientBackURL：ATM／超商取號後按返回）→ 回點餐單頁的 hash
+export async function ecpayBackFrag ({ code, params, client }) {
+  const o = await getOrder(code); if (!o) return 'payfail=' + encodeURIComponent('找不到這張點餐單')
+  if (client) return (o.pay || {}).pending ? 'paypending=1' : 'paycancel=1'
+  if (params && params.CheckMacValue) { const creds = await ecpayVerify(o, params); if (creds && String(params.RtnCode) === '1') { if ((o.pay || {}).txId !== String(params.MerchantTradeNo || '')) { try { await ecpayReturn({ code, params }) } catch (_) {} } return 'paid=' + (Number(params.TradeAmt) || 1) } return 'payfail=' + encodeURIComponent(String((params || {}).RtnMsg || '付款未完成').slice(0, 80)) }
+  return (o.pay || {}).txId ? 'paid=' + ((o.pay || {}).lastAmt || 1) : 'paycancel=1'
+}
+
 let _LP = null; async function LP () { if (!_LP) _LP = await import('./_linepay.js'); return _LP }
+const takeInvFields = (o, body) => { if (!body) return; if (body.addr != null) { const a = String(body.addr).trim().slice(0, 100); if (a) o.addr = a } if (body.email != null) { const e = String(body.email).trim().slice(0, 80); if (/^[^@\s]+@[^@\s]+$/.test(e)) o.email = e } } // v4.71.3 付款時順便留發票用的地址／email
 export async function custPayReq ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  takeInvFields(o, body)
   if (o.demo) return { ok: false, error: '模擬單不能付款' }
   if (!isHost(o, body || {})) return { ok: false, error: '只有主辦人能付款' }
   if (!['confirmed', 'locked'].includes(o.status)) return { ok: false, error: '要先確認金額、店家鎖單後才能付款' }
@@ -190,12 +284,7 @@ export async function payConfirm ({ code, transactionId }) {
   if (!tx || !transactionId || tx.id !== transactionId) return { ok: false, error: '付款資料對不上，請回點餐單重新付款' }
   const L = await LP(); const r = await L.confirm({ transactionId, amount: tx.amount })
   if (!r.ok) { log(o, '系統', `LINE Pay 確認失敗：${r.error}`); await putOrder(o, '團體訂餐(付款)'); return r }
-  const menu = await loadMenu(); const t = C.totals(menu, o)
-  const paid = Math.round(Number((o.pay || {}).amount) || 0) + tx.amount; const total = o.frozen && o.lockedTotal != null ? o.lockedTotal : t.total
-  o.pay = { status: paid >= Math.round(total) ? '已付清' : '已付訂金', method: 'LINE Pay', amount: paid, lastAmt: tx.amount, paidAt: nowIso(), txId: transactionId, orderNo: tx.orderNo, env: L.envLabel(), payType: r.info.payType || '' } // tx 用掉就移除，下次付款重建
-  log(o, '客人', `LINE Pay 付款 ${tx.amount} 元（${L.envLabel()}）`)
-  await putOrder(o, '團體訂餐(付款)')
-  notifyStaff(o, { title: '團體訂餐：客人已用 LINE Pay 付款', body: `${o.company || o.custName}｜${tx.amount.toLocaleString()} 元（${o.pay.status}）｜取餐 ${o.when || '待定'}${L.isProd() ? '' : '｜沙盒測試'}` }).catch(() => {})
+  await markPaid(o, { amount: tx.amount, method: 'LINE Pay', ref: transactionId, env: L.isProd() ? '正式' : 'LINE Pay 沙盒', extra: { orderNo: tx.orderNo, payType: r.info.payType || '' } }) // v4.71.3 與綠界共用
   return { ok: true, amount: tx.amount, status: o.pay.status }
 }
 export async function custConfirm ({ code, body }) {

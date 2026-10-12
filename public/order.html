@@ -109,7 +109,7 @@ function renderBar () {
   $('barSum').onclick = () => cartSheet('mine')
   const b = $('barBtn')
   if (D.status === 'priced') { if (isHost()) { b.textContent = '確認金額無誤'; b.disabled = false; b.onclick = confirmGo } else { b.textContent = '等主辦人確認'; b.disabled = false; b.onclick = () => cartSheet('all') } }
-  else if (D.pay && D.pay.enabled && D.pay.due > 0 && isHost()) { b.textContent = `LINE Pay 付款 $${fmt(D.pay.due)}`; b.disabled = false; b.onclick = payGo } // 💳 v4.71.1 第三批金流：確認／鎖單後主辦人付款
+  else if (D.pay && (D.pay.enabled || D.pay.ecpay) && D.pay.due > 0 && isHost()) { b.textContent = `線上付款 $${fmt(D.pay.due)}`; b.disabled = false; b.onclick = paySheet } // 💳 v4.71.1/3 第三批金流：確認／鎖單後主辦人選付款方式
   else if (!canEdit()) { b.textContent = '大家的'; b.disabled = false; b.onclick = () => cartSheet('all') }
   else if (MINE.done) { b.textContent = '已點好・修改'; b.disabled = false; b.onclick = () => cartSheet('mine') }
   else { b.textContent = '我點好了'; b.disabled = !MINE.lines.length; b.onclick = () => { MINE.done = true; mineChanged(true); toast('已點好，謝謝！'); cartSheet('all') } }
@@ -234,14 +234,28 @@ async function submitGo () {
   D = { ...d, menu: MENU }; closeOv(); render(); toast('已送出給店家，LINE 會收到確認'); window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 // 💳 付款（v4.71.1）：狀態列文字＋建立付款後整頁導去 LINE Pay；付完 LINE Pay 導回 /order/<碼>#paid=金額（或 #payfail／#paycancel）
-function payLine () { const p = D.pay; if (!p) return ''; if (p.amount > 0) return `<br>已收 ${fmt(p.amount)} 元（${esc(p.method || '')}${p.status === '已付清' ? '，已付清' : p.due > 0 ? '，尚欠 ' + fmt(p.due) + ' 元' : ''}）${p.env && p.env !== '正式' ? '<span class="sub">・' + esc(p.env) + '</span>' : ''}`; if (p.enabled && p.due > 0) return `<br>${isHost() ? '主辦人可按下方「LINE Pay 付款」線上付款，或到店付款。' : '主辦人可用 LINE Pay 線上付款，或到店付款。'}${p.env && p.env !== '正式' ? '<span class="sub">・' + esc(p.env) + '</span>' : ''}`; return '' }
-async function payGo () { const b = $('barBtn'); b.disabled = true; const d = await api({ op: 'payreq', ...idBody() }); if (!d || !d.ok || !d.url) { b.disabled = false; return toast((d && d.error) || '付款建立失敗', true) } toast('前往 LINE Pay…'); location.href = d.url }
+function payLine () { const p = D.pay; if (!p) return ''; let s = ''
+  if (p.amount > 0) s += `<br>已收 ${fmt(p.amount)} 元（${esc(p.method || '')}${p.status === '已付清' ? '，已付清' : p.due > 0 ? '，尚欠 ' + fmt(p.due) + ' 元' : ''}）`
+  else if (p.pending && p.due > 0) s += p.pending.type === 'ATM' ? `<br><b>請轉帳 ${fmt(p.pending.amount)} 元</b>：銀行代碼 <b>${esc(p.pending.bank)}</b>、帳號 <b>${esc(p.pending.account)}</b>，期限 ${esc(p.pending.expire)}。轉帳後約 10 分鐘自動入帳。` : `<br><b>超商繳費代碼 <span style="font-size:18px">${esc(p.pending.code)}</span></b>，${fmt(p.pending.amount)} 元，期限 ${esc(p.pending.expire)}。到 7-11／全家／萊爾富／OK 機台輸入代碼繳費。`
+  else if ((p.enabled || p.ecpay) && p.due > 0) s += `<br>${isHost() ? '主辦人可按下方「線上付款」' : '主辦人可線上付款'}（${[p.enabled ? 'LINE Pay' : '', p.ecpay ? '信用卡／ATM／超商' : ''].filter(Boolean).join('、')}），或到店付款。`
+  if (p.invoice) s += `<br>電子發票 <b>${esc(p.invoice.no)}</b>（${esc(p.invoice.date || '')}${p.invoice.taxId ? '，統編 ' + esc(p.invoice.taxId) : ''}${p.invoice.test ? '，測試' : ''}）`
+  if ((p.env && p.env !== '正式' && p.enabled) || p.ecpayTest) s += `<span class="sub">・測試環境，不會真的扣款</span>`
+  return s }
+function paySheet () { const p = D.pay; const ov = mkOv(); const opt = (k, t, d) => `<button class="btn" data-pay="${k}" style="width:100%;margin-top:8px;text-align:left"><b>${t}</b><div class="sub" style="font-weight:400">${d}</div></button>`
+  const ec = p.ecpayChoose || 'ALL'
+  ov.innerHTML = `<div class="sheet"><div class="hd"><div class="t"><div class="nm">線上付款 $${fmt(p.due)}</div><div class="en">選一種付款方式${p.ecpayTest || (p.env && p.env !== '正式') ? '（測試環境，不會真的扣款）' : ''}</div></div><button class="x" data-x>✕</button></div><div class="bd">
+    ${p.enabled ? opt('line', 'LINE Pay', '在 LINE 裡直接付，最快') : ''}${p.ecpay && (ec === 'ALL' || ec === 'Credit') ? opt('Credit', '信用卡', '綠界安全付款頁') : ''}${p.ecpay && (ec === 'ALL' || ec === 'ATM') ? opt('ATM', 'ATM 轉帳', '拿到專屬帳號，3 天內轉帳') : ''}${p.ecpay && (ec === 'ALL' || ec === 'CVS') ? opt('CVS', '超商代碼繳費', '7-11／全家／萊爾富／OK，3 天內') : ''}
+    ${D.taxId ? `<div style="margin-top:12px"><div class="sub">付清後會開統編 ${esc(D.taxId)}（${esc(D.company || '')}）的電子發票，綠界規定要有公司地址：</div><input id="payAddr" value="${esc(D.addr || '')}" placeholder="公司地址（開發票用）" style="width:100%;margin-top:6px"></div>` : `<div style="margin-top:12px"><div class="sub">發票通知 email（選填，沒統編的發票會存綠界載具）</div><input id="payEmail" value="${esc(D.email || '')}" type="email" placeholder="email" style="width:100%;margin-top:6px"></div>`}
+    <div class="sub" style="margin-top:12px">也可以到店付款。</div></div></div>`
+  ov.querySelector('[data-x]').onclick = closeOv
+  ov.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => payGo(b.dataset.pay)) }
+async function payGo (kind) { const b = $('barBtn'); const extra = { addr: ($('payAddr') || {}).value || '', email: ($('payEmail') || {}).value || '' }; if (D.taxId && !extra.addr.trim()) return toast('請填公司地址（開發票用）', true); b.disabled = true; closeOv(); const d = kind === 'line' ? await api({ op: 'payreq', ...extra, ...idBody() }) : await api({ op: 'ecpayreq', choose: kind, ...extra, ...idBody() }); if (!d || !d.ok || !d.url) { b.disabled = false; return toast((d && d.error) || '付款建立失敗', true) } toast(kind === 'line' ? '前往 LINE Pay…' : '前往綠界付款頁…'); location.href = d.url }
 async function confirmGo () { const d = await api({ op: 'confirm', ...idBody() }); if (!d || !d.ok) return toast((d && d.error) || '確認失敗', true); D = { ...d, menu: MENU }; render(); toast('已確認，謝謝！') }
 async function refresh () { if (!D || dirty || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared) || JSON.stringify(d.imgs) !== JSON.stringify(D.imgs) || JSON.stringify(d.pay) !== JSON.stringify(D.pay))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); if (sheet) { renderTop(); renderBar() } else { const ovOpen = !!$('ov'); render(); if (ovOpen) cartSheet('all') } } }
 setInterval(refresh, 20000); setInterval(() => { if (D && ['submitted', 'priced', 'confirmed'].includes(D.status)) refresh() }, 6000) // 審查第 5 點：等店家那段勤一點
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() }); window.addEventListener('focus', refresh)
 load()
-try { const hp = new URLSearchParams(location.hash.replace(/^#/, '')); if (hp.has('paid') || hp.has('payfail') || hp.has('paycancel')) { const msg = hp.has('paid') ? '付款完成，謝謝！店家已收到通知。' : hp.has('payfail') ? '付款沒有完成：' + (hp.get('payfail') || '') : '已取消付款，隨時可以再付。'; setTimeout(() => toast(msg, !hp.has('paid')), 600); history.replaceState(null, '', location.pathname) } } catch (_) {} // 💳 LINE Pay 導回結果
+try { const hp = new URLSearchParams(location.hash.replace(/^#/, '')); if (hp.has('paid') || hp.has('payfail') || hp.has('paycancel') || hp.has('paypending')) { const msg = hp.has('paid') ? '付款完成，謝謝！店家已收到通知。' : hp.has('paypending') ? '已取得繳費資訊，請在期限內完成付款（資訊在畫面最上方）。' : hp.has('payfail') ? '付款沒有完成：' + (hp.get('payfail') || '') : '已取消付款，隨時可以再付。'; setTimeout(() => toast(msg, !hp.has('paid')), 600); history.replaceState(null, '', location.pathname) } } catch (_) {} // 💳 LINE Pay 導回結果
 </script>
 </body>
 </html>
