@@ -380,7 +380,8 @@ function renderBoard(d, store, view){
       hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
       if (heatEditOn && canEd) hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點各時段的 ✕ 隱藏非營業／測試時段（存起來後全店都看不到、再點「恢復」拿回來）</span>${hidArr.length?`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>`:''}</div>`
       hh += `<div class="scroll" style="overflow-x:auto;overflow-y:visible"><table style="border-collapse:collapse"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th><th style="position:sticky;top:0;z-index:2;background:var(--psoft,var(--soft));color:var(--pdark,var(--ink));text-align:right">平均</th>`  // v4.70.0 字體14px同營收；v4.70.2 加各時段日均欄（色階基準，張良）
-      hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}</span></th>` }).join('')
+      const liveSet = new Set((d.days||[]).filter(x=>x.live).map(x=>x.date)) // v4.70.87 今天盤中那欄標「盤中」（數字還會變，打烊後自動換正式值）
+      hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); const lv=liveSet.has(dt); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}" title="${lv?'盤中更新中：數字之後還會變，打烊後自動換成最終值':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}${lv?'・盤中':''}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
       hrsVis.forEach(hr=>{
         const isHid = hid.has(hr)
