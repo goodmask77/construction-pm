@@ -295,6 +295,19 @@ export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
   return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText: isImg ? '（圖片）' : `（檔案）${fileName}` })
 }
 
+// v4.70.85 團體訂餐計價圖：已上傳好的圖片網址一次傳多張＋一段文字（走同一條 deliver：reply 免費否則 push）
+export async function sendImages({ who, mgr, cfg, id, urls, text }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!canReplyAcct(cfg, who, mgr, acct)) return { ok: false, error: '你只有查看權限，沒有回覆權限' }
+  if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
+  const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
+  const us = (urls || []).filter(u => /^https:\/\//.test(String(u))).slice(0, 4)
+  if (!us.length) return { ok: false, error: '沒有圖片' }
+  const messages = [...us.map(u => ({ type: 'image', originalContentUrl: u, previewImageUrl: u })), ...(text ? [{ type: 'text', text: String(text).slice(0, 4900) }] : [])]
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch: { type: 'text', text: `（計價圖 ${us.length} 張）${text ? '\n' + text : ''}` }, lastText: '（計價圖）' })
+}
 // ── 狀態／指派／備註 ──
 export async function convOp({ who, mgr, cfg, op, id, value }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)

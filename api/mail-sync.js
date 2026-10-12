@@ -4371,6 +4371,13 @@ export default async function handler(req, res) {
       if (opG === 'status') return res.status(200).json(await GO.setStatus({ who: whoG, id: String(bG.id || ''), status: String(bG.status || '') }))
       if (opG === 'parse') return res.status(200).json(await GO.parseText({ text: bG.text }))
       if (opG === 'cfg') return res.status(200).json(await GO.saveCfg(bG.cfg || {}, whoG))
+      if (opG === 'imgsave') return res.status(200).json(await GO.saveImgs({ who: whoG, id: String(bG.id || ''), p1: bG.p1, p2: bG.p2 }))
+      if (opG === 'sendimgs') {
+        const IB = await import('./_inbox.js')
+        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
+        return res.status(200).json(await GO.sendImgs({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
+      }
       if (opG === 'sendlink') {
         const IB = await import('./_inbox.js')
         const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
