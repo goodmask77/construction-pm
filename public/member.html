@@ -43,7 +43,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
 <body>
 <div class="wrap" id="root"><div class="brand"><b>GROUN:D</b><small>會員卡</small></div><div class="card sub" id="loading">讀取中…</div></div>
 <div class="toast" id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script><!-- 跟 /prep 兌換券同一套 QR 產生器（原本用的 qrcode@1.5.3 路徑 404，QR 一片空白） -->
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script>
 (async () => {
@@ -66,7 +66,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
   async function loadMe () {
     const d = await api({ op: 'me', ...SES })
     if (d && d.ok) { ME = d; render(); return true }
-    if (d && d.needConsent) { renderConsent(); return true }
+    if (d && d.needConsent) { const w2 = await api({ op: 'who2', ...SES }); if (w2 && w2.ok) W = { ...(W || {}), ...w2 }; renderConsent(); return true } // 中繼帶來的 W 沒有告知文字，先補
     return false
   }
   // 試上次 session，不行再走 LIFF
@@ -94,7 +94,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
     $('root').innerHTML = `<div class="brand"><b>GROUN:D</b><small>會員卡</small></div>
       <div class="mcard"><div class="row" style="justify-content:space-between"><div><div class="lbl">MEMBER</div><div class="nm">${esc(m.name)}</div></div>${m.pic ? `<img src="${esc(m.pic)}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.7)">` : ''}</div>
         <div style="margin-top:14px" class="row"><div style="flex:1"><div class="lbl">可用點數</div><div class="pts">${fmt(ME.balance)}</div></div><div><div class="lbl">會員號碼</div><div class="mno">${esc(m.mno || '')}</div></div></div>
-        <div class="qrbox"><canvas id="qr"></canvas><div class="sub" style="margin-top:6px;color:#555">結帳時出示此 QR 或報會員號碼・<span id="qrT">60</span> 秒自動更新</div></div></div>
+        <div class="qrbox"><img id="qr" alt="會員 QR"><div class="sub" style="margin-top:6px;color:#555">結帳時出示此 QR 或報會員號碼・<span id="qrT">60</span> 秒自動更新</div></div></div>
       ${gameCard()}
       <div class="card"><h3>怎麼累點</h3><div class="sub">每消費 ${ME.perAmt} 元 1 點，結帳時給店員掃 QR 或報會員號碼。團體訂餐用 LINE 登入點餐會自動累點。</div>${ME.invoiceScan ? `<button class="btn" id="btnInv" style="width:100%;margin-top:8px">掃發票自己集點（48 小時內）</button>` : ''}</div>
       <div class="card"><h3>可以換什麼</h3>${rws || '<div class="sub">尚未開放</div>'}<div class="sub" style="margin-top:6px">到櫃檯出示會員卡，請店員幫您兌換（直接扣點）。</div></div>
@@ -166,7 +166,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
     h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => { if (busy) return; busy = true; $('invMsg').textContent = '登錄中…'; const d = await api({ op: 'invoice', ...SES, qr: txt }); if (!d || !d.ok) { busy = false; $('invMsg').innerHTML = `<span style="color:var(--red)">${esc((d && d.error) || '登錄失敗')}</span>`; return } stop(); ME = d; render(); toast(`發票 ${d.no} 已登錄，+${d.pts} 點`) }, () => {}).catch(() => { $('invMsg').innerHTML = '<span style="color:var(--red)">開不了鏡頭，請允許相機權限</span>' })
   }
   async function refreshMe () { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } }
-  function drawQR () { try { const c = $('qr'); if (c && window.QRCode) QRCode.toCanvas(c, ME.qr, { width: 200, margin: 1, color: { dark: '#2b1d18' } }) } catch (_) {} }
+  function drawQR () { try { const c = $('qr'); if (!c || typeof qrcode !== 'function') return; const q = qrcode(0, 'M'); q.addData(ME.qr); q.make(); c.src = q.createDataURL(6, 2) } catch (e) { const c = $('qr'); if (c) c.alt = 'QR 產生失敗，請報會員號碼' } }
   document.addEventListener('visibilitychange', async () => { if (!document.hidden && ME && SES) { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } } })
 })()
 </script>
