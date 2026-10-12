@@ -140,7 +140,8 @@ export async function ingestEvent(a, ev, destination) {
   if (ev.type === 'message') {
     const m = ev.message || {}
     msg = { id: '', convId: conv.id, t: new Date(t).toISOString(), dir: 'in', type: m.type || 'text', name: conv.name }
-    if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text }
+    if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text
+      if (a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user' && /會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
     else if (m.type === 'sticker') { msg.sticker = { pkg: m.packageId, id: m.stickerId }; text = '（貼圖）' }
     else if (m.type === 'location') { msg.text = [m.title, m.address].filter(Boolean).join(' '); msg.loc = { lat: m.latitude, lng: m.longitude }; text = '（位置）' + (m.address || '') }
     else if (['image', 'video', 'audio', 'file'].includes(m.type)) {
@@ -203,6 +204,15 @@ export function ddInboxOut(text, to, mode) {
 }
 export async function ddInboxFlush() { const ps = _dd.pend.splice(0); _dd.ev = null; _dd.p = null; if (ps.length) await Promise.allSettled(ps) }
 
+async function memberAutoReply(a, uid, token, conv) {
+  const MB = await import('./_member.js'); const url = MB.memberLiffUrl()
+  let text
+  try { const r = await MB.byUid(uid); const m = r && r.member
+    text = m ? `${m.name || ''} 你目前有 ${m.balance} 點（會員號碼 ${m.mno}）。\n點下面開啟會員卡看明細、出示 QR 累點：\n${url}` : `還沒加入 GROUN:D 會員嗎？點下面一鍵加入（會自動帶入你的 LINE 名字），之後消費出示會員卡就能累點：\n${url}`
+  } catch (_) { text = `點下面開啟會員卡查點數：\n${url}` }
+  const r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: text.slice(0, 4900) }] }) })
+  if (r.ok) { const t = Date.now(); const mk = msgKey(a.key, uid, t); await kvInsert(mk, { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: '系統', mode: 'reply', type: 'text', text }) } // 收件匣看得到系統回了什麼
+}
 async function welcomeReply(a, token) { const { welcomeText } = await import('./_member.js'); const text = await welcomeText(); await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }) }) }
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──
 export async function permRids(acct, forRemind) { // export：團體訂餐（_grporder.js）通知店家時沿用「誰看得到這個帳號」
