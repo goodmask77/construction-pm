@@ -295,18 +295,63 @@ async function weather14() {
 // 班表（NUEiP 同步月檔 sp_crew_pm_hr_sched_）：某日排班人數／總時數／名單（休例假沒 start 不算）
 const hhm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? +m[1] * 60 + +m[2] : null }
 function shiftStat(list) {
-  const o = { n: 0, h: 0, fo: 0, ki: 0, names: [] }
+  const o = { n: 0, h: 0, fo: 0, ki: 0, lh: 0, dh: 0, names: [] } // lh/dh＝午場（16:00 前）／晚場（16:00 後）人力時數（v4.70.81 人力建議用）
   for (const x of list || []) {
     const a = hhm(x.start), b = hhm(x.end); if (a == null || b == null) continue
     let mins = b - a; if (mins <= 0) mins += 1440
     const brk = Number(x.brk) || 0; mins -= brk >= 30 ? brk : brk * 60 // brk 可能是分鐘或小時
     if (mins <= 0) continue
     o.n++; o.h += mins / 60
+    const lm = Math.max(0, Math.min(b, 16 * 60) - a); o.lh += Math.min(lm, mins) / 60; o.dh += Math.max(0, mins - lm) / 60
     if (/內/.test(x.dept || '')) o.ki++; else o.fo++
     o.names.push(`${x.name}${x.pt ? '(PT)' : ''} ${x.start}-${x.end}`)
   }
-  o.h = +o.h.toFixed(1)
+  o.h = +o.h.toFixed(1); o.lh = +o.lh.toFixed(1); o.dh = +o.dh.toFixed(1)
   return o
+}
+// 要你做的事（v4.70.81 從前端搬到後端：首頁、DD、每週一摘要三邊同一份；每條有穩定 key＝可勾完成／派任務）
+// 文字用 **粗體** 標記，前端轉 <b>、LINE 去掉星號
+const mdOf = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}`
+const wdOf = (d) => '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+const isWkd = (d) => [0, 5, 6].includes(new Date(d + 'T00:00:00Z').getUTCDay())
+function custActs(ol) {
+  const acts = [], td = ol.today
+  const lvOf = (x) => { const base = x.ly.pos || x.ly.g; if (!base) return { k: 'na', r: null }; const r = (x.est || x.g) / base; return { k: r >= 0.8 ? 'hot' : r < 0.5 ? 'cold' : 'ok', r } }
+  for (const x of ol.hols || []) {
+    if (x.status === 'behind') acts.push({ k: `hol_${x.from}`, d: '0', p: 0, kind: 'hol', c: '#F07373', t: `**${x.name}**倒數 ${x.left} 天，已訂 ${x.g} 人只有去年此時（${x.ly.then}）的 ${x.ratio}%：按「去年來過、今年沒訂」撈名單＋產文案推給他們、社群發連假檔期` })
+  }
+  for (const x of ol.days || []) {
+    const lv = lvOf(x), lb = `${mdOf(x.d)}（${wdOf(x.d)}）`, pc = lv.r != null ? Math.round(lv.r * 100) : null, base = x.ly.pos || x.ly.g
+    if (x.uc) acts.push({ k: `uc_${x.d}`, d: x.d, p: 1, kind: 'uc', c: '#E8A657', t: `${lb}有 **${x.uc} 組 ${x.ucG} 人**待確認，請電話確認` })
+    if (x.big) acts.push({ k: `big_${x.d}`, d: x.d, p: 2, kind: 'big', c: '#C792EA', t: `${lb}有 **${x.big} 組 20 人以上大組**：留桌、備料、排人` })
+    if (lv.k === 'hot') acts.push({ k: `hot_${x.d}`, d: x.d, p: 3, kind: 'hot', c: '#F07373', t: `${lb}已訂 ${x.g} 人、預估最終 **${x.est} 人**，是去年同日 ${base} 人的 ${pc}%：排班加人、備料加量${x.wl ? '、候補已有 ' + x.wl + ' 組' : ''}` })
+    // 人力：排班時數 vs 「近 8 週同週幾平均時數 × 預估人次／平均人次」＝這天需要的時數；差 1 人以上才講，講到時段與人數（v4.70.81 第 6 項）
+    if (x.sh && x.sh.h && x.sh.avgH && x.sh.avgG) {
+      const need = +(x.sh.avgH * Math.min(1.8, Math.max(0.6, (x.est || x.g) / x.sh.avgG))).toFixed(1)
+      const diff = +(x.sh.h - need).toFixed(1), per = x.sh.n ? Math.max(5, x.sh.h / x.sh.n) : 7 // 一人一班平均時數
+      const slot = (x.l + x.dn) ? (x.l >= x.dn ? '午場' : '晚場') : (x.sh.lh >= x.sh.dh ? '午場' : '晚場')
+      if (diff <= -per) acts.push({ k: `staffL_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#F07373', t: `${lb}預估 ${x.est || x.g} 人（近 8 週同週幾平均 ${x.sh.avgG} 人排 ${x.sh.avgH} 小時）需要約 ${need} 小時，現排 ${x.sh.n} 人 ${x.sh.h} 小時：**${slot}建議加 ${Math.ceil(-diff / per)} 人**（約 ${Math.round(-diff)} 小時）` })
+      else if (diff >= per && x.d > td) { const cut = x.sh.lh >= x.sh.dh ? '午場' : '晚場'; acts.push({ k: `staffH_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#8C98A8', t: `${lb}預估只有 ${x.est || x.g} 人（平均 ${x.sh.avgG}），需要約 ${need} 小時，現排 ${x.sh.n} 人 ${x.sh.h} 小時：**${cut}可少 ${Math.floor(diff / per)} 人**（省約 ${Math.round(diff)} 小時）` }) }
+    }
+    if (x.wx && x.wx.pop >= 60 && isWkd(x.d)) acts.push({ k: `rain_${x.d}`, d: x.d, p: 5, kind: 'rain', c: '#6EB1FF', t: `${lb}降雨機率 ${x.wx.pop}%（${x.wx.n}）：週末現場客會少，備料保守、提醒訂位客` })
+    if (lv.k === 'cold' && isWkd(x.d) && x.d > td) acts.push({ k: `cold_${x.d}`, d: x.d, p: 4, kind: 'cold', c: '#8C98A8', t: `${lb}週末已訂 ${x.g} 人、預估最終只有 **${x.est} 人**（去年同日 ${base}）：社群發文、推熟客補客` })
+  }
+  for (const x of ol.week || []) { if (x.ratio != null && x.ratio < 70) acts.push({ k: `low_${x.d}`, d: x.d, p: 6, kind: 'low', c: '#E8A657', t: `上週 ${mdOf(x.d)}（${wdOf(x.d)}）只來 **${x.g} 人**，近 8 週同週幾平均 ${x.base}（${x.ratio}%）：查那天發生什麼（天氣／活動／評論）` }) }
+  acts.sort((a, b) => a.d.localeCompare(b.d) || a.p - b.p)
+  return acts.slice(0, 12)
+}
+const ACT_ST_KEY = 'sp_finance_pm_inline_actst' // 行動建議狀態 {keys:{k:{st:'done',by,at,tid}}}；key 帶日期，30 天自動清
+async function actStates() { const d = (await kvGet(ACT_ST_KEY)) || { keys: {} }; const lim = addDays(twToday(), -30); for (const k of Object.keys(d.keys || {})) { const m = /(\d{4}-\d{2}-\d{2})/.exec(k); if (m && m[1] < lim) delete d.keys[k] }; return d }
+// 身分：GD 個人連結 token → 名字（跟 mail-sync permWho 同一套：綁定檔＋名冊停權＋核准模式）；守門 inline 分頁
+async function whoTok(tk) {
+  if (!tk) return null
+  const b = (await kvGet('sp_finance_pm_prep_bind')) || {}
+  const w = (b.tokens || {})[tk]; if (!w) return null
+  try { const r5 = (await kvGet('sp_crew_kb_roster')) || {}; const p5 = (r5.people || []).find((x) => x.id === w.rid); if (p5 && p5.gdRole === '停權') return null } catch (_) {}
+  const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
+  if (pm.mode !== 'approve') return w
+  const u = pm.users[w.rid || w.uid]
+  return (u && u.edit && (u.admin || !u.tabs || u.tabs.cust !== 0)) ? w : null
 }
 async function custOutlook() {
   const today = twToday(), y0 = +today.slice(0, 4)
@@ -343,10 +388,16 @@ async function custOutlook() {
   const wdG = Array.from({ length: 7 }, () => []), wdH = Array.from({ length: 7 }, () => [])
   for (const d of PAST.slice(-56)) { const w = new Date(d + 'T00:00:00Z').getUTCDay(); const g = dayStat(dayArr(d)).g; if (g) wdG[w].push(g); const sh = shiftStat(schArr(d)); if (sh.h) wdH[w].push(sh.h) }
   const avg = (a) => a.length ? Math.round(a.reduce((t, v) => t + v, 0) / a.length * 10) / 10 : 0
-  const days = H14.map((d) => {
+  // 進單曲線（v4.70.81 第 1 項「預估最終」）：近 8 週每一天，「距當天還剩 L 天時已訂的人次 ÷ 最終到店人次」，週末／假日與平日分開算
+  // → 未來第 L 天的預估最終＝目前已訂 ÷ 曲線[L]。13 天後的日子本來就還沒訂滿，不能直接跟去年最終比，這樣才公平
+  const fill = { w: Array.from({ length: 14 }, () => [0, 0]), d: Array.from({ length: 14 }, () => [0, 0]) }
+  for (const d of PAST.slice(-56)) { const arr = dayArr(d), g = dayStat(arr).g; if (!g) continue; const f = (isWkd(d) || hol[d]) ? fill.w : fill.d; for (let L = 0; L < 14; L++) { f[L][0] += bookedBy(arr, addDays(d, -L)); f[L][1] += g } }
+  const fillAt = (d, L) => { const f = ((isWkd(d) || hol[d]) ? fill.w : fill.d)[L]; return f && f[1] >= 40 ? f[0] / f[1] : null }
+  const days = H14.map((d, i) => {
     const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly)), w = new Date(d + 'T00:00:00Z').getUTCDay()
     const sh = shiftStat(schArr(d))
-    return { d, hol: holShort(hol[d] || ''), ...s, wx: wx[d] || null, sh: { n: sh.n, h: sh.h, fo: sh.fo, ki: sh.ki, names: sh.names.slice(0, 30), avgH: avg(wdH[w]), avgG: avg(wdG[w]) }, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
+    const fr = fillAt(d, i), est = fr != null && fr >= 0.15 ? Math.round(s.g / fr) : s.g
+    return { d, hol: holShort(hol[d] || ''), ...s, est: Math.max(est, s.g), fill: fr != null ? Math.round(fr * 100) : null, wx: wx[d] || null, sh: { n: sh.n, h: sh.h, fo: sh.fo, ki: sh.ki, lh: sh.lh, dh: sh.dh, names: sh.names.slice(0, 30), avgH: avg(wdH[w]), avgG: avg(wdG[w]) }, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
   })
   // ② 連假倒數
   const hols = blocks.map((b) => {
@@ -359,7 +410,8 @@ async function custOutlook() {
     for (const d of ly.days) { const arr = dayArr(d); lyThen += bookedBy(arr, cutoff); lyFinal += dayStat(arr).g; lyPos += (pos[d] || {}).g || 0; lyRev += (pos[d] || {}).rev || 0 }
     const ratio = lyThen ? Math.round(g / lyThen * 100) : null
     const status = ratio == null ? 'na' : ratio < 70 ? 'behind' : ratio > 110 ? 'ahead' : 'ok'
-    return { name: b.name, from: b.from, to: b.to, days: b.days, left, g, r, uc, ly: { from: ly.from, to: ly.to, approx: !!ly.approx, then: lyThen, final: lyFinal, pos: lyPos, rev: lyRev }, ratio, status, gap: Math.max(0, lyFinal - g) }
+    const est = lyThen && lyFinal ? Math.max(g, Math.round(g * lyFinal / lyThen)) : g // 照去年同距離天數的進單比例推最終
+    return { name: b.name, from: b.from, to: b.to, days: b.days, left, g, r, uc, est, ly: { from: ly.from, to: ly.to, approx: !!ly.approx, then: lyThen, final: lyFinal, pos: lyPos, rev: lyRev }, ratio, status, gap: Math.max(0, lyFinal - g) }
   })
   // ③ 近 7 天回顧：每天到店人次 vs 近 8 週同週幾平均（±30% 點名）＋POS 真實來客/營收
   const week = PAST.slice(-7).map((d) => {
@@ -367,7 +419,49 @@ async function custOutlook() {
     const base = avg(wdG[w].filter((_, i) => true)), ratio = base ? Math.round(s.g / base * 100) : null
     return { d, g: s.g, r: s.r, l: s.l, dn: s.dn, base, ratio, pos: (pos[d] || {}).g || 0, rev: (pos[d] || {}).rev || 0, sh: shiftStat(schArr(d)).h }
   })
-  return { today, seats: SEATS_AB, days, hols, week, builtAt: new Date().toISOString() }
+  const ol = { today, seats: SEATS_AB, days, hols, week, builtAt: new Date().toISOString() }
+  ol.acts = custActs(ol)
+  return ol
+}
+// 連假「去年來過、今年還沒訂」名單（v4.70.81 第 5 項）：去年同一個假（或去年同週同日）有效訂位且有電話的客人，今年到連假結束前都沒再訂 → 推給他們
+async function holLost(ol, from) {
+  const h = (ol.hols || []).find((x) => x.from === from); if (!h) return null
+  const need = new Set([...h.ly.days || dateRange(h.ly.from, h.ly.to), ...dateRange(ol.today, h.to)].map((d) => d.slice(0, 7)))
+  const docs = {}; await Promise.all([...need].map(async (m) => { docs[m] = (await kvGet('sp_finance_pm_inline_' + m)) || { days: {} } }))
+  const arr = (d) => (docs[d.slice(0, 7)] || { days: {} }).days[d] || []
+  const digits = (p) => String(p || '').replace(/\D/g, '')
+  const booked = new Set()
+  for (const d of dateRange(ol.today, h.to)) for (const r of arr(d)) { if (!isCx(r) && digits(r.phone).length >= 8) booked.add(digits(r.phone)) }
+  const seen = {}
+  for (const d of dateRange(h.ly.from, h.ly.to)) for (const r of arr(d)) {
+    if (isCx(r) || r.ty === 4) continue
+    const ph = digits(r.phone); if (ph.length < 8 || booked.has(ph)) continue
+    const c = seen[ph] = seen[ph] || { nm: r.name || '', ph: r.phone || '', n: 0, d, t: r.t || '', note: '' }
+    if ((r.n || 0) > c.n) { c.n = r.n || 0; c.nm = r.name || c.nm; c.d = d; c.t = r.t || ''; c.note = String(r.note || r.inote || '').replace(/Purpose:.*?(,|$)/, '').slice(0, 30) }
+  }
+  const rows = Object.values(seen).sort((a, b) => b.n - a.n)
+  return { name: h.name, from: h.from, to: h.to, left: h.left, lyFrom: h.ly.from, lyTo: h.ly.to, approx: h.ly.approx, rows, total: rows.length, g: rows.reduce((t, r) => t + r.n, 0) }
+}
+// 每週一 09:00 LINE 摘要（v4.70.81 第 3 項）：本週 7 天預估 vs 去年、連假倒數、上週回顧、前五件要做的事；跟首頁同一份數字
+async function weeklyDigest(ol) {
+  const tw = new Date(Date.now() + 8 * 3600e3)
+  if (tw.getUTCDay() !== 1 || tw.getUTCHours() !== 9) return { skip: 'notMon9' }
+  const log = (await kvGet('sp_finance_pm_inline_alerts')) || {}
+  const k = 'wk_' + ol.today; if (log[k]) return { skip: 'sent' }
+  log[k] = new Date().toISOString(); await kvPut('sp_finance_pm_inline_alerts', log, 'inline每週摘要')
+  const st = await actStates()
+  const wk = ol.days.slice(0, 7)
+  const lines = [`📊 本週展望（${mdOf(wk[0].d)}～${mdOf(wk[6].d)}）`]
+  for (const x of wk) { const base = x.ly.pos || x.ly.g; const pc = base ? Math.round((x.est || x.g) / base * 100) : null; lines.push(`${mdOf(x.d)}(${wdOf(x.d)})${x.hol ? x.hol : ''} 已訂${x.g}→預估${x.est}${base ? `／去年${base}(${pc}%)` : ''}${x.uc ? `・待確認${x.uc}組` : ''}${x.wx && x.wx.pop >= 60 ? `・${x.wx.n}${x.wx.pop}%` : ''}`) }
+  for (const h of ol.hols || []) { if (h.left <= 60) lines.push(`📅 ${h.name} 倒數 ${h.left} 天：已訂 ${h.g}${h.ly.then ? `／去年此時 ${h.ly.then}（${h.ratio}%${h.status === 'behind' ? '，落後' : h.status === 'ahead' ? '，超前' : ''}）` : ''}`) }
+  const tot = ol.week.reduce((t, x) => t + x.g, 0), totB = ol.week.reduce((t, x) => t + x.base, 0)
+  lines.push(`↩ 上週到店 ${tot} 人${totB ? `，近 8 週同期平均 ${Math.round(totB)}（${Math.round(tot / totB * 100)}%）` : ''}`)
+  const open = (ol.acts || []).filter((a) => !((st.keys || {})[a.k] || {}).st).slice(0, 5)
+  if (open.length) { lines.push('✅ 要你做的事：'); open.forEach((a, i) => lines.push(`${i + 1}. ${a.t.replace(/\*\*/g, '')}`)) }
+  lines.push('完整版：/prep → inline')
+  const { notifyOps } = await import('./_onboard.js')
+  await notifyOps(lines.join('\n'))
+  return { weekly: 1 }
 }
 // 明日大組未確認（第二批）：每天台灣 16 點那次 cron，明天 6 人以上還是「待確認」→ 私訊審核人；一天一次
 async function bigAlert() {
@@ -387,10 +481,10 @@ async function bigAlert() {
   return { big: big.length }
 }
 // 連假落後提醒（cron 每小時進來、台灣時間 10 點那次才跑）：距連假 14／7／3 天時，已訂低於去年同期七成 → 私訊審核人；同一假同一天數只發一次
-async function holidayAlert() {
+async function holidayAlert(ol) {
   const h = new Date(Date.now() + 8 * 3600e3).getUTCHours()
   if (h !== 10) return { skip: 'not10' }
-  const ol = await custOutlook()
+  ol = ol || await custOutlook()
   const log = (await kvGet('sp_finance_pm_inline_alerts')) || {}
   const sent = []
   for (const x of ol.hols) {
@@ -434,11 +528,59 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
       return res.status(200).json({ ok: true, ins: ins || null, idx: idx || null, months: (sum2 || {}).months || {}, farFuture: (sum2 || {}).farFuture || [], dayNotes: (sum2 || {}).dayNotes || {} })
     }
-    if (req.query?.custoutlook) { // ?custoutlook=OPS → 近期展望（未來14天＋連假倒數；v4.70.63）
+    if (req.query?.custoutlook) { // ?custoutlook=OPS → 近期展望（未來14天＋連假倒數＋要你做的事；v4.70.63／v4.70.81 加預估最終與行動狀態）
       if (!ok9(req.query.custoutlook)) return res.status(403).json({ ok: false })
-      const ol = await custOutlook()
+      const [ol, st] = await Promise.all([custOutlook(), actStates()])
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
-      return res.status(200).json({ ok: true, ...ol })
+      return res.status(200).json({ ok: true, ...ol, st: st.keys || {} })
+    }
+    if (req.query?.custact) { // POST ?custact=OPS {token,key,op:'done'|'undo'|'task',owner,due,title} → 行動建議勾完成／派成任務（v4.70.81 第 4 項）
+      if (!ok9(req.query.custact)) return res.status(403).json({ ok: false })
+      let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+      const w = await whoTok(b.token); if (!w) return res.status(403).json({ ok: false, error: '要先綁定 GD（DD 私訊「綁定GD」）才能勾選' })
+      const key = String(b.key || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40); if (!key) return res.status(400).json({ ok: false, error: '缺 key' })
+      const st = await actStates(); st.keys = st.keys || {}
+      const op = String(b.op || 'done')
+      if (op === 'undo') delete st.keys[key]
+      else if (op === 'done') st.keys[key] = { st: 'done', by: w.name, at: new Date().toISOString() }
+      else if (op === 'task') {
+        const title = String(b.title || '').replace(/\*\*/g, '').slice(0, 80); if (!title) return res.status(400).json({ ok: false, error: '缺標題' })
+        const owner = String(b.owner || '').slice(0, 30) || undefined, due = /^\d{4}-\d{2}-\d{2}$/.test(b.due || '') ? b.due : ''
+        const id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), now = new Date().toISOString()
+        await kvPut('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')')
+        try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvPut('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }, ...arr].slice(0, 200), '/prep inline') } catch (_) {}
+        await announceChanged()
+        st.keys[key] = { st: 'task', by: w.name, at: now, tid: id, owner }
+      } else return res.status(400).json({ ok: false, error: '未知 op' })
+      await kvPut(ACT_ST_KEY, st, '/prep inline(' + w.name + ')')
+      return res.status(200).json({ ok: true, st: st.keys, tid: (st.keys[key] || {}).tid || null })
+    }
+    if (req.query?.custholly) { // ?custholly=OPS&from=YYYY-MM-DD → 連假「去年來過、今年還沒訂」名單（v4.70.81 第 5 項）
+      if (!ok9(req.query.custholly)) return res.status(403).json({ ok: false })
+      const ol = await custOutlook()
+      const out = await holLost(ol, String(req.query.from || ''))
+      if (!out) return res.status(404).json({ ok: false, error: '這個連假不在倒數卡裡' })
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      return res.status(200).json({ ok: true, ...out })
+    }
+    if (req.query?.custholcopy) { // POST ?custholcopy=OPS {token,from} → AI 寫三版 LINE 推播文案（走 AI 中樞 route=social）
+      if (!ok9(req.query.custholcopy)) return res.status(403).json({ ok: false })
+      let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+      const w = await whoTok(b.token); if (!w) return res.status(403).json({ ok: false, error: '要先綁定 GD 才能用 AI 產文案' })
+      const ol = await custOutlook()
+      const h = (ol.hols || []).find((x) => x.from === String(b.from || '')); if (!h) return res.status(404).json({ ok: false, error: '這個連假不在倒數卡裡' })
+      const { aiCall } = await import('./_ai.js')
+      const rng = h.from === h.to ? `${mdOf(h.from)}（${wdOf(h.from)}）` : `${mdOf(h.from)}～${mdOf(h.to)}`
+      const sys = '你是台北信義區餐酒館 A Beach 101&Pizza 的行銷，寫給「去年這個連假來過、今年還沒訂位」的老客人的 LINE 私訊。繁體中文、口語、親切不油、不要表情符號堆疊（最多 1 個）、每版 60～110 字、結尾一定有訂位行動呼籲（回覆這則訊息或點訂位連結）。只輸出 JSON：{"versions":["…","…","…"]}，三版角度不同：①老朋友想念感 ②連假檔期快滿提醒 ③家庭／朋友聚會場景。不要編造優惠。'
+      const usr = `連假：${h.name}（${rng}），倒數 ${h.left} 天。目前已訂 ${h.g} 人，去年同期已訂 ${h.ly.then} 人。店的特色：海灘風餐酒館、披薩、適合聚餐慶生。${b.extra ? '老闆補充：' + String(b.extra).slice(0, 200) : ''}`
+      let versions = []
+      try {
+        const r = await aiCall('social', { system: sys, messages: [{ role: 'user', content: usr }], maxTokens: 900 })
+        let s = String(r.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+        try { versions = JSON.parse(s).versions || [] } catch (_) { const m = s.match(/\{[\s\S]*\}/); if (m) { try { versions = JSON.parse(m[0]).versions || [] } catch (_) {} } }
+        if (!versions.length && s) versions = [s]
+      } catch (e) { return res.status(200).json({ ok: false, error: 'AI 沒回：' + (e?.message || e) }) }
+      return res.status(200).json({ ok: true, versions: versions.map((v) => String(v).trim()).filter(Boolean).slice(0, 3) })
     }
     if (req.query?.custnr) { // ?custnr=OPS&ym=2026-10 → 該月新/回「逐筆名單」（眼見為憑，張良 2026-10-04）
       if (!ok9(req.query.custnr)) return res.status(403).json({ ok: false })
@@ -526,9 +668,11 @@ export default async function handler(req, res) {
       const idx = await kvGet('sp_finance_pm_inline_custidx')
       if (!idx?.builtAt || Date.now() - new Date(idx.builtAt).getTime() > 20 * 3600e3) cb = await custBuild()
     } catch (e) { cb = { custErr: e?.message } }
-    let ha = {}
-    try { ha = await holidayAlert() } catch (e) { ha = { alertErr: e?.message } }
+    let ha = {}, ol9 = null
+    try { ol9 = await custOutlook(); const { days, ...slim } = ol9; await kvPut('sp_finance_pm_inline_outlook', { ...slim, days: days.map(({ list, ...x }) => x) }, 'inline近期展望快照') } catch (e) { ha.olErr = e?.message } // 快照給 DD／App AI 讀（不含逐筆名單）
+    try { Object.assign(ha, await holidayAlert(ol9)) } catch (e) { ha.alertErr = e?.message }
     try { Object.assign(ha, await bigAlert()) } catch (e) { ha.bigErr = e?.message }
+    try { if (ol9) Object.assign(ha, await weeklyDigest(ol9)) } catch (e) { ha.wkErr = e?.message }
     return res.status(200).json({ ok: true, ...out, ...far, ...cb, ...ha })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
