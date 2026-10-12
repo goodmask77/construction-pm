@@ -48,7 +48,8 @@ async function goOpen (id) {
   try { history.replaceState(null, '', location.pathname + location.search + '#tab=gorder&id=' + id) } catch (_) {}
 }
 function goOpt (kind, sel, menu) {
-  const items = GC().flatItems(menu).filter(i => kind === 'main' ? i.kind !== 'pizza' && i.kind !== 'drink' : i.kind === kind)
+  if (kind === 'main') return `<option value="">—</option>` + menu.sections.map(s => `<optgroup label="${goEsc(s.name)}">` + s.items.map(i => `<option value="${i.id}" ${sel === i.id ? 'selected' : ''} ${i.soon ? 'disabled' : ''}>${goEsc(i.name)}${i.soon ? '（即將上線）' : ' ' + i.price}</option>`).join('') + '</optgroup>').join('') // 一道可以是任何品項（披薩、飲料單點都算）
+  const items = GC().flatItems(menu).filter(i => i.kind === kind)
   return `<option value="">—</option>` + items.map(i => `<option value="${i.id}" ${sel === i.id ? 'selected' : ''} ${i.soon ? 'disabled' : ''}>${goEsc(i.name)}${i.soon ? '（即將上線）' : ' ' + i.price}</option>`).join('')
 }
 function goRenderDetail () {

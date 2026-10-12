@@ -20,7 +20,7 @@ export function normMenu (doc) {
 export function flatItems (menu) { const out = []; for (const s of (menu.sections || [])) for (const it of s.items) out.push({ ...it, kind: s.kind, sec: s.key, secName: s.name, photo: s.photo }); return out }
 export function itemOf (menu, id) { if (!id) return null; for (const s of (menu.sections || [])) { const it = s.items.find(x => x.id === id); if (it) return { ...it, kind: s.kind, sec: s.key, secName: s.name, photo: s.photo } } return null }
 // 可不可以升級套餐：主餐類；副餐／飲品／披薩不行
-export const canSet = (it) => !!it && it.kind === 'main'
+export const canSet = (it) => !!it && (it.kind === 'main' || it.kind === 'pizza') // 披薩也能 +89 升級套餐（張良 2026-10-12）
 // 口味選項（從品名推：「原味/川味麻辣」「原味 / ZERO」「飯 / 沙拉」「I/H」＝冰/熱）
 export function variantsOf (it) {
   if (!it) return []

@@ -54,7 +54,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
 <div class="sticky" id="sticky" hidden><div><div class="sub" id="totSub"></div><div class="big" id="tot"></div></div><button class="btn red" id="mainBtn"></button></div>
 <div class="toast" id="toast"></div>
 <script type="module">
-import GC from '/ops/js/grporder-calc.js?v=4778'
+import GC from '/ops/js/grporder-calc.js?v=4798'
 const code = (location.pathname.match(/\/order\/([a-z0-9]+)/i) || [])[1] || new URLSearchParams(location.search).get('c') || ''
 const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const fmt = n => Math.round(Number(n) || 0).toLocaleString('zh-TW')
