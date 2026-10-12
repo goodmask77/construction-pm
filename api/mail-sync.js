@@ -4433,6 +4433,8 @@ export default async function handler(req, res) {
         if (opM === 'cfg') return res.status(200).json({ ok: true, cfg: await MB.loadCfg() })
         if (opM === 'campaigns') return res.status(200).json({ ok: true, list: await MB.listCampaigns() })
         if (opM === 'byuid') return res.status(200).json(await MB.byUid(String(req.query.uid || '')))
+        if (opM === 'settle') return res.status(200).json(await MB.settlement({ month: req.query.month }))
+        if (opM === 'surveys') return res.status(200).json(await MB.surveysList({ days: req.query.days }))
         if (opM === 'report') return res.status(200).json(await MB.report({ days: req.query.days }))
         if (opM === 'pushpreview') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json({ ...(await MB.pushPreview({ segment: String(req.query.segment || 'all') })), log: await MB.pushLog() }) }
         if (opM === 'campaign') return res.status(200).json(await MB.campaignStats({ id: String(req.query.id || '') }))
@@ -4440,8 +4442,8 @@ export default async function handler(req, res) {
       }
       if (opM === 'find') return res.status(200).json(await MB.resolveMember(bM.key))
       if (!canM) return res.status(403).json({ ok: false, error: '沒有「會員」分頁的編輯權限（請主管在權限頁開）' })
-      if (opM === 'earn') return res.status(200).json(await MB.earn({ who: whoM, mgr: mgrM, key: bM.key, amount: bM.amount, posNo: bM.posNo, reqId: bM.reqId, note: bM.note }))
-      if (opM === 'redeem') return res.status(200).json(await MB.redeem({ who: whoM, key: bM.key, rewardId: bM.rewardId, reqId: bM.reqId }))
+      if (opM === 'earn') return res.status(200).json(await MB.earn({ who: whoM, mgr: mgrM, key: bM.key, amount: bM.amount, posNo: bM.posNo, reqId: bM.reqId, note: bM.note, store: bM.store }))
+      if (opM === 'redeem') return res.status(200).json(await MB.redeem({ who: whoM, key: bM.key, rewardId: bM.rewardId, reqId: bM.reqId, store: bM.store, cashAmt: bM.cashAmt }))
       if (opM === 'adjust') return res.status(200).json(await MB.adjust({ who: whoM, mgr: mgrM, id: String(bM.id || ''), pts: bM.pts, reason: bM.reason, reqId: bM.reqId }))
       if (opM === 'create') return res.status(200).json(await MB.createByStaff({ who: whoM, name: bM.name, phone: bM.phone, note: bM.note }))
       if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
@@ -4468,6 +4470,7 @@ export default async function handler(req, res) {
       if (opC === 'leave') return res.status(200).json(await MB.custLeave({ body: bC }))
       if (opC === 'draw') return res.status(200).json(await MB.custDraw({ body: bC }))
       if (opC === 'invoice') return res.status(200).json(await MB.custInvoice({ body: bC }))
+      if (opC === 'survey') return res.status(200).json(await MB.custSurvey({ body: bC }))
       if (opC === 'mktout') return res.status(200).json(await MB.custMktOut({ body: bC }))
       return res.status(400).json({ ok: false, error: '不認識的操作' })
     } catch (e) { return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }

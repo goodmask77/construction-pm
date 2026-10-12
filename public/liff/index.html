@@ -16,16 +16,16 @@
   const M=document.getElementById('m')
   const dest=(s)=>'/prep'+(s?('#'+decodeURIComponent(s)):'')
   let s=new URLSearchParams(location.search).get('s')||''
-  let to=new URLSearchParams(location.search).get('to')||'', c=new URLSearchParams(location.search).get('c')||'' // v4.70.91 同一個 LIFF 當中繼：to=member（會員卡）/ to=order&c=碼（團體訂餐）；liff.init 只能在這個端點底下跑，所以在這裡認完人再帶身分轉過去
+  let to=new URLSearchParams(location.search).get('to')||'', c=new URLSearchParams(location.search).get('c')||'', ref=new URLSearchParams(location.search).get('ref')||'', tab=new URLSearchParams(location.search).get('tab')||'' // v4.70.91 同一個 LIFF 當中繼：to=member（會員卡）/ to=order&c=碼（團體訂餐）；liff.init 只能在這個端點底下跑，所以在這裡認完人再帶身分轉過去
   try{
     const cfg=await (await fetch('/api/mail-sync?webpushcfg=1')).json()
     if(!cfg||!cfg.liff){ location.replace(dest(s)); return } // 還沒設 LIFF_ID → 直接進看板
     await liff.init({ liffId: cfg.liff })
-    try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s'); if(q2.get('to')) to=q2.get('to'); if(q2.get('c')) c=q2.get('c') } }catch(_){}
+    try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s'); if(q2.get('to')) to=q2.get('to'); if(q2.get('c')) c=q2.get('c'); if(q2.get('ref')) ref=q2.get('ref'); if(q2.get('tab')) tab=q2.get('tab') } }catch(_){}
     if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return } // LINE 裡面開＝自動已登入，不會跳這步
     const at=liff.getAccessToken()
     if(to==='member'){ M.textContent='🪪 開啟會員卡…'; const w=await (await fetch('/api/mail-sync?mcard=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'who',at})})).json()
-      if(w&&w.ok){ location.replace('/member#u='+encodeURIComponent(w.uid)+'&mt='+encodeURIComponent(w.mt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
+      if(w&&w.ok){ location.replace('/member#u='+encodeURIComponent(w.uid)+'&mt='+encodeURIComponent(w.mt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')+(ref?'&ref='+encodeURIComponent(ref):'')+(tab?'&tab='+encodeURIComponent(tab):'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
     if(to==='order'&&c){ M.textContent='🧾 開啟點餐頁…'; const w=await (await fetch('/api/mail-sync?gorder='+encodeURIComponent(c),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'who',at})})).json()
       if(w&&w.ok){ location.replace('/order/'+encodeURIComponent(c)+'#u='+encodeURIComponent(w.uid)+'&pt='+encodeURIComponent(w.pt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
     const r=await (await fetch('/api/mail-sync?liffauth=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({at})})).json()
