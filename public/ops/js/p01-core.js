@@ -437,7 +437,7 @@ function renderBoard(d, store, view){
     if (!vRows.length) h += `<div class="mut" style="padding:8px">這個期間沒有偵測到退單／作廢。</div>`
     else {
       h += `<div class="scroll" style="overflow-x:auto"><table style="border-collapse:collapse"><thead><tr><th style="text-align:left">日期</th><th style="text-align:left">時間</th><th style="text-align:right">金額</th><th style="text-align:right">單數</th><th style="text-align:left">品項（推估）</th><th style="text-align:left">來源</th></tr></thead><tbody>`
-      for (const r of vRows) h += `<tr title="${r.note}"><td style="white-space:nowrap">${r.dt.slice(5)}</td><td style="white-space:nowrap">${r.tm}</td><td style="text-align:right;font-variant-numeric:tabular-nums;${vCol(r.amt||0)}">${r.amt!=null?sN(r.amt):'—'}</td><td style="text-align:right;${vCol(r.tx||0)}">${r.tx?sN(r.tx):'—'}</td><td style="font-size:12.5px;white-space:normal;min-width:220px;max-width:560px;line-height:1.45">${r.items||'—'}</td><td style="font-size:12px;white-space:nowrap" class="mut">${r.src}</td></tr>`
+      for (const r of vRows) h += `<tr title="${r.note}"><td style="white-space:nowrap">${r.dt.slice(5)}</td><td style="white-space:nowrap">${r.tm}</td><td style="text-align:right;font-variant-numeric:tabular-nums;${vCol(r.amt||0)}">${r.amt!=null?sN(r.amt):'—'}</td><td style="text-align:right;${vCol(r.tx||0)}">${r.tx?sN(r.tx):'—'}</td><td style="font-size:12.5px;white-space:normal;min-width:220px;max-width:560px;line-height:1.45;text-align:left">${r.items||'—'}</td><td style="font-size:12px;white-space:nowrap" class="mut">${r.src}</td></tr>`
       h += `</tbody></table></div><div class="hint" style="padding:6px 8px;font-size:11.5px">喬亞行動報表沒有逐筆訂單，這裡是用「時段表負數」＋「盤中 15 分快照相減」推出來的；要看單號／誰操作／原因，要向喬亞要 POS 後台的作廢報表。</div>`
     }
     h += `</section>`
