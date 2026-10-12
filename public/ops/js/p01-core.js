@@ -426,7 +426,8 @@ function renderBoard(d, store, view){
     for (const [dt, v] of Object.entries(d.voids || {})) {
       if (!inPer({date:dt})) continue
       for (const hr of (v.hours||[])) vRows.push({ dt, tm: `${hr.h}時`, ord: hr.h*60, amt: hr.amt, tx: -Math.abs(hr.orders||0), items: '', src: '喬亞時段表', note: '這小時營業額為負＝該小時有退單／作廢（金額、單數準確；品項喬亞不給）' })
-      for (const ev of (v.snap||[])) vRows.push({ dt, tm: `${ev.prev}～${ev.t}`, ord: Number(String(ev.t).slice(0,2))*60+Number(String(ev.t).slice(3,5)), amt: ev.rev, tx: ev.tx, items: Object.entries(ev.items||{}).map(([n,q])=>`${n} ${q}`).join('、'), src: '盤中快照', note: '15 分快照相減：營收／單數／品項「變少」＝這 15 分內有退單／作廢；同時段若有新單會互相抵銷，實際退的可能更多' })
+      // 快照事件：營收沒減少（只有品項變少＝改單／退一杯換別的）→ 金額、單數顯示「—」，不然 +249 看起來像多收
+      for (const ev of (v.snap||[])) vRows.push({ dt, tm: `${ev.prev}～${ev.t}`, ord: Number(String(ev.t).slice(0,2))*60+Number(String(ev.t).slice(3,5)), amt: ev.rev<0 ? ev.rev : null, tx: ev.tx<0 ? ev.tx : null, items: Object.entries(ev.items||{}).map(([n,q])=>`${n} ${q}`).join('、'), src: ev.rev<0 ? '盤中快照' : '盤中快照・改單', note: ev.rev<0 ? '15 分快照相減：這 15 分內營收變少＝有退單／作廢；同時段若有新單會互相抵銷，實際退的可能更多' : '這 15 分內營收沒減少、只有品項數量變少＝改單或退一項換別項（金額上沒損失）' })
       if (v.gap) vRows.push({ dt, tm: '全日', ord: 9999, amt: v.gap, tx: 0, items: '', src: '時段表 vs 實收', note: '喬亞時段表加總與實收金額的差（例：跨日 0 時的單、預付款沖帳），不是退單' })
     }
     vRows.sort((a,b)=> a.dt!==b.dt ? (a.dt<b.dt?1:-1) : a.ord-b.ord)
@@ -436,7 +437,7 @@ function renderBoard(d, store, view){
     if (!vRows.length) h += `<div class="mut" style="padding:8px">這個期間沒有偵測到退單／作廢。</div>`
     else {
       h += `<div class="scroll" style="overflow-x:auto"><table style="border-collapse:collapse"><thead><tr><th style="text-align:left">日期</th><th style="text-align:left">時間</th><th style="text-align:right">金額</th><th style="text-align:right">單數</th><th style="text-align:left">品項（推估）</th><th style="text-align:left">來源</th></tr></thead><tbody>`
-      for (const r of vRows) h += `<tr title="${r.note}"><td style="white-space:nowrap">${r.dt.slice(5)}</td><td style="white-space:nowrap">${r.tm}</td><td style="text-align:right;font-variant-numeric:tabular-nums;${vCol(r.amt)}">${sN(r.amt)}</td><td style="text-align:right;${vCol(r.tx)}">${r.tx?sN(r.tx):'—'}</td><td style="font-size:12.5px">${r.items||'—'}</td><td style="font-size:12px;white-space:nowrap" class="mut">${r.src}</td></tr>`
+      for (const r of vRows) h += `<tr title="${r.note}"><td style="white-space:nowrap">${r.dt.slice(5)}</td><td style="white-space:nowrap">${r.tm}</td><td style="text-align:right;font-variant-numeric:tabular-nums;${vCol(r.amt||0)}">${r.amt!=null?sN(r.amt):'—'}</td><td style="text-align:right;${vCol(r.tx||0)}">${r.tx?sN(r.tx):'—'}</td><td style="font-size:12.5px">${r.items||'—'}</td><td style="font-size:12px;white-space:nowrap" class="mut">${r.src}</td></tr>`
       h += `</tbody></table></div><div class="hint" style="padding:6px 8px;font-size:11.5px">喬亞行動報表沒有逐筆訂單，這裡是用「時段表負數」＋「盤中 15 分快照相減」推出來的；要看單號／誰操作／原因，要向喬亞要 POS 後台的作廢報表。</div>`
     }
     h += `</section>`

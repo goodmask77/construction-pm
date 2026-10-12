@@ -312,12 +312,13 @@ export default async function handler(req, res) {
         const { recordVoidDay, voidAlertText } = await import('./_voids.js')
         const vr = await recordVoidDay({ kvGet, kvPut, date: today, qdoc, slots: day.slots || [], editor: '退單偵測 ' + hm })
         const tkV = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        if (tkV && vr.fresh.length) {
+        const freshV = vr.fresh.filter(e => e.rev < 0) // 只通知「營收真的變少」的；只有品項變少（改單／換品）不吵
+        if (tkV && freshV.length) {
           const [defV, rosV] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
           for (const an of (((defV || {}).ground || {}).approvers || ['張良瑋'])) {
             const ap = ((rosV || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)
             if (!ap) continue
-            for (const ev of vr.fresh.slice(0, 3)) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: voidAlertText(today, ev) }] }) })
+            for (const ev of freshV.slice(0, 3)) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: voidAlertText(today, ev) }] }) })
           }
         }
       } catch (e) { console.log('void detect err', e?.message) }
