@@ -169,6 +169,7 @@ function custDayOpen(i){
 }
 async function custHome(){
   app.innerHTML = `<section>${custTopBar()}<div class="mut">載入中…</div></section>`
+  custNamesPrefetch() // 派任務用的名單先在背景抓
   const [d, ol] = await Promise.all([cFetch('custinsights=' + encodeURIComponent(K) + '&v=3', 'custins3'), cFetch('custoutlook=' + encodeURIComponent(K), 'custol')])
   if (!d || !d.ins || !d.ins.m) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察資料重算中（新版每天自動重建；稍等幾分鐘再進來）</div></section>`; return }
   if (curStore !== 'cust' || custV !== 'home') return
@@ -179,7 +180,6 @@ async function custHome(){
   let h = `<section>${custTopBar()}`
   // ① 未來 14 天
   window._custActSt = (ol && ol.st) || {} // 要你做的事＝後端 ol.acts（v4.70.81 搬到後端，跟 DD／每週摘要同一份）
-  custNamesPrefetch()
   if (ol && ol.days) {
     const cell = (x,i) => { const lv = cDayLevel(x); const bd = lv.k==='hot' ? '#F07373' : lv.k==='cold' ? '#3A4252' : 'var(--line)'; const bg = lv.k==='hot' ? 'rgba(240,115,115,.14)' : lv.k==='cold' ? 'rgba(140,152,168,.08)' : 'var(--card)'; const base = x.ly.pos||x.ly.g; const notes = ((d.dayNotes||{})[x.d]||[]).length
       return `<div onclick="custDayOpen(${i})" style="background:${bg};border:1.5px solid ${bd};border-radius:10px;padding:7px 8px;cursor:pointer;min-width:0">
