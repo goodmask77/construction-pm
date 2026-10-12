@@ -3439,7 +3439,7 @@ export default async function handler(req, res) {
     const canStS = st9 => mgrS9 || (!!(gS.stOwner || {})[st9] && (gS.stOwner || {})[st9] === whoS.name)
     const stLayerOps = ['add', 'rename', 'del', 'restore', 'stord', 'ownset', 'catadd', 'catren', 'catdel', 'catord', 'catset', 'catown']
     if (stLayerOps.includes(bs.op) && !mgrS9) return res.status(403).json({ ok: false, error: '工作站這一層（新增／改名／刪除／排序／指定負責人）由審核人／主管管理' })
-    if (['tgadd', 'tgren', 'tgdel', 'tgord'].includes(bs.op)) {
+    if (['tgadd', 'tgren', 'tgdel', 'tgord', 'itord'].includes(bs.op)) {
       if (!nmS || !gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個工作站' })
       if (!canStS(nmS)) return res.status(403).json({ ok: false, error: (gS.stOwner || {})[nmS] ? '「' + nmS + '」由 ' + gS.stOwner[nmS] + ' 負責——想改請按站名旁「💡 提建議」' : '「' + nmS + '」還沒有負責人——請審核人／主管編輯或先指定負責人' })
       gS.stCats = { ...(gS.stCats || {}) }
@@ -3475,6 +3475,11 @@ export default async function handler(req, res) {
       const cn = String(bs.cat || '').trim()
       gS.stCats[nmS] = (gS.stCats[nmS] || []).filter(c2 => c2 !== cn)
       ;(gS.items || []).forEach(it => { if (it.st === nmS && it.tg === cn) delete it.tg }) // 動作不刪，變「未分階段」
+    } else if (bs.op === 'itord') { // v4.70.98 動作拖曳排序：同站同階段內照 list 順序寫 ord（張良 2026-10-12）
+      const ids = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x)).filter(Boolean)
+      if (!ids.length) return res.status(400).json({ ok: false, error: '缺順序清單' })
+      const posI = new Map(ids.map((id, i) => [id, i]))
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && posI.has(it.id)) it.ord = posI.get(it.id) })
     } else if (bs.op === 'tgord') {
       const want = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x).trim().slice(0, 20)).filter(Boolean)
       const L = gS.stCats[nmS] || []
@@ -5640,6 +5645,7 @@ export default async function handler(req, res) {
       if (o.tg) { gA.stCats = { ...(gA.stCats || {}) }; const Lt = gA.stCats[st] = [...(gA.stCats[st] || [])]; if (!Lt.includes(o.tg)) Lt.push(o.tg) } // v4.70.97 動作填了這站沒有的階段＝自動加進這站的階段清單
       if (Array.isArray(inp.prereq) && inp.prereq.length) o.prereq = inp.prereq.filter(x => typeof x === 'string' && x).slice(0, 20) // v4.66.0 前置動作
       const prevA = gA.items.find(x => x.id === o.id)
+      if (prevA && Number.isFinite(prevA.ord)) o.ord = prevA.ord // v4.70.98 編輯不洗掉拖曳順序
       gA.items = [...gA.items.filter(x => x.id !== o.id), o]
       gA.edits = [{ ts: new Date().toISOString(), by: whoA.name, st, op: 'actset', prev: prevA ? [prevA] : [] }, ...(gA.edits || [])].slice(0, 30)
     }
