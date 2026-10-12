@@ -246,6 +246,7 @@ function gdRoleModal(name, role){
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:800;margin-bottom:8px">${name} 的權限</div>
     ${role==='審核人'?'<div class="hint" style="margin-bottom:8px">審核人——權限最高（核准/發布/通知開關），這裡不能改。</div>':opt('一般','看＋操作（打卡/回報/任務/評分…記名）')+opt('主管','一般＋管理人員名單與權限')+opt('停權','綁定保留，但所有操作被擋')}
+    ${(((window._shiftD||{}).staff||[]).find(x=>x.n===name)||{}).off?`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:10px;padding:8px 10px;border:1px dashed var(--line);border-radius:8px"><span class="hint">班表設定標為「非常態」：不列未排、不進快選</span><button class="mini on" style="padding:7px 12px;white-space:nowrap" onclick="gdOffRestore('${name}')">↺ 恢復常態排班</button></div>`:''}
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
       <button class="mini" style="color:var(--red);padding:8px 12px" onclick="if(confirm('把 ${name} 移出 GD 人員名單？')){document.getElementById('grOv').remove();gdStaffOp('del','${name}')}">移出名單</button>
       <span><button class="mini" style="padding:8px 12px" onclick="document.getElementById('grOv').remove()">取消</button>
@@ -253,6 +254,15 @@ function gdRoleModal(name, role){
     </div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
+}
+// v4.71.4 人員 chip 視窗「↺ 恢復常態排班」：直接改班表設定的非常態名單（張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）
+async function gdOffRestore(name){
+  const o = document.getElementById('grOv'); if (o) o.remove()
+  const d = window._shiftD || {}
+  const list = (d.staff||[]).filter(s2=>s2.off && s2.n!==name).map(s2=>s2.n)
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'off', list, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) shiftLoad(); else alert((j&&j.error)||'失敗')
 }
 async function gdRoleSave(name){
   const v = (document.querySelector('#grOv input[name=grR]:checked')||{}).value

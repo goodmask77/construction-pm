@@ -495,6 +495,21 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // 👥 班表「非常態」名單維護口（v4.71.4 張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）：GET ?shiftoff=<MENU_PROBE_KEY> 讀；&rm=姓名 恢復常態；&add=姓名 標非常態
+  if (req.query?.shiftoff) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.shiftoff) !== mk) return res.status(403).json({ ok: false })
+    const doc = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    const before = (doc.offStaff || []).slice()
+    const rmN = String(req.query.rm || '').trim().slice(0, 20), addN = String(req.query.add || '').trim().slice(0, 20)
+    if (rmN) doc.offStaff = before.filter(n9 => n9 !== rmN)
+    if (addN && !(doc.offStaff || []).includes(addN)) doc.offStaff = [...(doc.offStaff || before), addN].slice(0, 50)
+    if (rmN || addN) {
+      doc.hist = [...(doc.hist || []).slice(-499), { ts: new Date().toISOString(), by: '系統維護', d: (rmN ? '↺ 恢復常態：' + rmN : '') + (rmN && addN ? '；' : '') + (addN ? '✕ 非常態：' + addN : '') }]
+      await kvPut('sp_finance_pm_shift_g', doc, '非常態名單維護')
+    }
+    return res.status(200).json({ ok: true, before, offStaff: doc.offStaff || [] })
+  }
   // 🚫 時段排除日（包場/異常大單日）維護口（張良 2026-10-08）：分店。GET ?slotex=<MENU_PROBE_KEY>[&store=] 讀；?slotexset=<KEY>&date=YYYY-MM-DD[&store=ground|abeach][&op=add|del] 增刪
   // 效果：該日不進該店「時段平均/營收熱力圖」，但仍計入總營業額（營收走 e.revenue 不受影響）
   if (req.query?.slotex || req.query?.slotexset) {
@@ -1848,6 +1863,16 @@ export default async function handler(req, res) {
     else if (gb.op === 'del') delete pG.gd
     else return res.status(400).json({ ok: false })
     await kvPut('sp_crew_kb_roster', rosterG, 'GD人員' + gb.op + '(' + whoG.name + ')')
+    // v4.71.4（張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」真因：班表設定的「✕非常態」名單照姓名存，
+    // 人被移出 GD 再加回來舊標記還在→未排/快選都不列他）：加人＝一律恢復常態排班，不留舊標記
+    if (gb.op === 'add') {
+      const shG = await kvGet('sp_finance_pm_shift_g')
+      if (shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) {
+        shG.offStaff = shG.offStaff.filter(n9 => n9 !== pG.name)
+        shG.hist = [...(shG.hist || []).slice(-499), { ts: new Date().toISOString(), by: whoG.name, d: '↺ ' + pG.name + ' 加入 GD 人員，恢復常態排班' }]
+        await kvPut('sp_finance_pm_shift_g', shG, 'GD加人恢復常態(' + pG.name + ')')
+      }
+    }
     return res.status(200).json({ ok: true })
   }
   // 一次性：刪參考店數據（張良 2026-09-24 指示「刪除相關設定及數據」）：GET ?ichefpurge=<MENU_PROBE_KEY>
@@ -3233,14 +3258,23 @@ export default async function handler(req, res) {
       doc.colors = { ...(doc.colors || {}) }
       for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0))
     } else if (sb2.op === 'off') { // ✕非常態排班人員（張良 2026-10-02）：沉底+不進快選選單+不列每日未排
+      const oldOff = (doc.offStaff || []).slice()
       doc.offStaff = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
+      // v4.71.4 留紀錄（誰把誰標非常態／恢復常態），之後「怎麼不見了」有得查
+      const addedO = doc.offStaff.filter(n9 => !oldOff.includes(n9)), remO = oldOff.filter(n9 => !doc.offStaff.includes(n9))
+      if (addedO.length || remO.length) pushH((addedO.length ? '✕ 非常態：' + addedO.join('、') : '') + (addedO.length && remO.length ? '；' : '') + (remO.length ? '↺ 恢復常態：' + remO.join('、') : ''))
     } else if (sb2.op === 'cfg') { // 設定五合一（v4.8.3 提速：⚙️儲存原本連發5個POST排隊寫同一份doc→合成一發）
       const nm20 = a => (Array.isArray(a) ? a : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
       if (Array.isArray(sb2.pos)) doc.pos = nm20(sb2.pos).slice(0, 30)
       if (Array.isArray(sb2.slots)) doc.slots = sb2.slots.map(s3 => ({ n: String(s3.n || '').trim().slice(0, 10), s: String(s3.s || '').slice(0, 5), e: String(s3.e || '').slice(0, 5) })).filter(x => x.n && /^\d{1,2}:\d{2}$/.test(x.s) && /^\d{1,2}:\d{2}$/.test(x.e)).slice(0, 10)
       if (Array.isArray(sb2.ord)) doc.staffOrd = nm20(sb2.ord)
       if (sb2.colors && typeof sb2.colors === 'object') { doc.colors = { ...(doc.colors || {}) }; for (const [nm, ci] of Object.entries(sb2.colors)) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0)) }
-      if (Array.isArray(sb2.off)) doc.offStaff = nm20(sb2.off)
+      if (Array.isArray(sb2.off)) {
+        const oldOff2 = (doc.offStaff || []).slice()
+        doc.offStaff = nm20(sb2.off)
+        const addedO2 = doc.offStaff.filter(n9 => !oldOff2.includes(n9)), remO2 = oldOff2.filter(n9 => !doc.offStaff.includes(n9))
+        if (addedO2.length || remO2.length) pushH((addedO2.length ? '✕ 非常態：' + addedO2.join('、') : '') + (addedO2.length && remO2.length ? '；' : '') + (remO2.length ? '↺ 恢復常態：' + remO2.join('、') : '')) // v4.71.4 非常態異動留紀錄
+      }
       if ('lock' in sb2 && (await isMgr())) { const nv = sb2.lock ? 1 : 0; if (nv !== (doc.lockEdit ? 1 : 0)) pushH(nv ? '🔒 鎖定班表（只有審核人/主管能編輯）' : '🔓 解除班表鎖定') ; doc.lockEdit = nv }
       pushH('改班表設定')
     } else if (sb2.op === 'tplsave') { // 💾 班表版本（v4.13.0）：命名+自動記姓名時間
