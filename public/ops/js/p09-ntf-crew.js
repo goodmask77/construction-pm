@@ -79,6 +79,7 @@ function custActsHtml(){
   return `<ol style="margin:0;padding-left:4px;list-style:none;font-size:12.5px;line-height:1.6">${open.map(row).join('')}</ol><div id="custActForm"></div>${done.length?`<details style="margin-top:6px"><summary class="hint" style="font-size:11px;cursor:pointer">已完成／已派 ${done.length} 件</summary><ol style="margin:4px 0 0;padding-left:4px;list-style:none;font-size:12px">${done.map(row).join('')}</ol></details>`:''}`
 }
 function custActsRender(){ const b = document.getElementById('custActs'); if (b) b.innerHTML = custActsHtml() }
+function custNamesPrefetch(){ if (window._custNames || window._custNamesP) return; window._custNamesP = 1; fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7)).then(r=>r.json()).then(d=>{ if (d && d.ok) { window._custNames = (d.staff||[]).filter(s=>s.role!=='停權').map(s=>s.n); const sel = document.getElementById('custTkOwner'); if (sel && sel.options.length <= 1) window._custNames.forEach(n=>{ const o = document.createElement('option'); o.textContent = n; sel.appendChild(o) }) } }).catch(()=>{ window._custNamesP = 0 }) } // 派任務的負責人名單（跟任務頁同一來源＝班表名單只擋停權）；進首頁就先抓，按「派任務」時不用等 3 秒
 async function custActPost(body){
   if (!TK()) { alert('要先綁定 GD（LINE 私訊 DD「綁定GD」）才能勾選或派任務'); return null }
   try { const r = await fetch('/api/inline-sync?custact=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) }); const j = await r.json(); if (!j.ok) { alert(j.error || '沒存上'); return null }; window._custActSt = j.st || {}; try { const c = tcGet('custol'); if (c) { c.st = j.st; tcSet('custol', c) } } catch(_){}; return j } catch(_) { alert('網路不穩，沒存上'); return null }
@@ -88,7 +89,7 @@ function custActTask(k){
   const ol = window._custOl || {}; const a = (ol.acts||[]).find(x=>x.k===k); if (!a) return
   const box = document.getElementById('custActForm'); if (!box) return
   let names = (typeof tnOwnerNames === 'function' ? tnOwnerNames() : (typeof tnS !== 'undefined' && tnS.gdNames) || []).filter(Boolean)
-  if (!names.length) { if (window._custNames) names = window._custNames; else fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7)).then(r=>r.json()).then(d=>{ if (d && d.ok) { window._custNames = (d.staff||[]).filter(s=>s.role!=='停權').map(s=>s.n); const sel = document.getElementById('custTkOwner'); if (sel && sel.options.length <= 1) window._custNames.forEach(n=>{ const o = document.createElement('option'); o.textContent = n; sel.appendChild(o) }) } }).catch(()=>{}) } // 任務頁沒開過時名單是空的 → 跟任務頁同一個來源抓（班表名單，只擋停權）
+  if (!names.length) { if (window._custNames) names = window._custNames; else custNamesPrefetch() } // 任務頁沒開過時名單是空的 → 自己抓
   const title = String(a.t).replace(/\*\*/g,'').replace(/：.*$/,'').slice(0,80), due = /^\d{4}-\d{2}-\d{2}$/.test(a.d) && a.d >= todayTpe() ? a.d : todayTpe() // 上週回顧那種日期已過 → 到期日改今天
   box.innerHTML = `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:10px 12px;margin:6px 0;background:var(--soft)">
     <div style="font-weight:900;font-size:12.5px;margin-bottom:6px">派成任務</div>
@@ -178,6 +179,7 @@ async function custHome(){
   let h = `<section>${custTopBar()}`
   // ① 未來 14 天
   window._custActSt = (ol && ol.st) || {} // 要你做的事＝後端 ol.acts（v4.70.81 搬到後端，跟 DD／每週摘要同一份）
+  custNamesPrefetch()
   if (ol && ol.days) {
     const cell = (x,i) => { const lv = cDayLevel(x); const bd = lv.k==='hot' ? '#F07373' : lv.k==='cold' ? '#3A4252' : 'var(--line)'; const bg = lv.k==='hot' ? 'rgba(240,115,115,.14)' : lv.k==='cold' ? 'rgba(140,152,168,.08)' : 'var(--card)'; const base = x.ly.pos||x.ly.g; const notes = ((d.dayNotes||{})[x.d]||[]).length
       return `<div onclick="custDayOpen(${i})" style="background:${bg};border:1.5px solid ${bd};border-radius:10px;padding:7px 8px;cursor:pointer;min-width:0">
