@@ -1,4 +1,4 @@
-// ✨ 菜單 AI 圖庫前端共用模組 v1.1（2026-10-10；v1.1 10-11 加「版本存檔」面板＋Esc 關閉；menu-tv.html 電視圖「AI 重畫」＋ menu-poster.html 直式「插圖／Logo 變化／標語」共用）
+// ✨ 菜單 AI 圖庫前端共用模組 v1.2（2026-10-10；v1.2 10-12 加 fontCSS（只內嵌頁面用到的字體子集，SVG 從 87MB 降到幾 MB）＋ dlDataUrl（大檔走 Blob 下載）；v1.1 10-11 加「版本存檔」面板＋Esc 關閉；menu-tv.html 電視圖「AI 重畫」＋ menu-poster.html 直式「插圖／Logo 變化／標語」共用）
 // 流程：open() 開面板 → 參考圖(截圖貼上/檔案/現有照片)＋老闆的話 → ?menuai 兩段式(Claude 寫指令→Gemini 畫) → 挑一張 → 後製(去影子/校色或去背)
 //       → 簽名直傳 Supabase → ?menuaisave 登記。圖庫＋版面設定走 ?menuassets（跨裝置）。
 window.MAI = (() => {
@@ -9,6 +9,37 @@ window.MAI = (() => {
   let assets = { photos: {}, art: [], tvcfg: null, poster: {}, vers: [] }
   let _which = null // v4.70.81 「這裡由哪家 AI 處理」小標籤（張良 2026-10-12）
   function aiTagFill() { (_which || (_which = fetch('/api/mail-sync?aiwhich=' + K).then(r => r.json()).then(d => (d && d.ok && d.routes) || {}).catch(() => ({})))).then(R => { const el = document.getElementById('maiAiTag'); const a = R.app, b = R.image; if (!el || !a || !b) return; el.textContent = `寫指令：${a.model} → 畫圖：${b.model}`; el.title = `寫指令由 ${a.co}「${a.model}」、畫圖由 ${b.co}「${b.model}」處理；設定頁「AI 模型」可切換` }) }
+  // v1.2 出圖用：只內嵌「頁面文字真的用到」的 Google 字體子集（html-to-image 預設把 Noto TC 全部 100 多個子集×4 字重都塞進去，SVG 會到 87MB）
+  // 做法：抓 <link> 的 fonts.googleapis CSS → 每段 @font-face 看 unicode-range 有沒有碰到頁面字元 → 只留碰到的，字體檔抓回來轉 base64。失敗回 undefined＝交回 html-to-image 預設（全包）
+  let _fontCSS = null
+  async function fontCSS(el) {
+    try {
+      const link = document.querySelector('link[href*="fonts.googleapis.com"]'); if (!link) return undefined
+      const text = (el || document.body).textContent || ''; const cps = new Set(); for (const ch of text) cps.add(ch.codePointAt(0))
+      if (!_fontCSS) _fontCSS = fetch(link.href).then(r => r.text())
+      const css = await _fontCSS
+      const blocks = css.match(/@font-face\s*{[^}]*}/g) || []; const keep = []
+      for (const b of blocks) {
+        const ur = (b.match(/unicode-range:\s*([^;]+);/) || [])[1]
+        let hit = !ur
+        if (ur) for (const seg of ur.split(',')) { const m = seg.trim().match(/^U\+([0-9A-F?]+)(?:-([0-9A-F]+))?$/i); if (!m) continue
+          let lo, hi; if (m[1].includes('?')) { lo = parseInt(m[1].replace(/\?/g, '0'), 16); hi = parseInt(m[1].replace(/\?/g, 'F'), 16) } else { lo = parseInt(m[1], 16); hi = m[2] ? parseInt(m[2], 16) : lo }
+          for (const c of cps) if (c >= lo && c <= hi) { hit = true; break } if (hit) break }
+        if (hit) keep.push(b)
+      }
+      const out = await Promise.all(keep.map(async b => { const u = (b.match(/url\(([^)]+)\)/) || [])[1]; if (!u) return b
+        const r = await fetch(u.replace(/^['"]|['"]$/g, '')); const buf = await r.arrayBuffer(); let bin = ''; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) bin += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000))
+        return b.replace(u, "data:font/woff2;base64," + btoa(bin)) }))
+      return out.join('\n')
+    } catch (e) { console.warn('fontCSS fallback', e); return undefined }
+  }
+  // v1.2 下載：data URL 轉 Blob 再下載（SVG 幾 MB 的 data: 連結直接下載在 Chrome 會失敗）
+  function dlDataUrl(url, name) {
+    let blob; try { const i = url.indexOf(','); const head = url.slice(0, i), body = url.slice(i + 1); const mime = (head.match(/^data:([^;,]+)/) || [])[1] || 'application/octet-stream'
+      if (/;base64/.test(head)) { const bin = atob(body); const a = new Uint8Array(bin.length); for (let j = 0; j < bin.length; j++) a[j] = bin.charCodeAt(j); blob = new Blob([a], { type: mime }) } else blob = new Blob([decodeURIComponent(body)], { type: mime })
+    } catch (e) { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); return }
+    const o = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = o; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(o), 60000)
+  }
   async function load() { try { const r = await fetch('/api/mail-sync?menuassets=' + K + '&_=' + Date.now()); const d = await r.json(); if (d && d.ok) assets = d } catch (e) {} return assets }
   const CR = [245, 234, 218]
   function loadImg(src) { return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => rej(new Error('圖片載入失敗')); im.src = src.startsWith('data:') ? src : src + (src.includes('?') ? '&' : '?') + 'cb=' + Date.now() }) }
@@ -195,5 +226,5 @@ window.MAI = (() => {
     const v = (assets.vers || []).find(x => x.id === id); if (!v || !confirm('刪除版本「' + v.name + '」？')) return
     const r = await api('menuassetset', { verDel: id }); if (!r.ok) { alert(r.error || '刪除失敗'); return } assets.vers = r.vers || []; vdraw()
   }
-  return { K, TK, api, load, now, get assets() { return assets }, toDataURL, cleanPhoto, cutout, upload, open, close, setSub, setN, pickFile, clearRef, go, pick, use, useLib, delLib, verOpen, verClose, verSave, verApply, verDel }
+  return { K, TK, api, load, now, get assets() { return assets }, toDataURL, cleanPhoto, cutout, upload, open, close, setSub, setN, pickFile, clearRef, go, pick, use, useLib, delLib, verOpen, verClose, verSave, verApply, verDel, fontCSS, dlDataUrl }
 })()
