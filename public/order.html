@@ -94,7 +94,7 @@ function renderTop () {
 function renderMenu () {
   const mineCount = {}; for (const l of MINE.lines) mineCount[l.id] = (mineCount[l.id] || 0) + (l.q || 1)
   const t = GC.totals(MENU, D)
-  const bannerTxt = D.status === 'submitted' ? `<div class="note red">已送出給店家，核價中。截單前改了會自動退回待核價。</div>` : D.status === 'priced' ? `<div class="note ok">店家核價完成：全單 ${fmt(t.total)} 元。沒問題請主辦人到「大家的」按「確認金額無誤」。</div>` : D.status === 'confirmed' ? `<div class="note ok">已確認，等店家鎖單。</div>` : ['locked', 'done'].includes(D.status) ? `<div class="note ok">訂單已成立，全單 ${fmt(t.total)} 元。</div>` : D.expired ? `<div class="note warn">這條連結已過期，請跟店家再要一次。</div>` : D.closed ? `<div class="note warn">已過截單時間，要加點請找主辦人或店家。</div>` : ''
+  const bannerTxt = D.status === 'submitted' ? `<div class="note red">已送出給店家，核價中。截單前改了會自動退回待核價。</div>` : D.status === 'priced' ? `<div class="note ok">店家核價完成：全單 ${fmt(t.total)} 元。沒問題請主辦人到「大家的」按「確認金額無誤」。</div>` : D.status === 'confirmed' ? `<div class="note ok">已確認，等店家鎖單。${payLine()}</div>` : ['locked', 'done'].includes(D.status) ? `<div class="note ok">訂單已成立，全單 ${fmt(t.total)} 元。${payLine()}</div>` : D.expired ? `<div class="note warn">這條連結已過期，請跟店家再要一次。</div>` : D.closed ? `<div class="note warn">已過截單時間，要加點請找主辦人或店家。</div>` : ''
   const imgs = D.imgs && D.imgs.p1 ? `<div class="sec"><div class="secHead"><h2>店家計價表</h2></div><a href="${esc(D.imgs.p1.url)}" target="_blank"><img src="${esc(D.imgs.p1.url)}" style="width:100%;border-radius:12px;border:1px solid var(--line)" alt="01 個人明細"></a><a href="${esc(D.imgs.p2.url)}" target="_blank"><img src="${esc(D.imgs.p2.url)}" style="width:100%;border-radius:12px;border:1px solid var(--line);margin-top:8px" alt="02 品項整合"></a></div>` : ''
   const secs = MENU.sections.map((s, i) => `<div class="sec" id="sec${i}"><div class="secHead">${photoOf(s) ? `<div class="ph" style="background-image:url('${photoOf(s)}')"></div>` : ''}<div><h2>${esc(s.name)}</h2><div class="sub">${s.combo ? '套餐折抵 ' + s.combo + '，超過補差' : (s.kind === 'main' || s.kind === 'pizza') ? '+' + MENU.setN + ' 升級套餐：副餐 1＋飲品 1' : ''}</div></div></div>
     <div class="list">${s.items.map(it => { const n = mineCount[it.id] || 0; return `<div class="item ${it.soon ? 'soon' : ''}" data-item="${it.id}"><div class="bd"><div class="nm">${esc(it.name)}</div>${it.en ? `<div class="en">${esc(it.en)}</div>` : ''}${!it.soon && (s.kind === 'main' || s.kind === 'pizza') ? '<span class="tg">可升級套餐 +' + MENU.setN + '</span>' : it.note ? `<span class="tg">${esc(it.note)}</span>` : ''}</div><div class="pr">${it.soon ? '即將上線' : '$' + it.price}</div>${it.soon ? '' : `<div class="add ${n ? 'has' : ''}">${n ? '✓' : '+'}${n ? `<span class="n">${n}</span>` : ''}</div>`}</div>` }).join('')}</div></div>`).join('')
@@ -109,6 +109,7 @@ function renderBar () {
   $('barSum').onclick = () => cartSheet('mine')
   const b = $('barBtn')
   if (D.status === 'priced') { if (isHost()) { b.textContent = '確認金額無誤'; b.disabled = false; b.onclick = confirmGo } else { b.textContent = '等主辦人確認'; b.disabled = false; b.onclick = () => cartSheet('all') } }
+  else if (D.pay && D.pay.enabled && D.pay.due > 0 && isHost()) { b.textContent = `LINE Pay 付款 $${fmt(D.pay.due)}`; b.disabled = false; b.onclick = payGo } // 💳 v4.71.1 第三批金流：確認／鎖單後主辦人付款
   else if (!canEdit()) { b.textContent = '大家的'; b.disabled = false; b.onclick = () => cartSheet('all') }
   else if (MINE.done) { b.textContent = '已點好・修改'; b.disabled = false; b.onclick = () => cartSheet('mine') }
   else { b.textContent = '我點好了'; b.disabled = !MINE.lines.length; b.onclick = () => { MINE.done = true; mineChanged(true); toast('已點好，謝謝！'); cartSheet('all') } }
@@ -232,11 +233,15 @@ async function submitGo () {
   const d = await api({ op: 'submit', ...idBody() }); if (!d || !d.ok) return toast((d && d.error) || '送出失敗', true)
   D = { ...d, menu: MENU }; closeOv(); render(); toast('已送出給店家，LINE 會收到確認'); window.scrollTo({ top: 0, behavior: 'smooth' })
 }
+// 💳 付款（v4.71.1）：狀態列文字＋建立付款後整頁導去 LINE Pay；付完 LINE Pay 導回 /order/<碼>#paid=金額（或 #payfail／#paycancel）
+function payLine () { const p = D.pay; if (!p) return ''; if (p.amount > 0) return `<br>已收 ${fmt(p.amount)} 元（${esc(p.method || '')}${p.status === '已付清' ? '，已付清' : p.due > 0 ? '，尚欠 ' + fmt(p.due) + ' 元' : ''}）${p.env && p.env !== '正式' ? '<span class="sub">・' + esc(p.env) + '</span>' : ''}`; if (p.enabled && p.due > 0) return `<br>${isHost() ? '主辦人可按下方「LINE Pay 付款」線上付款，或到店付款。' : '主辦人可用 LINE Pay 線上付款，或到店付款。'}${p.env && p.env !== '正式' ? '<span class="sub">・' + esc(p.env) + '</span>' : ''}`; return '' }
+async function payGo () { const b = $('barBtn'); b.disabled = true; const d = await api({ op: 'payreq', ...idBody() }); if (!d || !d.ok || !d.url) { b.disabled = false; return toast((d && d.error) || '付款建立失敗', true) } toast('前往 LINE Pay…'); location.href = d.url }
 async function confirmGo () { const d = await api({ op: 'confirm', ...idBody() }); if (!d || !d.ok) return toast((d && d.error) || '確認失敗', true); D = { ...d, menu: MENU }; render(); toast('已確認，謝謝！') }
-async function refresh () { if (!D || dirty || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared) || JSON.stringify(d.imgs) !== JSON.stringify(D.imgs))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); if (sheet) { renderTop(); renderBar() } else { const ovOpen = !!$('ov'); render(); if (ovOpen) cartSheet('all') } } }
+async function refresh () { if (!D || dirty || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared) || JSON.stringify(d.imgs) !== JSON.stringify(D.imgs) || JSON.stringify(d.pay) !== JSON.stringify(D.pay))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); if (sheet) { renderTop(); renderBar() } else { const ovOpen = !!$('ov'); render(); if (ovOpen) cartSheet('all') } } }
 setInterval(refresh, 20000); setInterval(() => { if (D && ['submitted', 'priced', 'confirmed'].includes(D.status)) refresh() }, 6000) // 審查第 5 點：等店家那段勤一點
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() }); window.addEventListener('focus', refresh)
 load()
+try { const hp = new URLSearchParams(location.hash.replace(/^#/, '')); if (hp.has('paid') || hp.has('payfail') || hp.has('paycancel')) { const msg = hp.has('paid') ? '付款完成，謝謝！店家已收到通知。' : hp.has('payfail') ? '付款沒有完成：' + (hp.get('payfail') || '') : '已取消付款，隨時可以再付。'; setTimeout(() => toast(msg, !hp.has('paid')), 600); history.replaceState(null, '', location.pathname) } } catch (_) {} // 💳 LINE Pay 導回結果
 </script>
 </body>
 </html>
