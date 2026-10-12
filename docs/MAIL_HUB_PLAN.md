@@ -1,4 +1,4 @@
-# 信箱中樞（多信箱管理）規格草案 v0.1
+# 信箱中樞（多信箱管理）規格 v0.2
 
 > 2026-10-12 張良：「重新建立一個信箱管理系統，我有很多個信箱要串接」。
 > 舊版 = 主 App「LWLWLW 信箱管理」（api/mail-manage.js + src/lw/MailManager.jsx），只接 goodmask77 一個信箱，
@@ -18,10 +18,17 @@
 5. 敏感資料伺服器端守門：只有審核人看得到信箱頁。
 
 ## 開發批次
-- **批次1 接入＋整理**：GD 新分頁「信箱」= 信箱清單（新增／停用／測連線）＋每信箱總覽（近 7 天來源排行、未讀數）＋規則（寄件者／主旨關鍵字 → 動作）＋預覽＋執行紀錄＋每日自動跑。
+- **批次1 接入＋整理（v4.70.79 已做，PR 待 merge）**：GD 新分頁「信箱」= 信箱清單（新增／停用／測連線）＋每信箱總覽（近 7 天來源排行、未讀數）＋規則（寄件者／主旨關鍵字 → 動作）＋預覽＋執行紀錄＋每日自動跑。
 - **批次2 進收件匣**：重要信（規則標「轉收件匣」）進統一收件匣當一個頻道，跟 LINE 官方帳號同一套介面；AI 摘要＋LINE 私訊提醒。
 - **批次3 寄信／回信**：從 GD 直接回覆或寄信（用同一組帳號）。
 
 ## 待張良決定
 - 要接哪些信箱（帳號清單＋各自用途）。
 - 連線方式：Gmail／Google Workspace 用「應用程式密碼」（跟現在一樣，張良到 Google 帳號產一組 16 碼貼進設定頁）；非 Google 信箱要給 IMAP 主機。
+
+## 批次1 實作紀錄（2026-10-12 v4.70.79）
+- 後端 `api/_mailhub.js`（模組）＋ `api/mail-sync.js` 端點 `?mailhub=<OPS_BOARD_KEY>`（GET op=list/scan/preview/scanget；POST op=boxadd/boxset/boxdel/boxtest/ruleadd/ruleset/ruledel/preview/apply）；維護口 `?mailhubrun=<MENU_PROBE_KEY>&dry=1`。
+- 每日：`api/cron-daily.js` 台灣 07:00 那一輪跑 applyAll（`?mailhub=1&dry=1` 手動試算）。
+- 前端 `public/ops/js/p25-mailhub.js`，側欄「信箱」(key=mail)，EDIT_FN 已掛 mh* 全部寫入鈕。
+- KV：`sp_finance_pm_mailhub`{boxes,rules,log,envOff,envMeta}、`sp_finance_pm_mailhub_scan_<boxId>`；env `MAIL_ENC_KEY`（Production＋Preview 已設）。
+- 舊版 `api/mail-manage.js` 維持暫停，批次1 上線穩定後退役。

@@ -29,7 +29,7 @@ const MH_CSS = `<style id="mhCss">
 .mhCard h3 .sub{font-size:12px;color:var(--muted);font-weight:500}
 .mhTbl{width:100%;border-collapse:collapse;font-size:13.5px}
 .mhTbl th{font-size:12px;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.mhTbl td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.mhTbl td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
 .mhTbl tr:last-child td{border-bottom:0}
 .mhTbl .r{text-align:right;white-space:nowrap}
 .mhTbl .act{display:flex;gap:4px;flex-wrap:wrap}
@@ -48,7 +48,9 @@ const MH_CSS = `<style id="mhCss">
 .mhLog:last-child{border-bottom:0}
 .mhChk{display:flex;gap:10px;flex-wrap:wrap}
 .mhChk label{display:flex;align-items:center;gap:5px;font-size:14px;cursor:pointer}
-@media(max-width:640px){.mhTbl{font-size:12.5px}.mhTbl td,.mhTbl th{padding:6px 5px}}
+.mhH2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mhH2 .ttl{white-space:nowrap;display:flex;align-items:center;gap:8px}
+.mhWrap,.mhCard{max-width:100%;min-width:0}
+@media(max-width:640px){.mhTbl{font-size:12.5px;min-width:620px}.mhTbl td,.mhTbl th{padding:6px 5px}.mhH2 .hint{flex-basis:100%}.mhBar .mhBtn{font-size:12px;padding:4px 7px}}
 </style>`
 let _mhD = null, _mhBox = '*', _mhBusy = false
 const mhEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -86,7 +88,7 @@ function mhRender() {
   const cur = _mhBox
   const seg = `<div class="mhSeg"><button class="${cur === '*' ? 'on' : ''}" onclick="mhPick('*')">全部<span class="n">${boxes.length}</span></button>${boxes.map(b => `<button class="${cur === b.id ? 'on' : ''}" onclick="mhPick('${b.id}')" style="${b.on ? '' : 'opacity:.5'}">${mhEsc(b.name)}${b.scan && b.scan.unseen ? `<span class="n">${b.scan.unseen}</span>` : ''}</button>`).join('')}</div>`
   const encWarn = d.encReady ? '' : `<div class="mhCard mhBad">後台還沒設定密碼加密金鑰，暫時不能新增信箱（找 CC 處理）。</div>`
-  app.innerHTML = MH_CSS + `<section><h2 style="display:flex;align-items:center;gap:8px">${MH_ICON.mail} 信箱 <span class="hint" style="font-size:12px;font-weight:500">每天 07:00 自動套用「已確認」的規則；不刪信，只封存／貼標／移垃圾桶（30 天可救回）</span></h2>
+  app.innerHTML = MH_CSS + `<section><h2 class="mhH2"><span class="ttl">${MH_ICON.mail} 信箱</span><span class="hint" style="font-size:12px;font-weight:500">每天 07:00 自動套用「已確認」的規則；不刪信，只封存／貼標／移垃圾桶（30 天可救回）</span></h2>
   <div class="mhWrap">
     <div class="mhBar">${seg}
       <span style="flex:1"></span>
