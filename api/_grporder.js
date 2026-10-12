@@ -188,6 +188,7 @@ export async function custWho ({ code, at }) {
   try {
     const vr = await (await fetch('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(at))).json()
     if (!vr || !vr.client_id || vr.expires_in <= 0) return { ok: false, error: 'LINE 登入過期，請重新開連結' }
+    const chG = (process.env.LINE_LOGIN_CHANNEL_ID || '').trim(); if (chG && String(vr.client_id) !== chG) return { ok: false, error: '這不是 GROUN:D 的 LINE 登入' } // 三家審查（Claude）抓到：不比對 channel 任何 LINE Login app 的 token 都過關；設 env LINE_LOGIN_CHANNEL_ID 就鎖
     const pf = await (await fetch('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + at } })).json()
     if (!pf || !pf.userId) return { ok: false, error: '拿不到 LINE 身分' }
     return { ok: true, uid: pf.userId, name: String(pf.displayName || '').slice(0, 30), pic: String(pf.pictureUrl || '').slice(0, 300), pt: ptOf(pf.userId) }
