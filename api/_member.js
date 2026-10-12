@@ -95,6 +95,7 @@ export async function custConsent ({ body }) {
     mid = m.id; created = true
     try { const refMno = String(body.ref || '').replace(/\D/g, '').slice(0, 6); if (refMno && cfg.referral.active !== false) { const rf = (await sel('members', `mno=eq.${refMno}&status=eq.active&select=id`))[0]; if (rf && rf.id !== mid) { await upd('members', `id=eq.${mid}`, { ref_by: rf.id }); await ins('member_referrals', { referrer_id: rf.id, referee_id: mid }, 'return=minimal') } } } catch (_) {} // 一層推薦：只能綁一次、不能推自己
     try { await ins('member_identities', { provider: 'line', line_uid: uid, member_id: mid }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e }
+    richMenuLinkMember(uid).catch(() => {})
     if (cfg.welcomePts > 0) { try { await ins('member_pts', { brand: BRAND, member_id: mid, kind: 'welcome', pts: cfg.welcomePts, idem_key: 'welcome:' + mid, note: '入會禮' }, 'return=minimal') } catch (_) {} }
   } else {
     await upd('members', `id=eq.${mid}`, { name, ...(phone ? { phone } : {}), consent_ver: cfg.consentVer, consent_at: nowIso(), status: 'active', updated_at: nowIso() })
@@ -454,4 +455,52 @@ export async function settlement ({ month }) {
   for (const c of cps) { const k = c.store || 'gd'; g(k).coupons++; g(k).couponValue += Number(c.value) || 0 }
   const pv = cfg.pointValue || 1
   return { ok: true, month: mo, pointValue: pv, stores: Object.entries(S).map(([k, v]) => ({ key: k, ...v, issuedValue: Math.round(v.issued * pv), spentValue: Math.round(v.spent * pv), net: Math.round(v.spent * pv) - Math.round(v.issued * pv) })) }
+}
+
+// ── 🧭 圖文選單（v4.70.96）：六格兩版（會員／非會員），用 GROUN:D 官方帳號金鑰建；入會當下把那個人切到會員版 ──
+const ORIGIN = 'https://ground-pm.vercel.app'
+async function gdToken () { const IB = await import('./_inbox.js'); const a = IB.acctOf('gd'); const { token } = IB.creds(a); if (!token) throw new Error('GROUN:D 官方帳號金鑰未設'); return token }
+async function lineJson (token, path, method, body, host) { const r = await fetch((host || 'https://api.line.me') + path, { method: method || 'GET', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); let d = {}; try { d = await r.json() } catch (_) {} if (!r.ok) throw new Error(`LINE ${path} ${r.status}：${String(d.message || '').slice(0, 120)}`); return d }
+function richMenuDef (kind, L) {
+  const W = 2500, H = 1686, cw = Math.floor(W / 3), ch = Math.floor(H / 2)
+  const u = (q) => ({ type: 'uri', uri: `https://liff.line.me/${L}?to=member${q ? '&' + q : ''}` })
+  const cells = [kind === 'member' ? { ...u(''), label: '我的會員' } : { ...u(''), label: '加入會員' }, { ...u('tab=tasks'), label: '任務闖關' }, { ...u('tab=offers'), label: '優惠換好禮' }, { type: 'uri', uri: 'https://ground.oddle.me/zh_TW', label: '點餐菜單' }, { ...u('tab=friends'), label: '揪友賺點' }, { type: 'message', text: '門市與客服', label: '門市客服' }]
+  return { size: { width: W, height: H }, selected: true, name: 'GD ' + kind + ' ' + Date.now().toString(36), chatBarText: kind === 'member' ? '會員卡・點餐' : '加入會員・點餐', areas: cells.map((a, i) => ({ bounds: { x: (i % 3) * cw, y: Math.floor(i / 3) * ch, width: cw, height: ch }, action: a })) }
+}
+export async function richMenuSetup ({ who }) {
+  const L = liffId(); if (!L) return { ok: false, error: 'LIFF ID 未設' }
+  const token = await gdToken(); const cfg = await loadCfg(); const ids = {}
+  for (const kind of ['guest', 'member']) {
+    const created = await lineJson(token, '/v2/bot/richmenu', 'POST', richMenuDef(kind, L)); const id = created.richMenuId
+    const img = await fetch(`${ORIGIN}/ops/menu/richmenu-${kind}.png?r=${Date.now()}`); if (!img.ok) throw new Error('抓不到選單圖 ' + kind); const buf = Buffer.from(await img.arrayBuffer())
+    const up = await fetch(`https://api-data.line.me/v2/bot/richmenu/${id}/content`, { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'image/png' }, body: buf }); if (!up.ok) throw new Error('上傳選單圖失敗 ' + up.status)
+    ids[kind] = id
+  }
+  await lineJson(token, `/v2/bot/user/all/richmenu/${ids.guest}`, 'POST') // 預設＝非會員版
+  // 既有會員全部切到會員版（每 500 人一批）
+  const idn = await sel('member_identities', 'provider=eq.line&select=line_uid'); const uids = idn.map(i => i.line_uid); let linked = 0
+  for (let i = 0; i < uids.length; i += 500) { try { await lineJson(token, '/v2/bot/richmenu/bulk/link', 'POST', { richMenuId: ids.member, userIds: uids.slice(i, i + 500) }); linked += Math.min(500, uids.length - i) } catch (_) {} }
+  // 舊的選單刪掉（留這次兩個）
+  try { const old = ((cfg.richmenu || {}).ids) || {}; for (const k of Object.keys(old)) if (!Object.values(ids).includes(old[k])) await lineJson(token, `/v2/bot/richmenu/${old[k]}`, 'DELETE').catch(() => {}) } catch (_) {}
+  const n = { ...cfg, richmenu: { ids, at: nowIso(), by: who && who.name, linked } }; await kvSet(CFG_KEY, n, '圖文選單(' + ((who && who.name) || '') + ')')
+  return { ok: true, ids, linked, members: uids.length }
+}
+export async function richMenuLinkMember (uid) { try { const cfg = await loadCfg(); const id = ((cfg.richmenu || {}).ids || {}).member; if (!id || !uid) return; const token = await gdToken(); await lineJson(token, `/v2/bot/user/${uid}/richmenu/${id}`, 'POST') } catch (_) {} }
+// 門市與客服卡片／團體訂餐卡片（圖文選單第 6 格與「我要團體訂餐」）
+export async function storeCardMessages () {
+  const cfg = await loadCfg(); const url = memberLiffUrl()
+  const rows = []
+  if (cfg.hours) rows.push(kv('營業時間', cfg.hours)); if (cfg.address) rows.push(kv('地址', cfg.address)); if (cfg.phone) rows.push(kv('電話', cfg.phone))
+  const btns = []
+  if (cfg.mapUrl) btns.push(flexBtn('地圖導航', cfg.mapUrl, 'secondary')); if (cfg.phone) btns.push({ type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '撥打電話', uri: 'tel:' + cfg.phone.replace(/\D/g, '') } })
+  btns.push({ type: 'button', style: 'primary', color: RED, height: 'sm', action: { type: 'message', label: '我要團體訂餐', text: '我要團體訂餐' } })
+  const social = [cfg.igUrl ? { type: 'text', text: 'Instagram', size: 'sm', color: '#2049c9', action: { type: 'uri', uri: cfg.igUrl }, flex: 1, align: 'center' } : null, cfg.fbUrl ? { type: 'text', text: 'Facebook', size: 'sm', color: '#2049c9', action: { type: 'uri', uri: cfg.fbUrl }, flex: 1, align: 'center' } : null].filter(Boolean)
+  const body = [...rows, { type: 'separator', margin: 'md' }, { type: 'text', text: '預訂餐點請提前一天留言，小編上班時間內回覆；臨時當天的請直接來電。', wrap: true, size: 'xs', color: '#8a7a70', margin: 'md' }]
+  if (social.length) body.push({ type: 'box', layout: 'horizontal', margin: 'md', contents: social })
+  return [{ type: 'flex', altText: 'GROUN:D 門市與客服', contents: { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: 'GROUN:D 門市與客服', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: '直接留言就是找小編', color: '#ffd9d6', size: 'xxs' }] }, body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: body }, footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: btns.slice(0, 3) } } }]
+}
+export async function grporderCardMessages () {
+  return [{ type: 'flex', altText: '團體訂餐怎麼訂', contents: { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: '團體訂餐', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: '部門聚餐・大量外帶', color: '#ffd9d6', size: 'xxs' }] }, body: { type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '14px', contents: [
+    { type: 'text', text: '① 在這裡留言：日期、人數、取餐方式', wrap: true, size: 'sm' }, { type: 'text', text: '② 小編傳你一條點餐連結，丟到群組每個人自己點', wrap: true, size: 'sm' }, { type: 'text', text: '③ 我們核價後傳計價表，確認就完成；用 LINE 登入點餐的人自動累點', wrap: true, size: 'sm' },
+    { type: 'text', text: '已收到你的需求，小編上班時間內回覆。', wrap: true, size: 'xs', color: '#8a7a70', margin: 'md' }] } } }]
 }
