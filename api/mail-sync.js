@@ -1433,7 +1433,9 @@ export default async function handler(req, res) {
     const hourDays = {}
     const hourUber = {} // AB 每小時 Uber {date:{hour:uber}}（張良 2026-10-12 熱力圖顯示 Uber）
     const fromHD = dOf(anchor, -120)
-    for (const e of entries) {
+    // v4.70.87（張良 2026-10-12「熱力圖怎麼沒有更新到現在週一」）：原本只跑 entries＝日結正式筆，今天盤中那筆（liveE9，喬亞每 15 分已帶時段表）被漏掉
+    // →每日數據表有今天、熱力圖沒有。改成跟 days2 同一份名單（正式＋今天盤中），打烊後自動換正式值
+    for (const e of [...entries, ...liveE9]) {
       if (e.date < fromHD) continue
       if (slotEx.has(e.date)) continue // 包場日不進熱力圖（那格隱藏）
       const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
