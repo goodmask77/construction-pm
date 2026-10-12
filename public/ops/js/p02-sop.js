@@ -248,6 +248,7 @@ const EDIT_FN = {
   cdCapSave:'buy', cdReconSave:'buy', // 成本總覽：成本率上限／月帳對帳＝採購權限（批次 5a v4.70.34）
   goCreate:'gorder', goCreateGo:'gorder', goSendLink:'gorder', goStatus:'gorder', goSave:'gorder', goParse:'gorder', goParseGo:'gorder', goCfg:'gorder', goCfgSave:'gorder', goRowSet:'gorder', goRowAdd:'gorder', goRowDel:'gorder', goPendFix:'gorder', goPendDrop:'gorder', goSharedSet:'gorder', goLineSet:'gorder', goLineAdd:'gorder', goLineDel:'gorder', goHeadSet:'gorder', // 團體訂餐（v4.70.78）
   buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
+  mhBoxForm:'mail', mhBoxSave:'mail', mhBoxDel:'mail', mhBoxToggle:'mail', mhRuleForm:'mail', mhRuleSave:'mail', mhRuleDel:'mail', mhRuleToggle:'mail', mhRuleConfirm:'mail', mhApply:'mail', mhScan:'mail', // 信箱中樞（v4.70.79）
 }
 function permFnTab(el){
   const src = (el.getAttribute('onclick') || '') + ';' + (el.getAttribute('onchange') || '')
