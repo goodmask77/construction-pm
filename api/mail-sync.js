@@ -3381,14 +3381,35 @@ export default async function handler(req, res) {
         mig19 = true
       }
     }
-    if (mig18 || mig19) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
+    // v4.70.97 mig20（張良 2026-10-12「第一層工作站、第二層完全隸屬於某個工作站、不要共用」）：階段改成每站自己一份 stCats{站:[階段…]}，
+    // 由該站目前用到的階段（照舊全域 catOrder 順序）推出；舊 catOrder 留著不刪（回退用）。舊「階段負責人」catOwner → 轉成用到該階段且還沒負責人的站的站負責人
+    //（例：外場巡查→外場櫃檯）；站改名沒跟到的舊負責人鍵（披薩→Pizza、漢堡→漢堡療癒碗）順手對上。只跑一次（stCats 不存在才跑）。
+    let mig20 = false
+    if (!gdef.stCats) {
+      const co20 = gdef.catOrder || []
+      gdef.stCats = {}
+      for (const stX of gdef.stations) {
+        const used = [...new Set(gdef.items.filter(i => i.st === stX && i.tg).map(i => String(i.tg)))]
+        gdef.stCats[stX] = [...co20.filter(c => used.includes(c)), ...used.filter(c => !co20.includes(c))]
+      }
+      gdef.stOwner = { ...(gdef.stOwner || {}) }
+      for (const [k, v] of Object.entries(gdef.stOwner)) {
+        if (gdef.stations.includes(k)) continue
+        const hit = gdef.stations.find(s => s.includes(k) || k.includes(s) || (k === '披薩' && s === 'Pizza') || (k === 'Pizza' && s === '披薩'))
+        if (hit && !gdef.stOwner[hit]) gdef.stOwner[hit] = v
+        delete gdef.stOwner[k]
+      }
+      for (const [cg, who] of Object.entries(gdef.catOwner || {})) { for (const stX of gdef.stations) { if ((gdef.stCats[stX] || []).includes(cg) && !gdef.stOwner[stX]) gdef.stOwner[stX] = who } }
+      mig20 = true
+    }
+    if (mig18 || mig19 || mig20) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig20 ? 'SOP階段改每站自己一份' : mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
     const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
     const sugOpen = {}
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, handover: (logDoc || {}).handover || [], names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCats: gdef.stCats || {}, stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, handover: (logDoc || {}).handover || [], names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // v4.61.0 跨日歷史查詢（工作流程SOP改版第3期）：讀指定日完成紀錄（含快照 title/st/tg，改名/刪條目也能正確顯示）
   if (req.query?.sophist && req.method !== 'POST') {
@@ -3411,10 +3432,23 @@ export default async function handler(req, res) {
     const gS = curS.ground || { items: [] }
     gS.stations = (gS.stations && gS.stations.length) ? gS.stations : [...new Set((gS.items || []).map(i => i.st))]
     const nmS = String(bs.st || '').trim().slice(0, 20)
+    // v4.70.97 守門分兩層（張良 2026-10-12）：第一層「工作站」（增刪改名排序、指定負責人、舊全域階段操作）＝審核人／主管；
+    // 第二層「該站的階段」（tgadd/tgren/tgdel/tgord）＝該站負責人或審核人／主管。沒負責人的站只有主管能動。
+    const aprS9 = gS.approvers || ['張良瑋']
+    const mgrS9 = aprS9.includes(whoS.name) || whoS.role === '主管'
+    const canStS = st9 => mgrS9 || (!!(gS.stOwner || {})[st9] && (gS.stOwner || {})[st9] === whoS.name)
+    const stLayerOps = ['add', 'rename', 'del', 'restore', 'stord', 'ownset', 'catadd', 'catren', 'catdel', 'catord', 'catset', 'catown']
+    if (stLayerOps.includes(bs.op) && !mgrS9) return res.status(403).json({ ok: false, error: '工作站這一層（新增／改名／刪除／排序／指定負責人）由審核人／主管管理' })
+    if (['tgadd', 'tgren', 'tgdel', 'tgord'].includes(bs.op)) {
+      if (!nmS || !gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個工作站' })
+      if (!canStS(nmS)) return res.status(403).json({ ok: false, error: (gS.stOwner || {})[nmS] ? '「' + nmS + '」由 ' + gS.stOwner[nmS] + ' 負責——想改請按站名旁「💡 提建議」' : '「' + nmS + '」還沒有負責人——請審核人／主管編輯或先指定負責人' })
+      gS.stCats = { ...(gS.stCats || {}) }
+    }
     if (bs.op === 'add') {
       if (!nmS) return res.status(400).json({ ok: false, error: '要給站名' })
       if (gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '已經有這個站了' })
       gS.stations.push(nmS)
+      gS.stCats = { ...(gS.stCats || {}), [nmS]: [] }
     } else if (bs.op === 'rename') {
       const nn = String(bs.newName || '').trim().slice(0, 20)
       if (!nmS || !nn) return res.status(400).json({ ok: false, error: '要給舊站名與新站名' })
@@ -3423,6 +3457,29 @@ export default async function handler(req, res) {
       gS.items = (gS.items || []).map(it => it.st === nmS ? { ...it, st: nn } : it)
       if ((gS.stCat || {})[nmS] != null) { gS.stCat = { ...gS.stCat, [nn]: gS.stCat[nmS] }; delete gS.stCat[nmS] }
       if ((gS.stOwner || {})[nmS] != null) { gS.stOwner = { ...gS.stOwner, [nn]: gS.stOwner[nmS] }; delete gS.stOwner[nmS] }
+      if ((gS.stCats || {})[nmS] != null) { gS.stCats = { ...gS.stCats, [nn]: gS.stCats[nmS] }; delete gS.stCats[nmS] }
+    } else if (bs.op === 'tgadd') { // v4.70.97 第二層：這一站自己的階段
+      const cn = String(bs.cat || '').trim().slice(0, 20); if (!cn) return res.status(400).json({ ok: false, error: '要給階段名' })
+      const L = gS.stCats[nmS] = [...(gS.stCats[nmS] || [])]
+      if (L.includes(cn)) return res.status(400).json({ ok: false, error: '這一站已經有「' + cn + '」了' })
+      L.push(cn)
+    } else if (bs.op === 'tgren') {
+      const co = String(bs.cat || '').trim(), cn = String(bs.newName || '').trim().slice(0, 20)
+      if (!co || !cn) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
+      const L = gS.stCats[nmS] || []
+      if (!L.includes(co)) return res.status(404).json({ ok: false, error: '這一站沒有「' + co + '」' })
+      if (cn !== co && L.includes(cn)) return res.status(400).json({ ok: false, error: '這一站已經有「' + cn + '」了' })
+      gS.stCats[nmS] = L.map(c2 => c2 === co ? cn : c2)
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && it.tg === co) it.tg = cn })
+    } else if (bs.op === 'tgdel') {
+      const cn = String(bs.cat || '').trim()
+      gS.stCats[nmS] = (gS.stCats[nmS] || []).filter(c2 => c2 !== cn)
+      ;(gS.items || []).forEach(it => { if (it.st === nmS && it.tg === cn) delete it.tg }) // 動作不刪，變「未分階段」
+    } else if (bs.op === 'tgord') {
+      const want = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x).trim().slice(0, 20)).filter(Boolean)
+      const L = gS.stCats[nmS] || []
+      const keep = want.filter(x => L.includes(x))
+      gS.stCats[nmS] = [...keep, ...L.filter(x => !keep.includes(x))]
     } else if (bs.op === 'del') {
       if (!gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個站' })
       const moved = (gS.items || []).filter(it => it.st === nmS)
@@ -3430,12 +3487,14 @@ export default async function handler(req, res) {
       gS.stations = gS.stations.filter(s => s !== nmS)
       if (gS.stCat) delete gS.stCat[nmS]
       if (gS.stOwner) delete gS.stOwner[nmS]
+      if (gS.stCats) delete gS.stCats[nmS]
       gS.trash = [{ id: 'tr' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), by: whoS.name, st: nmS, items: moved }, ...(gS.trash || [])].slice(0, 20)
     } else if (bs.op === 'restore') {
       const tr = (gS.trash || []).find(t => t.id === bs.trashId)
       if (!tr) return res.status(404).json({ ok: false, error: '回收站找不到' })
       if (!gS.stations.includes(tr.st)) gS.stations.push(tr.st)
       gS.items = [...(gS.items || []).filter(it => it.st !== tr.st || !(tr.items || []).some(x => x.id === it.id)), ...(tr.items || [])]
+      gS.stCats = { ...(gS.stCats || {}) }; gS.stCats[tr.st] = [...new Set([...(gS.stCats[tr.st] || []), ...(tr.items || []).map(x => x.tg).filter(Boolean)])] // v4.70.97 復原站也把它的階段帶回來
       gS.trash = (gS.trash || []).filter(t => t.id !== bs.trashId)
     } else if (bs.op === 'catadd') { // v4.15.0 分類層
       const cn = String(bs.cat || '').trim().slice(0, 20); if (!cn) return res.status(400).json({ ok: false, error: '要給分類名' })
@@ -5555,9 +5614,11 @@ export default async function handler(req, res) {
     gA.items = gA.items || []
     const st = String(inp.st || '').trim().slice(0, 20)
     // 負責人守門（複用 sopedit 規則）：有主的站只有負責人/審核人/主管能改
-    const ownA = (gA.stOwner || {})[st] || (gA.catOwner || {})[(gA.stCat || {})[st]]
+    // v4.70.97（張良 2026-10-12「有編輯才出現」）：該站負責人或審核人／主管才能改；沒負責人的站只有主管能改（原本沒負責人＝綁定的人人都能改，跟畫面不一致）
+    const ownA = (gA.stOwner || {})[st]
     const aprA = gA.approvers || ['張良瑋']
-    if (ownA && ownA !== whoA.name && !aprA.includes(whoA.name) && whoA.role !== '主管') return res.status(403).json({ ok: false, error: '「' + st + '」由 ' + ownA + ' 負責——想改請按站名旁「💡 提建議」' })
+    const mgrA = aprA.includes(whoA.name) || whoA.role === '主管'
+    if (!mgrA && !(ownA && ownA === whoA.name)) return res.status(403).json({ ok: false, error: ownA ? '「' + st + '」由 ' + ownA + ' 負責——想改請按站名旁「💡 提建議」' : '「' + st + '」還沒有負責人——請審核人／主管編輯或先指定負責人' })
     const now8a = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
     if (ba.del === true) { // 刪一條（有歷史的靠每日快照保留，範本直接移除）
       if (!inp.id) return res.status(400).json({ ok: false, error: '缺 id' })
@@ -5574,6 +5635,7 @@ export default async function handler(req, res) {
       const desc = String(inp.desc || '').trim().slice(0, 500); if (desc) o.desc = desc
       if (refsIn.length) { o.refs = refsIn; o.ref = refsIn[0] } // ref 鏡像=相容舊單張讀取
       if (subsIn.length) o.subs = subsIn
+      if (o.tg) { gA.stCats = { ...(gA.stCats || {}) }; const Lt = gA.stCats[st] = [...(gA.stCats[st] || [])]; if (!Lt.includes(o.tg)) Lt.push(o.tg) } // v4.70.97 動作填了這站沒有的階段＝自動加進這站的階段清單
       if (Array.isArray(inp.prereq) && inp.prereq.length) o.prereq = inp.prereq.filter(x => typeof x === 'string' && x).slice(0, 20) // v4.66.0 前置動作
       const prevA = gA.items.find(x => x.id === o.id)
       gA.items = [...gA.items.filter(x => x.id !== o.id), o]
@@ -5653,9 +5715,10 @@ export default async function handler(req, res) {
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g6 = cur6.ground || { items: [] }
     { // v4.17.0 有效負責人=站負責人||分類負責人：有主的只有負責人/審核人/主管能編
-      const own6 = (g6.stOwner || {})[b6.st] || (g6.catOwner || {})[(g6.stCat || {})[b6.st]]
+      const own6 = (g6.stOwner || {})[b6.st]
       const apr6 = g6.approvers || ['張良瑋']
-      if (own6 && own6 !== who6.name && !apr6.includes(who6.name) && who6.role !== '主管') return res.status(403).json({ ok: false, error: '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' })
+      const mgr6 = apr6.includes(who6.name) || who6.role === '主管'
+      if (!mgr6 && !(own6 && own6 === who6.name)) return res.status(403).json({ ok: false, error: own6 ? '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' : '「' + b6.st + '」還沒有負責人——請審核人／主管編輯或先指定負責人' }) // v4.70.97 與 sopact 同規則
     }
     const prev6 = (g6.items || []).filter(it => it.st === b6.st) // 改前快照＝歷史紀錄可回溯
     const prevIt6 = {}; ((cur6.ground || {}).items || []).forEach(it => { prevIt6[it.id] = it })
