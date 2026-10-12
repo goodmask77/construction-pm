@@ -2160,6 +2160,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 【夥伴名冊（主管限定頁,/prep→夥伴名冊）】已上線：欄位=姓名/店/部門/職務/到職日/年資/生日/年齡/性別/身分證(鎖名單)/緊急聯絡人/入職文件(勞動契約/身分證影本/存摺/體檢/衛生訓練/未成年法代)。你不能直接改名冊——使用者要改就教他打指令(主管私訊限定)：改文字欄「名冊 姓名 欄位 值」或「緊急聯絡人 姓名 電話」(改那個人的欄位)或「我的緊急聯絡人 內容」(掛自己名下)；傳文件「文件 姓名 體檢」後15分內傳照片/檔案；查收件「文件 姓名」。絕不要說「名冊沒有某欄位/要找CC加欄位」。
+- 操作者想把 Pinterest 的圖存進行銷大師素材庫：教他直接傳「**存素材庫 ＋Pinterest 釘圖或圖版連結**」，系統會自動抓圖存進去並回存了幾張（已接好的真功能）；登記圖版每小時自動抓新圖要到 /prep 行銷大師→素材庫→「Pinterest 自動抓」。
 - 張良想叫 CC（Claude Code 工程師）改程式/加功能：教他直接打「**轉給CC ＋需求內容**」一句話——系統會自動收進 CC 收件匣、CC 會撿單處理（這是接好的真管道，**不要再說「我沒辦法轉給CC」**）。只有張良本人打有效；夥伴提需求請他們走 /prep 的建議或先跟張良說。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
@@ -2581,6 +2582,17 @@ export default async function handler(req, res) {
         await kvSet('pm_cc_inbox', docCC)
         // v4.45.6（CC許願：回覆文案改正＋開工即時回報）：寫一筆「開工回報」待補——CC 撿單時會先發「開工」
         await send(`✅ 已收進 CC 收件匣（待辦 ${docCC.list.filter(x => x.status === 'open').length} 件）。CC 在線時最快 20 秒內開工，開工跟完成都會即時回報你；沒在線就先排隊，下次開工第一件處理。`)
+        continue
+      }
+      // 1.34b) v4.71.5 「存素材庫 ＋Pinterest 連結」（張良 2026-10-12「做 存＆貼連結」）：操作者傳 Pinterest 釘圖／圖版連結＋「素材庫」字樣 → 直接存進行銷大師素材庫
+      if (canAct && op && /素材庫/.test(text) && /pinterest\.|pin\.it\//i.test(text)) {
+        const urls = (text.match(/https?:\/\/[^\s]+/g) || []).filter(u => /pinterest\.|pin\.it\//i.test(u)).slice(0, 5)
+        try {
+          const { importUrl } = await import('./_pinterest.js'); const rs = []
+          for (const u of urls) { try { rs.push(await importUrl(u, op.name)) } catch (e) { rs.push({ ok: false, error: String(e.message || e).slice(0, 100) }) } }
+          const added = rs.reduce((s, r) => s + ((r.added && r.added.length) || 0), 0), dup = rs.reduce((s, r) => s + (r.dup || 0), 0), bad = rs.filter(r => !r.ok)
+          await send(`素材庫：新存 ${added} 張${dup ? '、已有略過 ' + dup + ' 張' : ''}${bad.length ? '\n失敗：' + bad.map(r => r.error).join('；') : ''}\n（行銷大師 → 素材庫）`)
+        } catch (e) { await send('存素材庫失敗：' + String(e.message || e).slice(0, 120)) }
         continue
       }
       // 1.35) App 身分綁定（張良 2026-09-21：夥伴打卡不用手填名字）：任何夥伴私訊「綁定GD」→

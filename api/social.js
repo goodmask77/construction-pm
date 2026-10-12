@@ -10,6 +10,8 @@ const ymOf = (iso) => String(iso || '').slice(0, 7)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const AST_KEY = 'sp_finance_pm_social_assets' // 素材庫（可重複用的圖片／影片）
+const SLG_KEY = 'sp_finance_pm_social_slogans' // v4.71.5 靈感標語庫（張良 2026-10-12「我會貼上很多短劇slogan 主要文字＆精神標語 ai幫我產出文案」）：{list:[{id,text,tag,addedAt,addedBy}]}
+const slgGet = async () => { const d = (await kvGet(SLG_KEY)) || { list: [] }; d.list = d.list || []; return d }
 
 // AI 文案生成：v4.70.29 走 AI 中樞（api/_ai.js）route=social，設定頁可選 ChatGPT／Claude／Gemini；圖片用統一格式 {type:'image',media_type,data}
 async function aiText(system, user, maxTokens = 1500) {
@@ -84,12 +86,15 @@ export default async function handler(req, res) {
       const pageMap = (acc.facebook && acc.facebook.pages) || {}
       const pageList = Object.values(pageMap)
       const assets = ((await kvGet(AST_KEY)) || { list: [] }).list || []
+      let pinBoards = [], slogans = [] // v4.71.5 Pinterest 登記圖版＋靈感標語庫
+      try { const { pinDoc } = await import('./_pinterest.js'); pinBoards = (await pinDoc()).boards } catch (_) {}
+      try { slogans = (await slgGet()).list } catch (_) {}
       return res.status(200).json({
         ok: true, connected: pageList.length > 0,
         account: pageList.length ? { pages: pageList, defaultPageId: (acc.facebook && acc.facebook.defaultPageId) || null } : null,
         metaReady: metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: GV, canEdit: canEditSocial(who),
         me: who ? { name: who.name, admin: who.admin } : null,
-        posts: withM, assets, kpi: { pubThis: pubThis.length, reach, inter: interTot, avgInter },
+        posts: withM, assets, pinBoards, slogans, kpi: { pubThis: pubThis.length, reach, inter: interTot, avgInter },
       })
     }
 
@@ -107,6 +112,29 @@ export default async function handler(req, res) {
         try { const { runCollect } = await import('./social-collect.js'); const r = await runCollect(Number(body.days) || 30); await act('立即同步社群成效'); return res.status(200).json(r) }
         catch (e) { return res.status(200).json({ ok: false, error: e.message || '同步失敗' }) }
       }
+      // ── v4.71.5 Pinterest（張良「做 存＆貼連結」）：貼連結立刻抓／登記圖版每小時自動抓 ──
+      if (op === 'pinimport') { // body.urls = 多行連結（釘圖或圖版）
+        const urls = String(body.urls || body.url || '').split(/[\s,，]+/).map(s => s.trim()).filter(s => /pinterest\.|pin\.it/i.test(s)).slice(0, 10)
+        if (!urls.length) return res.status(200).json({ ok: false, error: '請貼 Pinterest 的釘圖或圖版連結' })
+        const { importUrl } = await import('./_pinterest.js'); const results = []
+        for (const u of urls) { try { results.push(await importUrl(u, who.name)) } catch (e) { results.push({ ok: false, url: u, error: String(e.message || e).slice(0, 160) }) } }
+        const added = results.reduce((s, r) => s + ((r.added && r.added.length) || 0), 0), dup = results.reduce((s, r) => s + (r.dup || 0), 0), failed = results.reduce((s, r) => s + ((r.failed && r.failed.length) || 0), 0)
+        if (added) await act('Pinterest 貼連結存圖', added + ' 張')
+        return res.status(200).json({ ok: true, added, dup, failed, results, assets: (((await kvGet(AST_KEY)) || {}).list) || [] })
+      }
+      if (op === 'pinboardadd') { try { const { boardAdd } = await import('./_pinterest.js'); const r = await boardAdd(String(body.url || ''), who.name); await act('Pinterest 登記圖版', r.board.name); return res.status(200).json({ ok: true, ...r, added: r.added.length, assets: (((await kvGet(AST_KEY)) || {}).list) || [] }) } catch (e) { return res.status(200).json({ ok: false, error: String(e.message || e).slice(0, 200) }) } }
+      if (op === 'pinboarddel') { if (!who.admin) return res.status(200).json({ ok: false, error: '只有管理者能移除登記的圖版' }); const { boardDel } = await import('./_pinterest.js'); return res.status(200).json({ ok: true, boards: await boardDel(String(body.id || '')) }) }
+      if (op === 'pinsync') { try { const { syncAll, pinDoc } = await import('./_pinterest.js'); const r = await syncAll({ notify: false }); return res.status(200).json({ ...r, boards: (await pinDoc()).boards, assets: (((await kvGet(AST_KEY)) || {}).list) || [] }) } catch (e) { return res.status(200).json({ ok: false, error: String(e.message || e).slice(0, 200) }) } }
+      // ── v4.71.5 靈感標語庫：一次貼很多行（短劇 slogan／主文字／精神標語），AI 文案「標語精神」風格會學它們的語感 ──
+      if (op === 'sloganadd') {
+        const lines = String(body.text || '').split(/\r?\n/).map(s => s.trim().replace(/^[-•*\d.、)\]]+\s*/, '')).filter(s => s.length >= 2 && s.length <= 200)
+        if (!lines.length) return res.status(200).json({ ok: false, error: '沒有讀到內容，一行一句貼上來' })
+        const d = await slgGet(); const have = new Set(d.list.map(x => x.text)); const tag = String(body.tag || '').trim().slice(0, 20); let n = 0
+        for (const t of lines) { if (have.has(t)) continue; have.add(t); d.list.unshift({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text: t, tag, addedAt: new Date().toISOString(), addedBy: who.name }); n++ }
+        d.list = d.list.slice(0, 2000); await kvPut(SLG_KEY, d); await act('靈感標語庫新增', n + ' 句')
+        return res.status(200).json({ ok: true, added: n, dup: lines.length - n, slogans: d.list })
+      }
+      if (op === 'slogandel') { const d = await slgGet(); const ids = new Set(Array.isArray(body.ids) ? body.ids : [body.id]); d.list = d.list.filter(x => !ids.has(x.id)); await kvPut(SLG_KEY, d); return res.status(200).json({ ok: true, slogans: d.list }) }
       if (op === 'upload') {
         // 貼文圖片上傳 photos 桶（公開，發文時給 Meta 當 image_url）
         const du = String(body.dataUrl || '')
@@ -134,8 +162,11 @@ export default async function handler(req, res) {
           chic: '文青質感：精煉有氛圍，重意境與畫面感，留白得宜',
           fun: '活潑俏皮：輕鬆幽默，多用口語和表情，貼近年輕族群',
           pro: '專業正式：清楚得體，適合正式公告或品牌宣達',
+          spirit: '標語精神：學「靈感標語庫」那些短劇 slogan／精神標語的語感——短、有態度、一句打中人心、有畫面與反差；每版開頭先給一句主標語（15 字內），第二行副標語，接著才是貼文正文',
         }
         const style = styleMap[body.style] || styleMap.warm
+        let bank = '' // v4.71.5 靈感標語庫：風格選「標語精神」時整批餵給 AI 學語感（最多 150 句／4000 字），不是拿來抄
+        if (body.style === 'spirit') { try { const d = await slgGet(); const pick = d.list.slice(0, 150).map(x => x.text); bank = pick.join('\n').slice(0, 4000); if (!bank) return res.status(200).json({ ok: false, error: '靈感標語庫還是空的，先到「靈感庫」貼幾句 slogan 進來' }) } catch (_) {} }
         const lenMap = { short: '精簡有力，大約 1–2 句、30 字以內', medium: '適中，大約 3–4 句、60 字上下', long: '較完整，大約 5–7 句、100 字以上，適度分段' }
         const len = lenMap[body.length] || lenMap.medium
         const lang = body.lang === 'en' ? '只用英文撰寫'
@@ -165,7 +196,7 @@ export default async function handler(req, res) {
             const per = []
             for (const bd of brands) {
               const sysM = `你是台灣餐飲品牌「${bd}」的資深社群小編。請為這個品牌寫「1 則」可直接複製貼上就發佈的純貼文正文，要緊貼「${bd}」的品牌特色、調性與客群，用專屬口吻撰寫，和別的品牌明顯區隔、不要寫得像同一篇。⚠️不要加「【】」方括號標籤、標題或任何說明，直接寫正文。只輸出 JSON，格式嚴格為：{"versions":["正文"]}`
-              const txtM = [`品牌：${bd}`, `平台語氣：${plat}`, `文案風格：${style}`, `文案長度：${len}`, `語言：${lang}`, items.length ? `主打餐點：${items.join('、')}` : '', imgBlock ? '已附上圖片，請先觀察畫面（餐點／擺盤／場景／氛圍）再寫，讓文字緊貼畫面。' : '', topic ? `要宣傳的重點／素材：\n${topic}` : '請主要依照圖片內容發想。'].filter(Boolean).join('\n')
+              const txtM = [`品牌：${bd}`, `平台語氣：${plat}`, `文案風格：${style}`, bank ? `【靈感標語庫】以下是老闆收集的短劇 slogan／精神標語，學它們的語感、節奏、態度來寫，但不要照抄任何一句：\n${bank}` : '', `文案長度：${len}`, `語言：${lang}`, items.length ? `主打餐點：${items.join('、')}` : '', imgBlock ? '已附上圖片，請先觀察畫面（餐點／擺盤／場景／氛圍）再寫，讓文字緊貼畫面。' : '', topic ? `要宣傳的重點／素材：\n${topic}` : '請主要依照圖片內容發想。'].filter(Boolean).join('\n')
               const vs = parseVersions(await aiText(sysM, mkContent(txtM), 1200))
               per.push({ brand: bd, caption: (vs && vs[0]) || '' })
             }
@@ -183,6 +214,7 @@ export default async function handler(req, res) {
             brand ? `品牌：${brand}` : '',
             `平台語氣：${plat}`,
             `文案風格：${style}`,
+            bank ? `【靈感標語庫】以下是老闆收集的短劇 slogan／精神標語，學它們的語感、節奏、態度來寫 5 版（每版主標語都要不同切角），但不要照抄任何一句：\n${bank}` : '',
             `文案長度：每版${len}`,
             `語言：${lang}`,
             items.length ? `主打餐點：${items.join('、')}` : '',
