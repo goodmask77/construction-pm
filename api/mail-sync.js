@@ -1443,6 +1443,7 @@ export default async function handler(req, res) {
       if (!rows3.length) continue
       const hm = {}
       for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
+      for (const h of Object.keys(hm)) if (!(hm[h] > 0)) delete hm[h] // 0 元時段不給（盤中會帶 9 時＝0 的空列，熱力圖多一整列空白）
       if (Object.keys(hm).length) hourDays[e.date] = hm
     }
     // AB 沒有日結時段表（Eats365 日結無時段）→ ①主來源：後台 hourlySalesRecordMap 回補的直接每小時營收 sp_finance_pm_ab_hhrev_（可回補歷史＝熱力圖跟 GD 一樣滿，張良 2026-10-10）②補：盤中快照 sp_finance_pm_ab_hh_（joya-intraday 當天累計相鄰相減）補今天進行中的日子
