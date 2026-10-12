@@ -4025,7 +4025,7 @@ export default async function handler(req, res) {
   // 設定口（公開資訊）：GET ?webpushcfg=1 → VAPID 公鑰 + LIFF id（公鑰本來就是公開的，LIFF id 也是）
   if (req.query?.webpushcfg) {
     const { wpPubKey } = await import('./_webpush.js')
-    return res.status(200).json({ ok: true, key: wpPubKey() || null, liff: (process.env.LIFF_ID || '').trim() || null })
+    return res.status(200).json({ ok: true, key: wpPubKey() || null, liff: (process.env.LIFF_ID || '').trim() || null, liffStaff: (process.env.LIFF_STAFF_ID || '').trim() || null }) // v4.71.1 liffStaff=員工 LIFF（DD 同 Provider 的「DD LIFE」頻道），/liff/ 入口依 ?to= 決定用哪一個
   }
   // 訂閱口：POST ?pushsub=<OPS_BOARD_KEY> {token, sub, off} → 綁定者本人存訂閱（off=1 取消）
   if (req.method === 'POST' && req.query?.pushsub) {
