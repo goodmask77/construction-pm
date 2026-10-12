@@ -4402,6 +4402,56 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: '不認識的操作' })
     } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
   }
+  // 🪪 會員 v4.70.83 第一批（docs/MEMBER_PLAN_v1.md；建表 supabase/migrations/0001_member.sql）：
+  //   店家：GET ?member=K&me=token&op=list(&q)|get(&id)|stats|cfg ／ POST ?member=K {token, op:find|earn|redeem|adjust|create|update|cfg}（寫入要「會員」分頁權限 permWho(tk,'member')；mgr＝審核人／主管可看完整手機、超限操作）
+  //   客人（LIFF）：GET ?mcard=1 → {liff}；POST ?mcard=1 {op:who|consent|me|update|leave, at|uid+mt, …}
+  if (req.query?.member) {
+    const okM = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okM || String(req.query.member) !== okM) return res.status(403).json({ ok: false })
+    let bM = {}; if (req.method === 'POST') { try { bM = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkM = req.method === 'POST' ? bM.token : req.query.me
+    const whoM = await sopWho(tkM)
+    if (!whoM) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const canM = !!(await permWho(tkM, 'member'))
+    const [defM, pmM] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    const IBm = await import('./_inbox.js'); const mgrM = IBm.isMgr(whoM, (((defM || {}).ground || {}).approvers || ['張良瑋']), pmM)
+    const MB = await import('./_member.js')
+    const opM = String(req.method === 'POST' ? bM.op : req.query.op || 'list')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        if (opM === 'list') return res.status(200).json({ ok: true, ver: MB.MEMBER_VER, me: { name: whoM.name, canEdit: canM, mgr: mgrM }, list: await MB.listMembers({ q: req.query.q, limit: req.query.limit }), stats: await MB.stats(), cfg: await MB.loadCfg(), liff: MB.liffId() })
+        if (opM === 'get') return res.status(200).json(await MB.getMember({ id: String(req.query.id || ''), mgr: mgrM }))
+        if (opM === 'stats') return res.status(200).json({ ok: true, stats: await MB.stats() })
+        if (opM === 'cfg') return res.status(200).json({ ok: true, cfg: await MB.loadCfg() })
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (opM === 'find') return res.status(200).json(await MB.resolveMember(bM.key))
+      if (!canM) return res.status(403).json({ ok: false, error: '沒有「會員」分頁的編輯權限（請主管在權限頁開）' })
+      if (opM === 'earn') return res.status(200).json(await MB.earn({ who: whoM, mgr: mgrM, key: bM.key, amount: bM.amount, posNo: bM.posNo, reqId: bM.reqId, note: bM.note }))
+      if (opM === 'redeem') return res.status(200).json(await MB.redeem({ who: whoM, key: bM.key, rewardId: bM.rewardId, reqId: bM.reqId }))
+      if (opM === 'adjust') return res.status(200).json(await MB.adjust({ who: whoM, mgr: mgrM, id: String(bM.id || ''), pts: bM.pts, reason: bM.reason, reqId: bM.reqId }))
+      if (opM === 'create') return res.status(200).json(await MB.createByStaff({ who: whoM, name: bM.name, phone: bM.phone, note: bM.note }))
+      if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
+      if (opM === 'cfg') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改會員設定' }); return res.status(200).json(await MB.saveCfg(bM.cfg || {}, whoM)) }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }
+  }
+  if (req.query?.mcard) {
+    const MB = await import('./_member.js')
+    res.setHeader('Cache-Control', 'private, no-store')
+    if (req.method !== 'POST') return res.status(200).json({ ok: true, liff: MB.liffId(), ver: MB.MEMBER_VER })
+    let bC = {}; try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const opC = String(bC.op || '')
+    try {
+      if (opC === 'who') return res.status(200).json(await MB.custWho({ at: bC.at }))
+      if (opC === 'consent') return res.status(200).json(await MB.custConsent({ body: bC }))
+      if (opC === 'me') return res.status(200).json(await MB.custMe({ body: bC }))
+      if (opC === 'update') return res.status(200).json(await MB.custUpdate({ body: bC }))
+      if (opC === 'leave') return res.status(200).json(await MB.custLeave({ body: bC }))
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }
+  }
   // 📥 統一收件匣 v4.70.47（溝通中樞第三部 項目 5＋6）：GET ?inbox=K&me=token&op=list|conv|settings ／ POST ?inbox=K {token, op:send|status|assign|note|rename|cfg|connect}
   if (req.query?.inbox) {
     const okI = (process.env.OPS_BOARD_KEY || '').trim()

@@ -1,5 +1,8 @@
 # GROUN:D 自建會員＋遊戲 執行計畫 v1（2026-10-12，三家 AI 第二輪討論後）
 
+> **張良 10-12 裁決**：分歧 G～K 照 CC 建議；現場入點＝**店員輸會員號碼或掃會員 QR＋金額（單號選填）**，掃發票／Wixtar API 之後再說。喬亞 POS 行動報表＝Wixtar POS（同一家）。
+> **PR 1 程式 v4.70.83 已做**（feat/member）：建表 SQL `supabase/migrations/0001_member.sql`（張良貼 Supabase 跑一次）、後端 `api/_member.js`、端點 `?member=`（店家）／`?mcard=`（客人）、客人會員卡 `/member`（LIFF）、GD 分頁「會員」`p26-member.js`、GD 官方帳號加好友 reply 歡迎＋會員卡連結。前置仍缺：LIFF ID＋LINE_LOGIN_CHANNEL_ID。
+
 > 張良 2026-10-12：只做 GD；要簡單拉霸／轉盤；可考慮沿用內部排行榜／兌換商城／積分／等級概念；先討論怎麼規劃執行。
 > 輸入：A 稿 `line-member-system-spec.md`（精簡 P0）、B 稿 `CC_LINE_CRM_Games_Execution_Spec_v1.md`（完整 W0–W6＋遊戲引擎）、第一輪紀錄 `MEMBER_REVIEW_3AI.md`。
 > 第二輪三家（ChatGPT gpt-6.1-sol／Gemini gemini-3.8-flash／Claude 獨立子代理）可看第一輪摘要，原文存 `docs/_member_r2_{openai,gemini,claude}_raw.md`。本文件＝CC 整理的共識、分歧與建議，待張良裁決後開工。

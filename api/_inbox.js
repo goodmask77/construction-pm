@@ -157,7 +157,7 @@ export async function ingestEvent(a, ev, destination) {
     conv.unread = (conv.unread || 0) + 1
     if (conv.status === 'done') conv.status = 'new'
     conv.lastInT = msg.t
-  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new' }
+  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
   else if (ev.type === 'unfollow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '封鎖／刪除好友' }; text = msg.text; conv.follow = false }
   else if (ev.type === 'join') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號被加入這個群' }; text = msg.text }
   else if (ev.type === 'leave') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號離開這個群' }; text = msg.text }
@@ -203,6 +203,7 @@ export function ddInboxOut(text, to, mode) {
 }
 export async function ddInboxFlush() { const ps = _dd.pend.splice(0); _dd.ev = null; _dd.p = null; if (ps.length) await Promise.allSettled(ps) }
 
+async function welcomeReply(a, token) { const { welcomeText } = await import('./_member.js'); const text = await welcomeText(); await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: token, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }) }) }
 // ── 通知：有權限的人（鈴鐺＋推播）；沒設權限→審核人 ──
 export async function permRids(acct, forRemind) { // export：團體訂餐（_grporder.js）通知店家時沿用「誰看得到這個帳號」
   const [cfg, bind, def] = await Promise.all([loadCfg(), kvGet('sp_finance_pm_prep_bind'), kvGet('sp_finance_pm_sop_def')])
