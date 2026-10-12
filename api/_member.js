@@ -20,7 +20,7 @@ export const MEMBER_VER = '4786'
 
 // ── 設定 ──
 const CFG_KEY = 'pm_member_cfg'
-const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, sellerTaxId: '', invoiceScan: false, grpShareCap: 50, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡，消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
+const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, sellerTaxId: '', invoiceScan: false, grpShareCap: 50, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡（會自動帶入你的 LINE 名字），消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
 export async function loadCfg () { const c = (await kvGet(CFG_KEY)) || {}; return { ...DEF_CFG, ...c, rewards: Array.isArray(c.rewards) && c.rewards.length ? c.rewards : DEF_CFG.rewards } }
 export async function saveCfg (patch, who) {
   const c = await loadCfg(); const n = { ...c, ...(patch || {}) }
@@ -81,6 +81,7 @@ export async function custConsent ({ body }) {
   }
   return { ok: true, created, ...(await custMe({ body })) }
 }
+export async function custWho2 ({ body }) { const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }; const cfg = await loadCfg(); const mid = await identityOf(uid); return { ok: true, needConsent: !mid, consentText: cfg.consentText.replace('{entity}', cfg.entity || 'GROUN:D'), consentVer: cfg.consentVer } }
 export async function custMe ({ body }) {
   const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期，請重新開啟會員卡' }
   const mid = await identityOf(uid); if (!mid) return { ok: false, needConsent: true }
@@ -192,8 +193,9 @@ export async function staffUpdate ({ who, id, patch }) {
   return getMember({ id, mgr: true })
 }
 // 加好友歡迎（inbox 的 follow 事件呼叫；只給文字，由 _inbox 用 replyToken 免費回）
-export async function welcomeText () { const cfg = await loadCfg(); const L = liffId(); const link = L ? `https://liff.line.me/${L}` : 'https://ground-pm.vercel.app/member'; return String(cfg.welcomeText || DEF_CFG.welcomeText).replace('{link}', link) }
-export const liffId = () => (process.env.LIFF_MEMBER_ID || '').trim() || null // 只認會員卡自己的 LIFF（LIFF_ID 是員工落地頁那組，端點 /liff/，拿來開 /member 會失敗） // LIFF app 一個端點一個：會員卡端點 https://ground-pm.vercel.app/member（liff.init 只保證在端點網址之下能用）
+export async function welcomeText () { const cfg = await loadCfg(); const link = memberLiffUrl(); return String(cfg.welcomeText || DEF_CFG.welcomeText).replace('{link}', link) }
+export const liffId = () => (process.env.LIFF_ID || process.env.LIFF_MEMBER_ID || '').trim() || null // v4.70.91 同一個 LIFF：liff.line.me/<ID>?to=member 由 /liff/ 落地頁認完人再轉 /member（張良：原本那一個就要能帶客人 LINE ID）
+export const memberLiffUrl = () => { const L = liffId(); return L ? `https://liff.line.me/${L}?to=member` : 'https://ground-pm.vercel.app/member' } // LIFF app 一個端點一個：會員卡端點 https://ground-pm.vercel.app/member（liff.init 只保證在端點網址之下能用）
 
 // ── 🎡 轉盤（第二批 v4.70.84；SQL 0002）──
 const pubCamp = (c, slots) => { const free = {}, total = {}; for (const sl of (slots || [])) { total[sl.pidx] = (total[sl.pidx] || 0) + 1; if (!sl.taken_by) free[sl.pidx] = (free[sl.pidx] || 0) + 1 }
