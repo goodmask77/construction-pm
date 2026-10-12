@@ -16,22 +16,41 @@ async function ins (table, row, prefer) { const r = await fetch(`${SB_URL}/rest/
 async function upd (table, q, patch) { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ ...patch }) }); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, await r.text().catch(() => ''))), { status: r.status }); return r.json() }
 async function rpc (fn, args) { const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H(), body: JSON.stringify(args) }); const t = await r.text().catch(() => ''); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, t)), { status: r.status }); try { return JSON.parse(t) } catch (_) { return t } }
 const tableErr = (st, t) => /relation .* does not exist|42P01/.test(t) ? '會員資料表還沒建立：請把 supabase/migrations/0001_member.sql 貼到 Supabase SQL Editor 執行一次' : `資料庫錯誤 ${st}：${String(t).slice(0, 160)}`
-export const MEMBER_VER = '4786'
+export const MEMBER_VER = '4795'
 
 // ── 設定 ──
 const CFG_KEY = 'pm_member_cfg'
-const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, sellerTaxId: '', invoiceScan: false, grpShareCap: 50, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡（會自動帶入你的 LINE 名字），消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
+const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, sellerTaxId: '', invoiceScan: false, grpShareCap: 50,
+  stores: { gd: { name: 'GROUN:D', perAmt: 10, active: true }, ab: { name: 'A Beach 101', perAmt: 10, active: true } }, // 跨店：同一個錢包，各店累點比例可不同
+  pointValue: 1, // 1 點折抵幾元（折抵型兌換與店間結算用）
+  missions: [
+    { id: 'first', type: 'first', name: '首次消費', desc: '完成第一筆消費', pts: 20, active: true },
+    { id: 'm4', type: 'count_month', name: '本月來 4 次', desc: '同一個月內消費 4 次', n: 4, pts: 0, coupon: { name: '免費飲料券', value: 50 }, active: true },
+    { id: 'd3', type: 'days_month', name: '一個月 3 個不同日子', desc: '同一個月內 3 個不同日期來消費', n: 3, pts: 50, active: true },
+    { id: 'wk', type: 'weekday_bonus', name: '週一、二點數 1.5 倍', desc: '週一、週二消費累點 ×1.5', days: [1, 2], mult: 1.5, active: false },
+    { id: 'sv', type: 'survey', name: '用餐回饋', desc: '填一份用餐問卷（每月一次）', pts: 10, active: true },
+    { id: 'r3', type: 'referral_milestone', name: '成功推薦 3 位', desc: '累計 3 位朋友完成首購', n: 3, pts: 100, active: true },
+    { id: 'r5', type: 'referral_milestone', name: '成功推薦 5 位', desc: '累計 5 位朋友完成首購', n: 5, pts: 200, active: true },
+    { id: 'r10', type: 'referral_milestone', name: '成功推薦 10 位', desc: '累計 10 位朋友完成首購', n: 10, pts: 500, active: true },
+  ],
+  referral: { referrerPts: 50, refereePts: 50, monthlyCap: 10, active: true },
+  promoText: '', address: '', phone: '', mapUrl: '', igUrl: '', fbUrl: '', hours: '週一～週五 11:00–19:00（週末休）', welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡（會自動帶入你的 LINE 名字），消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
 export async function loadCfg () { const c = (await kvGet(CFG_KEY)) || {}; return { ...DEF_CFG, ...c, rewards: Array.isArray(c.rewards) && c.rewards.length ? c.rewards : DEF_CFG.rewards } }
 export async function saveCfg (patch, who) {
   const c = await loadCfg(); const n = { ...c, ...(patch || {}) }
   n.sellerTaxId = String(n.sellerTaxId || '').replace(/\D/g, '').slice(0, 8); n.invoiceScan = !!n.invoiceScan; n.grpShareCap = Math.max(0, Math.min(100, Math.round(Number(n.grpShareCap) || 50)))
+  n.stores = n.stores && typeof n.stores === 'object' ? n.stores : DEF_CFG.stores; for (const k of Object.keys(n.stores)) n.stores[k] = { name: String(n.stores[k].name || k).slice(0, 30), perAmt: Math.max(1, Math.round(Number(n.stores[k].perAmt) || 10)), active: n.stores[k].active !== false }
+  n.pointValue = Math.max(0.1, Number(n.pointValue) || 1)
+  n.missions = (Array.isArray(n.missions) ? n.missions : DEF_CFG.missions).slice(0, 30).map((x, i) => ({ id: String(x.id || 'ms' + (i + 1)).slice(0, 16), type: String(x.type || 'count_month'), name: String(x.name || '').slice(0, 30), desc: String(x.desc || '').slice(0, 80), n: Math.max(1, Math.round(Number(x.n) || 1)), pts: Math.max(0, Math.round(Number(x.pts) || 0)), coupon: x.coupon && x.coupon.name ? { name: String(x.coupon.name).slice(0, 30), value: Math.max(0, Math.round(Number(x.coupon.value) || 0)) } : null, days: Array.isArray(x.days) ? x.days.map(Number).filter(d => d >= 0 && d <= 6) : [1, 2], mult: Math.max(1, Number(x.mult) || 1.5), active: x.active !== false })).filter(x => x.name)
+  n.referral = { ...DEF_CFG.referral, ...(n.referral || {}) }; n.referral.referrerPts = Math.max(0, Math.round(Number(n.referral.referrerPts) || 0)); n.referral.refereePts = Math.max(0, Math.round(Number(n.referral.refereePts) || 0)); n.referral.monthlyCap = Math.max(0, Math.round(Number(n.referral.monthlyCap) || 0)); n.referral.active = n.referral.active !== false
+  for (const k of ['promoText', 'address', 'phone', 'mapUrl', 'igUrl', 'fbUrl', 'hours']) n[k] = String(n[k] || '').slice(0, k === 'promoText' ? 400 : 200)
   n.yearCap = Math.max(100, Math.round(Number(n.yearCap) || 900)); n.prizeMax = Math.max(50, Math.round(Number(n.prizeMax) || 500))
   n.perAmt = Math.max(1, Math.round(Number(n.perAmt) || 10)); n.capSingle = Math.max(100, Math.round(Number(n.capSingle) || 3000)); n.welcomePts = Math.max(0, Math.round(Number(n.welcomePts) || 0))
   n.rewards = (Array.isArray(n.rewards) ? n.rewards : []).slice(0, 30).map((r, i) => ({ id: String(r.id || 'r' + (i + 1)).slice(0, 12), name: String(r.name || '').slice(0, 40), value: Math.max(0, Math.round(Number(r.value) || 0)), pts: Math.max(1, Math.round(Number(r.pts) || 1)), active: r.active !== false })).filter(r => r.name)
   n.ver = (c.ver || 1) + 1; n.by = who && who.name; n.at = nowIso()
   await kvSet(CFG_KEY, n, '會員設定(' + ((who && who.name) || '') + ')'); return { ok: true, cfg: n }
 }
-export const ptsFor = (cfg, amount) => Math.floor((Number(amount) || 0) / (cfg.perAmt || 10))
+export const ptsFor = (cfg, amount, store) => { const per = (store && cfg.stores && cfg.stores[store] && cfg.stores[store].perAmt) || cfg.perAmt || 10; return Math.floor((Number(amount) || 0) / per) }
 
 // ── 會員號碼／QR／session ──
 const SECRET = () => (SB_KEY || 'm') + '|member'
@@ -74,6 +93,7 @@ export async function custConsent ({ body }) {
   if (!mid) {
     const m = await ins('members', { brand: BRAND, mno: await newMno(), name, phone: phone || null, pic: String(body.pic || '').slice(0, 300) || null, src: 'line', consent_ver: cfg.consentVer, consent_at: nowIso(), status: 'active' })
     mid = m.id; created = true
+    try { const refMno = String(body.ref || '').replace(/\D/g, '').slice(0, 6); if (refMno && cfg.referral.active !== false) { const rf = (await sel('members', `mno=eq.${refMno}&status=eq.active&select=id`))[0]; if (rf && rf.id !== mid) { await upd('members', `id=eq.${mid}`, { ref_by: rf.id }); await ins('member_referrals', { referrer_id: rf.id, referee_id: mid }, 'return=minimal') } } } catch (_) {} // 一層推薦：只能綁一次、不能推自己
     try { await ins('member_identities', { provider: 'line', line_uid: uid, member_id: mid }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e }
     if (cfg.welcomePts > 0) { try { await ins('member_pts', { brand: BRAND, member_id: mid, kind: 'welcome', pts: cfg.welcomePts, idem_key: 'welcome:' + mid, note: '入會禮' }, 'return=minimal') } catch (_) {} }
   } else {
@@ -90,7 +110,8 @@ export async function custMe ({ body }) {
   const cfg = await loadCfg()
   let game = null; try { game = await availableDraws(mid, m[0]) } catch (_) { game = null } // 資料表還沒建（0002）就略過
   const mkt = (await kvGet('pm_member_mktout')) || {}
-  return { ok: true, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt, game, invoiceScan: !!(cfg.invoiceScan && cfg.sellerTaxId), mktOut: !!mkt[uid] }
+  let missions = [], referral = null; try { missions = await missionProgress(mid, cfg) } catch (_) {} try { referral = await referralInfo(mid, m[0], cfg) } catch (_) {}
+  return { ok: true, missions, referral, stores: cfg.stores, pointValue: cfg.pointValue, promoText: cfg.promoText, info: { address: cfg.address, phone: cfg.phone, mapUrl: cfg.mapUrl, igUrl: cfg.igUrl, fbUrl: cfg.fbUrl, hours: cfg.hours }, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt, game, invoiceScan: !!(cfg.invoiceScan && cfg.sellerTaxId), mktOut: !!mkt[uid] }
 }
 export async function custUpdate ({ body }) {
   const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }
@@ -141,27 +162,32 @@ export async function resolveMember (key) {
   return { ok: true, member: { ...m, phone: maskPhone(m.phone) }, balance: bal.balance || 0 }
 }
 // 入點：店員輸會員（號碼／QR）＋金額（＋單號選填）；冪等＝單號或前端請求 id
-export async function earn ({ who, mgr, key, amount, posNo, reqId, note }) {
-  const cfg = await loadCfg()
+export async function earn ({ who, mgr, key, amount, posNo, reqId, note, store }) {
+  const cfg = await loadCfg(); store = cfg.stores && cfg.stores[store] ? store : 'gd'
   const r = await resolveMember(key); if (!r.ok) return r
   amount = Math.round(Number(amount) || 0); if (amount <= 0) return { ok: false, error: '金額要大於 0' }
   if (amount > cfg.capSingle && !mgr) return { ok: false, error: `單筆超過 ${cfg.capSingle} 元要主管操作` }
   const ref = posNo ? 'pos:' + String(posNo).trim().slice(0, 40) : 'req:' + String(reqId || crypto.randomUUID()).slice(0, 60)
   let visit
-  try { visit = await ins('member_visits', { brand: BRAND, member_id: r.member.id, amount, source: 'staff', external_ref: ref, by_name: who.name, note: String(note || '').slice(0, 80) || null }) }
+  try { visit = await ins('member_visits', { brand: BRAND, store, member_id: r.member.id, amount, source: 'staff', external_ref: ref, by_name: who.name, note: String(note || '').slice(0, 80) || null }) }
   catch (e) { if (e.status === 409) return { ok: false, dup: true, error: posNo ? `單號 ${posNo} 已經入過點了` : '這筆剛剛已經入過點了' }; throw e }
-  const pts = ptsFor(cfg, amount)
-  if (pts > 0) { try { await ins('member_pts', { brand: BRAND, member_id: r.member.id, kind: 'earn', pts, amount, ref: visit.id, idem_key: 'visit:' + visit.id, by_name: who.name, note: posNo ? '單號 ' + posNo : null }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e } }
+  let pts = ptsFor(cfg, amount, store); const wk = weekdayBonus(cfg); if (wk && pts > 0) pts = Math.round(pts * wk.mult)
+  if (pts > 0) { try { await ins('member_pts', { brand: BRAND, store, member_id: r.member.id, kind: 'earn', pts, amount, ref: visit.id, idem_key: 'visit:' + visit.id, by_name: who.name, note: (posNo ? '單號 ' + posNo : '') + (wk ? '（' + wk.name + '）' : '') || null }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e } }
+  let got = []; try { got = await afterVisit(r.member.id, visit, store) } catch (_) {} // 任務／推薦（失敗不影響入點）
   const bal = (await sel('member_balance', `member_id=eq.${r.member.id}`))[0] || {}
-  return { ok: true, member: r.member, pts, amount, balance: bal.balance || 0 }
+  return { ok: true, member: r.member, pts, amount, store, bonus: wk ? wk.name : null, missions: got, balance: bal.balance || 0 }
 }
 // 兌換：櫃檯當場扣點＋出餐（券直接 redeemed）；RPC 原子
-export async function redeem ({ who, key, rewardId, reqId }) {
-  const cfg = await loadCfg(); const rw = cfg.rewards.find(x => x.id === rewardId && x.active !== false); if (!rw) return { ok: false, error: '找不到這個獎勵' }
+export async function redeem ({ who, key, rewardId, reqId, store, cashAmt }) {
+  const cfg = await loadCfg(); store = cfg.stores && cfg.stores[store] ? store : 'gd'
+  let rw = cfg.rewards.find(x => x.id === rewardId && x.active !== false)
+  if (rewardId === 'cash') { const amt = Math.max(1, Math.round(Number(cashAmt) || 0)); rw = { id: 'cash', name: `折抵 ${amt} 元`, value: amt, pts: Math.ceil(amt / (cfg.pointValue || 1)), kind: 'cash' } } // 折抵型：任意金額換點（1 點＝pointValue 元）
+  if (!rw) return { ok: false, error: '找不到這個獎勵' }
   const r = await resolveMember(key); if (!r.ok) return r
   const out = await rpc('member_redeem', { p_member: r.member.id, p_name: rw.name, p_value: rw.value || 0, p_pts: rw.pts, p_idem: 'rdm:' + String(reqId || crypto.randomUUID()).slice(0, 60), p_by: who.name })
   if (!out || !out.ok) return { ok: false, error: (out && out.error) || '兌換失敗' }
-  return { ok: true, member: r.member, reward: rw, balance: out.balance, dup: !!out.dup }
+  try { if (out.couponId) await upd('member_coupons', `id=eq.${out.couponId}`, { store }); await upd('member_pts', `idem_key=eq.${encodeURIComponent('rdm:' + String(reqId || '').slice(0, 60))}`, { store }) } catch (_) {}
+  return { ok: true, member: r.member, reward: rw, store, balance: out.balance, dup: !!out.dup }
 }
 // 手動調整（留痕、必填原因）；單筆上限（非主管）
 export async function adjust ({ who, mgr, id, pts, reason, reqId }) {
@@ -339,4 +365,93 @@ export async function welcomeMessages () {
   const intro = String(cfg.welcomeText || DEF_CFG.welcomeText).replace(/\n?\{link\}/, '').trim()
   const card = { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: '歡迎加入 GROUN:D', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: 'MEMBER', color: '#ffd9d6', size: 'xxs' }] }, body: { type: 'box', layout: 'vertical', paddingAll: '14px', contents: [{ type: 'text', text: intro || '點下面開啟會員卡，消費出示會員號碼或 QR 就能累點。', wrap: true, size: 'sm', color: '#2b1d18' }] }, footer: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: [flexBtn('開啟會員卡', url)] } }
   return [{ type: 'flex', altText: '歡迎加入 GROUN:D！點開會員卡開始累點', contents: card }]
+}
+
+// ── 第四批 v4.70.95：任務闖關／一層推薦／跨店結算／問卷 ──
+const twDate = (iso) => new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(0, 10)
+const twMonth = () => twDate(nowIso()).slice(0, 7)
+function weekdayBonus (cfg) { const m = (cfg.missions || []).find(x => x.type === 'weekday_bonus' && x.active !== false); if (!m) return null; const dow = new Date(Date.now() + 8 * 3600e3).getUTCDay(); return (m.days || []).includes(dow) ? m : null }
+async function award (mid, mission, period, store, note) { // 任務達成：一次性冪等；給點數或券
+  const idem = `m:${mission.id}:${mid}:${period || ''}`
+  const ex = await sel('member_missions_done', `idem_key=eq.${encodeURIComponent(idem)}&select=id`); if (ex.length) return null
+  let couponId = null
+  if (mission.coupon && mission.coupon.name) { try { const c = await ins('member_coupons', { brand: BRAND, member_id: mid, kind: 'mission', name: mission.coupon.name, value: mission.coupon.value || 0, status: 'issued', issue_key: idem, expires_at: new Date(Date.now() + 60 * 86400e3).toISOString(), note: mission.name }); couponId = c && c.id } catch (e) { if (e.status !== 409) throw e } }
+  if (mission.pts > 0) { try { await ins('member_pts', { brand: BRAND, store: store || 'gd', member_id: mid, kind: 'mission', pts: mission.pts, idem_key: idem, note: '任務：' + mission.name }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e } }
+  try { await ins('member_missions_done', { member_id: mid, mission_id: mission.id, period: period || '', idem_key: idem, pts: mission.pts || 0, coupon_id: couponId, note: note || null }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e }
+  return { id: mission.id, name: mission.name, pts: mission.pts || 0, coupon: mission.coupon ? mission.coupon.name : null }
+}
+async function visitStats (mid) { const vis = await sel('member_visits', `member_id=eq.${mid}&order=created_at.asc&limit=2000&select=id,amount,store,created_at`); const mo = twMonth(); const thisMo = vis.filter(v => twDate(v.created_at).slice(0, 7) === mo); return { all: vis, n: vis.length, month: { n: thisMo.length, days: new Set(thisMo.map(v => twDate(v.created_at))).size, amount: thisMo.reduce((t, v) => t + v.amount, 0) } } }
+async function referralDoneCount (mid) { return (await sel('member_referrals', `referrer_id=eq.${mid}&status=eq.done&select=id`)).length }
+// 每次入點後：首購→推薦完成→本月次數／天數／金額→推薦里程碑
+export async function afterVisit (mid, visit, store) {
+  const cfg = await loadCfg(); const got = []; const vs = await visitStats(mid); const mo = twMonth()
+  const ms = (cfg.missions || []).filter(x => x.active !== false)
+  for (const m of ms) {
+    let r = null
+    if (m.type === 'first' && vs.n >= 1) r = await award(mid, m, '', store)
+    else if (m.type === 'count_month' && vs.month.n >= m.n) r = await award(mid, m, mo, store)
+    else if (m.type === 'days_month' && vs.month.days >= m.n) r = await award(mid, m, mo, store)
+    else if (m.type === 'amount_month' && vs.month.amount >= m.n) r = await award(mid, m, mo, store)
+    if (r) got.push(r)
+  }
+  // 推薦：我是被推薦人、這是我的第一筆消費 → 完成，雙方給點（推薦人每月上限）
+  if (vs.n === 1 && cfg.referral.active !== false) {
+    const rf = (await sel('member_referrals', `referee_id=eq.${mid}&status=eq.pending&select=*`))[0]
+    if (rf) {
+      const monthDone = (await sel('member_referrals', `referrer_id=eq.${rf.referrer_id}&status=eq.done&done_at=gte.${new Date(Date.now() - 30 * 86400e3).toISOString()}&select=id`)).length
+      await upd('member_referrals', `id=eq.${rf.id}`, { status: 'done', first_visit_id: visit.id, done_at: nowIso() })
+      if (cfg.referral.refereePts > 0) { try { await ins('member_pts', { brand: BRAND, store, member_id: mid, kind: 'referral', pts: cfg.referral.refereePts, idem_key: 'ref:' + rf.id + ':b', note: '朋友推薦禮' }, 'return=minimal') } catch (_) {} }
+      if (cfg.referral.referrerPts > 0 && (!cfg.referral.monthlyCap || monthDone < cfg.referral.monthlyCap)) { try { await ins('member_pts', { brand: BRAND, store, member_id: rf.referrer_id, kind: 'referral', pts: cfg.referral.referrerPts, idem_key: 'ref:' + rf.id + ':a', note: '推薦朋友首購' }, 'return=minimal') } catch (_) {} }
+      got.push({ id: 'referral', name: '朋友推薦禮', pts: cfg.referral.refereePts })
+      const done = await referralDoneCount(rf.referrer_id)
+      for (const m of ms.filter(x => x.type === 'referral_milestone' && done >= x.n)) await award(rf.referrer_id, m, 'n' + m.n, store)
+    }
+  }
+  return got
+}
+export async function missionProgress (mid, cfg) {
+  const vs = await visitStats(mid); const mo = twMonth(); const done = await sel('member_missions_done', `member_id=eq.${mid}&select=mission_id,period,created_at`); const refDone = await referralDoneCount(mid)
+  const sv = (await sel('member_surveys', `member_id=eq.${mid}&order=created_at.desc&limit=1&select=created_at`))[0]
+  const isDone = (m, period) => done.some(d => d.mission_id === m.id && d.period === (period || ''))
+  return (cfg.missions || []).filter(x => x.active !== false).map(m => {
+    let progress = 0, target = m.n || 1, period = '', doneFlag = false
+    if (m.type === 'first') { progress = Math.min(1, vs.n); target = 1; doneFlag = isDone(m, '') }
+    else if (m.type === 'count_month') { progress = vs.month.n; period = mo; doneFlag = isDone(m, mo) }
+    else if (m.type === 'days_month') { progress = vs.month.days; period = mo; doneFlag = isDone(m, mo) }
+    else if (m.type === 'amount_month') { progress = vs.month.amount; period = mo; doneFlag = isDone(m, mo) }
+    else if (m.type === 'referral_milestone') { progress = refDone; doneFlag = isDone(m, 'n' + m.n) }
+    else if (m.type === 'survey') { progress = sv && twDate(sv.created_at).slice(0, 7) === mo ? 1 : 0; target = 1; period = mo; doneFlag = isDone(m, mo) }
+    else if (m.type === 'weekday_bonus') { progress = 0; target = 0 }
+    return { id: m.id, type: m.type, name: m.name, desc: m.desc, progress: Math.min(progress, target || progress), target, done: doneFlag, reward: m.coupon ? m.coupon.name : (m.pts ? m.pts + ' 點' : ''), days: m.days, mult: m.mult }
+  })
+}
+export async function referralInfo (mid, m, cfg) {
+  const L = liffId(); const link = L ? `https://liff.line.me/${L}?to=member&ref=${m.mno}` : `https://ground-pm.vercel.app/member?ref=${m.mno}`
+  const rows = await sel('member_referrals', `referrer_id=eq.${mid}&order=created_at.desc&limit=50&select=status,created_at,done_at,referee_id`)
+  const ids = rows.map(r => r.referee_id); const ms = ids.length ? await sel('members', `id=in.(${ids.join(',')})&select=id,name`) : []; const nm = {}; ms.forEach(x => { nm[x.id] = x.name })
+  return { code: m.mno, link, active: cfg.referral.active !== false, referrerPts: cfg.referral.referrerPts, refereePts: cfg.referral.refereePts, done: rows.filter(r => r.status === 'done').length, pending: rows.filter(r => r.status === 'pending').length, list: rows.slice(0, 20).map(r => ({ name: (nm[r.referee_id] || '朋友').slice(0, 1) + '＊＊', status: r.status, at: r.done_at || r.created_at })), referredBy: !!m.ref_by }
+}
+// 問卷：每月一次給點
+export async function custSurvey ({ body }) {
+  const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }
+  const mid = await identityOf(uid); if (!mid) return { ok: false, needConsent: true }
+  const score = Math.max(1, Math.min(5, Math.round(Number(body.score) || 0))); if (!score) return { ok: false, error: '請選分數' }
+  const answers = {}; for (const k of ['food', 'service', 'speed', 'comment', 'dish']) if (body[k] != null) answers[k] = String(body[k]).slice(0, 300)
+  const cfg = await loadCfg(); const store = cfg.stores && cfg.stores[body.store] ? body.store : 'gd'
+  await ins('member_surveys', { member_id: mid, store, score, answers }, 'return=minimal')
+  const m = (cfg.missions || []).find(x => x.type === 'survey' && x.active !== false); let got = null
+  if (m) got = await award(mid, m, twMonth(), store, '問卷 ' + score + ' 分')
+  return { ok: true, got, ...(await custMe({ body })) }
+}
+export async function surveysList ({ days }) { const since = new Date(Date.now() - (Number(days) || 30) * 86400e3).toISOString(); const rows = await sel('member_surveys', `created_at=gte.${since}&order=created_at.desc&limit=200`); const ids = [...new Set(rows.map(r => r.member_id))]; const ms = ids.length ? await sel('members', `id=in.(${ids.join(',')})&select=id,name,mno`) : []; const nm = {}; ms.forEach(x => { nm[x.id] = x }); return { ok: true, list: rows.map(r => ({ ...r, member: nm[r.member_id] || {} })), avg: rows.length ? Math.round(rows.reduce((t, r) => t + (r.score || 0), 0) / rows.length * 10) / 10 : null } }
+// 跨店結算：某月各店「發出多少點／被用掉多少點＋券面值」；淨額＝用掉的價值－發出的價值（1 點＝pointValue 元）
+export async function settlement ({ month }) {
+  const cfg = await loadCfg(); const mo = /^\d{4}-\d{2}$/.test(String(month || '')) ? month : twMonth()
+  const from = new Date(mo + '-01T00:00:00+08:00').toISOString(), to = new Date(new Date(mo + '-01T00:00:00+08:00').setMonth(new Date(mo + '-01T00:00:00+08:00').getMonth() + 1)).toISOString()
+  const [pts, cps] = await Promise.all([sel('member_pts', `created_at=gte.${from}&created_at=lt.${to}&select=store,kind,pts&limit=20000`), sel('member_coupons', `redeemed_at=gte.${from}&redeemed_at=lt.${to}&select=store,value,pts_cost,name&limit=5000`)])
+  const S = {}; const g = (k) => (S[k] = S[k] || { name: (cfg.stores[k] || {}).name || k, issued: 0, spent: 0, couponValue: 0, coupons: 0 })
+  for (const p of pts) { const k = p.store || 'gd'; if (p.pts > 0) g(k).issued += p.pts; else g(k).spent += -p.pts }
+  for (const c of cps) { const k = c.store || 'gd'; g(k).coupons++; g(k).couponValue += Number(c.value) || 0 }
+  const pv = cfg.pointValue || 1
+  return { ok: true, month: mo, pointValue: pv, stores: Object.entries(S).map(([k, v]) => ({ key: k, ...v, issuedValue: Math.round(v.issued * pv), spentValue: Math.round(v.spent * pv), net: Math.round(v.spent * pv) - Math.round(v.issued * pv) })) }
 }
