@@ -75,13 +75,15 @@ export async function fetchBoard(url, slug) {
 }
 
 async function download(p) {
-  for (const u of [p.url, p.url2, p.url.replace('/originals/', '/736x/')].filter(Boolean)) {
+  // 原圖抓不到／太大（>12MB，serverless 記憶體）→ 退 1200x 再退 736x（縮圖一律 .jpg，原圖是 .png 也一樣）
+  const jpg = (sz) => p.url.replace('/originals/', '/' + sz + '/').replace(/\.\w+$/, '.jpg')
+  for (const u of [p.url, p.url2, jpg('1200x'), jpg('736x')].filter(Boolean)) {
     try {
       const r = await fetch(u, { headers: { 'user-agent': UA, referer: 'https://www.pinterest.com/' }, signal: AbortSignal.timeout(30000) })
       if (!r.ok) continue
       const ct = (r.headers.get('content-type') || '').split(';')[0].trim()
       if (!/^image\//.test(ct)) continue
-      const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 1000 || buf.length > 15 * 1024 * 1024) continue
+      const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 1000 || buf.length > 12 * 1024 * 1024) continue
       return { buf, ct, from: u }
     } catch (_) {}
   }
