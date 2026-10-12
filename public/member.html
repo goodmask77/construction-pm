@@ -48,6 +48,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
 <script>
 (async () => {
   const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+  const tw = (iso, d) => { try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei', ...(d ? { year: 'numeric', month: '2-digit', day: '2-digit' } : { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }).format(new Date(iso)) } catch (_) { return String(iso || '').slice(0, 16) } }
   const fmt = n => Math.round(Number(n) || 0).toLocaleString('zh-TW')
   const LS = { get: k => { try { return JSON.parse(localStorage.getItem(k)) } catch (_) { return null } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch (_) {} }, del: k => { try { localStorage.removeItem(k) } catch (_) {} } }
   const api = async (body) => { try { const r = await fetch('/api/mail-sync?mcard=1' + (body ? '' : '&r=' + Date.now()), body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); return await r.json() } catch (_) { return { ok: false, error: '連線失敗，請再試一次' } } }
@@ -92,8 +93,8 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
   }
   function render () {
     const m = ME.member
-    const led = (ME.ledger || []).map(l => `<div class="led"><div><div>${esc(l.note || ({ earn: '消費累點', spend: '兌換', adjust: '店家調整', welcome: '入會禮', game: '遊戲', reverse: '沖回' })[l.kind] || l.kind)}${l.amount ? ` <span class="sub">消費 ${fmt(l.amount)}</span>` : ''}</div><div class="sub">${esc(String(l.created_at).slice(0, 16).replace('T', ' '))}</div></div><div class="p ${l.pts > 0 ? 'plus' : 'minus'}">${l.pts > 0 ? '+' : ''}${fmt(l.pts)}</div></div>`).join('') || '<div class="sub">還沒有紀錄。消費時出示會員號碼或 QR 給店員就能累點。</div>'
-    const cps = (ME.coupons || []).map(c => `<div class="led"><div><div>${esc(c.name)}</div><div class="sub">${esc(String(c.created_at).slice(0, 10))}${c.redeemed_at ? '・已於櫃檯兌換' : c.expires_at ? '・' + esc(String(c.expires_at).slice(0, 10)) + ' 前到櫃檯使用' : ''}</div></div><span class="pill ${c.status === 'redeemed' ? 'grey' : ''}">${({ issued: '可用', redeemed: '已兌換', expired: '已過期', void: '作廢' })[c.status] || c.status}</span></div>`).join('') || '<div class="sub">還沒有兌換紀錄</div>'
+    const led = (ME.ledger || []).map(l => `<div class="led"><div><div>${esc(l.note || ({ earn: '消費累點', spend: '兌換', adjust: '店家調整', welcome: '入會禮', game: '遊戲', reverse: '沖回' })[l.kind] || l.kind)}${l.amount ? ` <span class="sub">消費 ${fmt(l.amount)}</span>` : ''}</div><div class="sub">${tw(l.created_at)}</div></div><div class="p ${l.pts > 0 ? 'plus' : 'minus'}">${l.pts > 0 ? '+' : ''}${fmt(l.pts)}</div></div>`).join('') || '<div class="sub">還沒有紀錄。消費時出示會員號碼或 QR 給店員就能累點。</div>'
+    const cps = (ME.coupons || []).map(c => `<div class="led"><div><div>${esc(c.name)}</div><div class="sub">${tw(c.created_at, 1)}${c.redeemed_at ? '・已於櫃檯兌換' : c.expires_at ? '・' + tw(c.expires_at, 1) + ' 前到櫃檯使用' : ''}</div></div><span class="pill ${c.status === 'redeemed' ? 'grey' : ''}">${({ issued: '可用', redeemed: '已兌換', expired: '已過期', void: '作廢' })[c.status] || c.status}</span></div>`).join('') || '<div class="sub">還沒有兌換紀錄</div>'
     const rws = (ME.rewards || []).map(r => `<div class="led"><div>${esc(r.name)}</div><b style="font-family:var(--num)">${r.pts} 點</b></div>`).join('')
     $('root').innerHTML = `<div class="brand"><b>GROUN:D</b><small>會員卡</small></div>
       <div class="mcard"><div class="row" style="justify-content:space-between"><div><div class="lbl">MEMBER</div><div class="nm">${esc(m.name)}</div></div>${m.pic ? `<img src="${esc(m.pic)}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.7)">` : ''}</div>
@@ -117,11 +118,11 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
     const g = ME.game; if (!g || !g.campaign) return ''
     const c = g.campaign, n = (g.rights || []).length
     const pz = (c.prizes || []).filter(p => p.kind !== 'none').map(p => `${esc(p.name)}${p.total ? `（剩 ${p.left}/${p.total}）` : ''}`).join('、')
-    return `<div class="card" style="border-color:var(--red)"><div class="row" style="justify-content:space-between"><h3 style="margin:0;color:var(--red)">🎡 ${esc(c.name)}</h3>${c.endAt ? `<span class="sub">至 ${esc(String(c.endAt).slice(0, 10))}</span>` : ''}</div>
+    return `<div class="card" style="border-color:var(--red)"><div class="row" style="justify-content:space-between"><h3 style="margin:0;color:var(--red)">🎡 ${esc(c.name)}</h3>${c.endAt ? `<span class="sub">至 ${tw(c.endAt, 1)}</span>` : ''}</div>
       <div style="margin-top:6px;font-size:13.5px">${n ? `你有 <b style="color:var(--red);font-size:18px">${n}</b> 次機會` : '目前沒有可用的機會，消費累點後就會多一次'}</div>
       ${n ? `<button class="btn red" id="btnWheel" style="width:100%;margin-top:10px;padding:12px;font-size:15px">轉一次</button>` : ''}
       <div class="sub" style="margin-top:8px">獎項：${pz || '—'}。${esc((c.rules || {}).note || '')}獎項數量有限，抽完為止；券請到櫃檯出示給店員核銷。</div>
-      ${(g.draws || []).length ? `<details style="margin-top:6px"><summary class="sub">我的抽獎紀錄</summary>${g.draws.map(d => `<div class="led"><span>${esc((d.prize || {}).name || '—')}${(d.prize || {}).capped ? ' <span class="sub">(已達全年上限)</span>' : ''}</span><span class="sub">${esc(String(d.created_at).slice(5, 16).replace('T', ' '))}</span></div>`).join('')}</details>` : ''}</div>`
+      ${(g.draws || []).length ? `<details style="margin-top:6px"><summary class="sub">我的抽獎紀錄</summary>${g.draws.map(d => `<div class="led"><span>${esc((d.prize || {}).name || '—')}${(d.prize || {}).capped ? ' <span class="sub">(已達全年上限)</span>' : ''}</span><span class="sub">${tw(d.created_at)}</span></div>`).join('')}</details>` : ''}</div>`
   }
   function openWheel () {
     const g = ME.game, c = g.campaign, prizes = c.prizes || [], N = prizes.length || 1, seg = 360 / N
