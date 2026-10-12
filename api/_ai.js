@@ -39,6 +39,8 @@ export const AI_ROUTES = {
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   rcpimport: { label: '食譜 AI 匯入', where: 'GD 食譜庫「新增食譜」：截圖／試算表／連結讀成材料＋步驟（視覺，v4.70.66）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
+  grporder:  { label: '團體訂餐拆單', where: '客人點餐頁／GD 團體訂餐：把「姓名：餐點」整段文字拆成每人一列、對到最新菜單（v4.70.78）', kind: 'text',
+               def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
 }
 
 // ── 設定讀寫 ──

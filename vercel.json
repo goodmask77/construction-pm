@@ -11,6 +11,10 @@
     {
       "source": "/v/:code",
       "destination": "/api/mail-sync?vgo=:code"
+    },
+    {
+      "source": "/order/:code",
+      "destination": "/order.html"
     }
   ],
   "crons": [
