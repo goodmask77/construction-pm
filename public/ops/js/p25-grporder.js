@@ -29,13 +29,13 @@ async function gorderLoad (id) {
 function goRenderList () {
   const L = GC().STATUS_LABEL
   const all = _goD.list || []
-  const list = all.filter(x => _goFilter === 'all' ? true : _goFilter === 'open' ? !['done', 'void'].includes(x.status) : ['done', 'void'].includes(x.status))
+  const list = all.filter(x => _goFilter === 'demo' ? x.demo : (!x.demo && (_goFilter === 'all' ? true : _goFilter === 'open' ? !['done', 'void'].includes(x.status) : ['done', 'void'].includes(x.status))))
   const chip = (k, t) => `<button class="mini ${_goFilter === k ? 'on' : ''}" onclick="_goFilter='${k}';goRenderList()">${t}</button>`
   app.innerHTML = `<section>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px"><h2 style="margin:0">團體訂餐</h2><span class="hint">從收件匣對話右上「點餐單」建單、發連結；客人填好送出會通知負責人</span><span style="flex:1"></span>${_goD.me.canEdit ? `<button class="mini" onclick="goCfg()">設定</button>` : ''}</div>
-    <div style="display:flex;gap:6px;margin-bottom:10px">${chip('open', '進行中 ' + all.filter(x => !['done', 'void'].includes(x.status)).length)}${chip('done', '完成／作廢')}${chip('all', '全部')}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px"><h2 style="margin:0">團體訂餐</h2><span class="hint">從收件匣對話右上「點餐單」建單、發連結；客人填好送出會通知負責人</span><span style="flex:1"></span>${_goD.me.canEdit ? `<button class="mini on" onclick="goSim()">模擬試用</button><button class="mini" onclick="goCfg()">設定</button>` : ''}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">${chip('open', '進行中 ' + all.filter(x => !x.demo && !['done', 'void'].includes(x.status)).length)}${chip('done', '完成／作廢')}${chip('all', '全部')}${all.some(x => x.demo) ? chip('demo', '模擬 ' + all.filter(x => x.demo).length) : ''}</div>
     ${list.length ? `<div style="overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:14px;background:var(--card)"><thead><tr style="text-align:left"><th style="padding:8px;border:1px solid var(--line)">客戶</th><th style="padding:8px;border:1px solid var(--line)">取餐</th><th style="padding:8px;border:1px solid var(--line);text-align:right">人數</th><th style="padding:8px;border:1px solid var(--line);text-align:right">暫計</th><th style="padding:8px;border:1px solid var(--line)">狀態</th><th style="padding:8px;border:1px solid var(--line)">負責</th><th style="padding:8px;border:1px solid var(--line)">更新</th></tr></thead><tbody>
-      ${list.map(x => `<tr style="cursor:pointer" onclick="goOpen('${x.id}')"><td style="padding:8px;border:1px solid var(--line);font-weight:800">${goEsc(x.company || x.custName || '—')}<div class="hint" style="font-size:12px">${goEsc(x.custName || '')}</div></td><td style="padding:8px;border:1px solid var(--line)">${goEsc(x.when || '待定')}</td><td style="padding:8px;border:1px solid var(--line);text-align:right">${x.n || 0}</td><td style="padding:8px;border:1px solid var(--line);text-align:right;font-weight:800">${goN(x.total)}</td><td style="padding:8px;border:1px solid var(--line)">${goPill(x.status)}</td><td style="padding:8px;border:1px solid var(--line)">${goEsc(x.assignee || '')}</td><td style="padding:8px;border:1px solid var(--line)" class="hint">${goEsc(String(x.updatedAt || '').slice(5, 16).replace('T', ' '))}</td></tr>`).join('')}
+      ${list.map(x => `<tr style="cursor:pointer" onclick="goOpen('${x.id}')"><td style="padding:8px;border:1px solid var(--line);font-weight:800">${goEsc(x.company || x.custName || '—')}${x.demo ? ' <span class="hint" style="font-weight:500">(模擬)</span>' : ''}<div class="hint" style="font-size:12px">${goEsc(x.custName || '')}</div></td><td style="padding:8px;border:1px solid var(--line)">${goEsc(x.when || '待定')}</td><td style="padding:8px;border:1px solid var(--line);text-align:right">${x.n || 0}</td><td style="padding:8px;border:1px solid var(--line);text-align:right;font-weight:800">${goN(x.total)}</td><td style="padding:8px;border:1px solid var(--line)">${goPill(x.status)}</td><td style="padding:8px;border:1px solid var(--line)">${goEsc(x.assignee || '')}</td><td style="padding:8px;border:1px solid var(--line)" class="hint">${goEsc(String(x.updatedAt || '').slice(5, 16).replace('T', ' '))}</td></tr>`).join('')}
     </tbody></table></div>` : `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px" class="hint">還沒有${_goFilter === 'open' ? '進行中的' : ''}訂餐單。到「收件匣」打開客人對話，按右上「點餐單」就能建一張。</div>`}
   </section>`
 }
@@ -339,3 +339,31 @@ async function goSendImgs (id) {
   if (!d || !d.ok) return goToast((d && d.error) || '傳送失敗', true)
   _goCur.order = d.order; goRenderDetail(); goToast('兩張圖已傳給客人（' + (d.mode === 'reply' ? '免費回覆' : '推播') + '），等客人按確認')
 }
+
+// ── 模擬試用：建一張 demo 單，手機框裡嵌客人頁，可切換身分扮不同同事（張良 2026-10-12）──
+const GO_SIM_NAMES = ['測試人 A', '測試人 B', '測試人 C', '主辦人']
+async function goSim (id) {
+  let o = null
+  if (id) { const d = await goGet('op=get&id=' + id); if (d && d.ok) o = d.order }
+  if (!o) { const cur = (_goD.list || []).find(x => x.demo && !['done', 'void'].includes(x.status)); if (cur) { const d = await goGet('op=get&id=' + cur.id); if (d && d.ok) o = d.order } }
+  if (!o) {
+    const tmr = new Date(Date.now() + 8 * 3600e3 + 86400e3).toISOString().slice(0, 10)
+    const d = await goPost({ op: 'create', acct: 'gd', convId: '', uid: '', custName: '模擬測試', company: '模擬測試（內部試用）', taxId: '', when: tmr + ' 12:00', mode: '外帶自取', deadline: tmr + ' 10:00', contact: _goD.me.name, demo: true })
+    if (!d || !d.ok) return goToast((d && d.error) || '建不了模擬單', true)
+    _goD = null; const d2 = await goGet('op=get&id=' + d.id); o = d2 && d2.ok ? d2.order : null; if (!o) return
+  }
+  const base = '/order/' + o.id, who = GO_SIM_NAMES[0]
+  goModal(`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">模擬試用</h3><span class="hint">單號 ${o.id}・不通知店家、不累點。左邊扮客人，右邊按「開核價頁」當店員。</span><span style="flex:1"></span><button class="mini" onclick="goClose()">關閉</button></div>
+    <div style="display:flex;gap:14px;margin-top:10px;align-items:flex-start;flex-wrap:wrap">
+      <div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center"><span class="hint">我是：</span>${GO_SIM_NAMES.map((n, i) => `<button class="mini ${i === 0 ? 'on' : ''}" data-sim="${goEsc(n)}" onclick="goSimAs(this,'${o.id}','${goEsc(n)}')">${goEsc(n)}</button>`).join('')}<button class="mini" onclick="goSimAs(null,'${o.id}', prompt('名字') || '')">自訂…</button></div>
+        <div style="width:390px;height:760px;border:10px solid #111;border-radius:36px;overflow:hidden;background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.45)"><iframe id="goSimFrame" src="${base}#sim=${encodeURIComponent(who)}" style="width:100%;height:100%;border:0"></iframe></div></div>
+      <div style="display:grid;gap:8px;min-width:220px;flex:1">
+        <button class="mini on" onclick="goClose();gorderLoad('${o.id}')">開核價頁（店員視角）</button>
+        <button class="mini" onclick="document.getElementById('goSimFrame').contentWindow.location.reload()">重新整理手機</button>
+        <button class="mini" onclick="navigator.clipboard&&navigator.clipboard.writeText(location.origin+'${base}').then(()=>goToast('已複製，可用手機開'))">複製連結用真手機試</button>
+        <button class="mini" style="color:var(--red)" onclick="goSimReset('${o.id}')">這張作廢，重開一張乾淨的</button>
+        <div class="hint" style="font-size:12.5px;line-height:1.6;margin-top:6px"><b>建議流程</b><br>1. 以「測試人 A」點兩道、按我點好了<br>2. 切「測試人 B」再點、看「大家」分頁<br>3. 切「主辦人」按送出給店家<br>4. 開核價頁 → 核價完成並傳計價圖（模擬單不會真的傳 LINE）<br>5. 回手機按「確認金額無誤」→ 鎖單 → 完成<br>有怪怪的截圖給 CC。</div>
+      </div></div>`, 980)
+}
+function goSimAs (btn, id, name) { if (!name) return; document.querySelectorAll('#goOv [data-sim]').forEach(b => b.classList.toggle('on', b === btn)); const f = document.getElementById('goSimFrame'); if (f) f.src = '/order/' + id + '#sim=' + encodeURIComponent(name) + '&r=' + Date.now() }
+async function goSimReset (id) { await goPost({ op: 'status', id, status: 'void' }); _goD = null; const d = await goGet('op=list'); if (d && d.ok) _goD = d; goSim() }

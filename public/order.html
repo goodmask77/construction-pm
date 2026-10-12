@@ -67,11 +67,12 @@ const L = GC.STATUS_LABEL
 // ── 身分：LINE 中繼帶來 → 全站記住 → 不再問（規格 B） ──
 function identify () {
   try { const h = new URLSearchParams(location.hash.replace(/^#/, '')); if (h.get('u') && h.get('pt')) { ME = { uid: h.get('u'), pt: h.get('pt'), name: h.get('n') || '', pic: h.get('p') || '', src: 'line' }; LS.set('go_me', ME); history.replaceState(null, '', location.pathname) } } catch (_) {}
+  try { const h = new URLSearchParams(location.hash.replace(/^#/, '')); const sim = h.get('sim'); if (sim) { let hx = 0; for (const ch of sim) hx = (hx * 31 + ch.charCodeAt(0)) >>> 0; const anon = 'sim' + hx.toString(16).padStart(8, '0') + 'x'; ME = { uid: 'anon:' + anon, anon, name: sim.slice(0, 30), src: 'manual', sim: true } } } catch (_) {} // 模擬試用：店員在 GD App 裡扮不同人
   if (!ME) { const s = LS.get('go_me'); if (s && s.uid) ME = s }
   if (ME) pullMine()
 }
 function pullMine () { const r = (D.rows || []).find(x => x.uid === ME.uid); MINE = r ? { lines: JSON.parse(JSON.stringify(r.lines || [])), pend: JSON.parse(JSON.stringify(r.pend || [])), done: !!r.done } : { lines: [], pend: [], done: false }; if (r && r.name && ME.src !== 'line') ME.name = r.name }
-function setManual (name) { let anon = LS.get('go_anon'); if (!anon) { anon = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8); LS.set('go_anon', anon) }; ME = { uid: 'anon:' + anon, anon, name: name.trim().slice(0, 30), src: 'manual' }; LS.set('go_me', ME); pullMine() }
+function setManual (name) { if (ME && ME.sim) { ME = { ...ME, name: name.trim().slice(0, 30) }; pullMine(); return } let anon = LS.get('go_anon'); if (!anon) { anon = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8); LS.set('go_anon', anon) }; ME = { uid: 'anon:' + anon, anon, name: name.trim().slice(0, 30), src: 'manual' }; LS.set('go_me', ME); pullMine() }
 async function load () {
   if (!code) { $('loading').textContent = '連結不完整，請跟店家要一次點餐連結。'; return }
   const d = await api(); if (!d || !d.ok) { $('loading').textContent = (d && d.error) || '找不到這張點餐單'; return }
@@ -82,7 +83,7 @@ function countdown () { if (!D.deadline) return ''; const ms = new Date(D.deadli
 function renderTop () {
   const st = D.closed && D.editable ? '<span class="badge warn">已截單</span>' : D.status === 'submitted' ? '<span class="badge red">店家核價中</span>' : D.status === 'priced' ? '<span class="badge ok">已核價，待確認</span>' : D.status === 'confirmed' ? '<span class="badge ok">已確認</span>' : ['locked', 'done'].includes(D.status) ? '<span class="badge ok">訂單成立</span>' : '<span class="badge">點餐中</span>'
   const meChip = ME ? `<button class="me" id="meChip" title="不是你？點這裡換">${ME.pic ? `<img class="av" src="${esc(ME.pic)}" alt="">` : `<span class="av">${esc((ME.name || '?').slice(0, 1))}</span>`}<span>${esc(ME.name || '未命名')}</span></button>` : `<button class="me" id="meChip"><span class="av">?</span><span>我是誰</span></button>`
-  $('top').innerHTML = `<div class="in"><div class="r1"><div class="brand">GROUN:D<small>${esc(D.company || D.custName || '團體訂餐')}</small></div>${meChip}</div><div class="r2">${st}<span>取餐 ${esc(D.when || '待定')}・${esc(D.mode || '')}</span>${D.deadline ? `<span>${countdown()}</span>` : ''}</div></div>
+  $('top').innerHTML = `${D.demo ? '<div style=\"background:#1a1a1a;color:#fff;font-size:12px;text-align:center;padding:3px\">模擬試用單・不會通知店家、不累點</div>' : ''}<div class="in"><div class="r1"><div class="brand">GROUN:D<small>${esc(D.company || D.custName || '團體訂餐')}</small></div>${meChip}</div><div class="r2">${st}<span>取餐 ${esc(D.when || '待定')}・${esc(D.mode || '')}</span>${D.deadline ? `<span>${countdown()}</span>` : ''}</div></div>
     <div class="cats" id="cats">${MENU.sections.map((s, i) => `<button data-cat="${i}">${esc(s.name.replace(/^[A-Z:&'\- ]+\s/, ''))}</button>`).join('')}</div>`
   $('meChip').onclick = whoSheet
   document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { const el = $('sec' + b.dataset.cat); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 110, behavior: 'smooth' }) })
