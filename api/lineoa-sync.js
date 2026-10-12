@@ -66,7 +66,7 @@ async function collectAccount(a, mc, opts) {
   const want = []
   const have = await loadDays(a.key, MAX_BACK)
   const stopAt = st.noDataBefore || '' // LINE 回「這天以前沒資料」就記住，不再往前試
-  for (let i = 1; i <= MAX_BACK && want.length < (opts.batch || BATCH); i++) {
+  for (let i = 0; i <= MAX_BACK && want.length < (opts.batch || BATCH); i++) { // i=0 今天：LINE 清晨就把今天那筆算好（官方後台「統計完成資料：至今日止」），抓得到就存，unready 下一小時再試
     const d = addDays(today, -i)
     if (stopAt && d <= stopAt) break
     if (!have[d]) want.push(d)
@@ -83,7 +83,7 @@ async function collectAccount(a, mc, opts) {
       try { calls++; const m = await lineGet(`/insight/message/delivery?date=${dd}`, token); if (m.status === 'ready') { const mm = {}; for (const [kk, vv] of Object.entries(m)) if (kk !== 'status' && num(vv)) mm[kk] = num(vv); if (Object.keys(mm).length) row.m = mm } } catch (_) {}
       const doc = await mc.get(a.key, d.slice(0, 7)); doc.days[d] = row; mc.mark(a.key, d.slice(0, 7))
       have[d] = row; res.fetched++
-      if (d === yday) res.gotYday = row
+      if ((d === yday || d === today) && !res.gotDay) { res.gotDay = d; res.gotYday = row } // 最新剛拿到的那天（今天優先）→ 警示用
     } catch (e) { res.errors++; res.err = e.message; if (e.status === 429) break }
   }
   // 2) 屬性＋額度：每小時抓一次很便宜（各 1 次）；屬性每 7 天留一份歷史
@@ -104,9 +104,9 @@ async function collectAccount(a, mc, opts) {
   // 3) 警示（只在昨天剛拿到時判）
   st.alerts = st.alerts || {}
   if (res.gotYday) {
-    const prev = have[addDays(yday, -1)]
+    const gd = res.gotDay, prev = have[addDays(gd, -1)]
     const dB = prev ? res.gotYday.b - prev.b : 0
-    if (dB >= 3 && st.alerts.block !== yday) { st.alerts.block = yday; await lineBoss(`⚠️「${a.name}」官方帳號 ${yday.slice(5).replace('-', '/')} 被封鎖 +${dB}（累計 ${res.gotYday.b}，好友 ${res.gotYday.f}）。可到 App 行銷大師→LINE 官方帳號看前後幾天有沒有群發訊息。`) }
+    if (dB >= 3 && st.alerts.block !== gd) { st.alerts.block = gd; await lineBoss(`⚠️「${a.name}」官方帳號 ${gd.slice(5).replace('-', '/')} 被封鎖 +${dB}（累計 ${res.gotYday.b}，好友 ${res.gotYday.f}）。可到 App 行銷大師→LINE 官方帳號看前後幾天有沒有群發訊息。`) }
   }
   if (st.quota && st.quota.limit) {
     const pct = st.quota.used / st.quota.limit, ym = today.slice(0, 7)
@@ -131,8 +131,8 @@ export function summarize(k, name, days, st) {
   const msg30 = {}; for (const d of ds.slice(-30)) for (const [kk, vv] of Object.entries((days[d] || {}).m || {})) msg30[kk] = (msg30[kk] || 0) + vv
   const demo = st && st.demo ? {
     gender: (st.demo.genders || []).map(g => `${GEN[g.gender] || g.gender}${Math.round(g.percentage)}%`).join('/'),
-    age: (st.demo.ages || []).filter(x => x.age !== 'unknown').sort((a, b) => b.percentage - a.percentage).slice(0, 3).map(x => `${AGE[x.age] || x.age}歲${Math.round(x.percentage)}%`).join('、'),
-    area: (st.demo.areas || []).filter(x => x.area !== 'unknown').sort((a, b) => b.percentage - a.percentage).slice(0, 3).map(x => `${x.area}${Math.round(x.percentage)}%`).join('、'),
+    age: (st.demo.ages || []).filter(x => x.age !== 'unknown' && x.percentage > 0).sort((a, b) => b.percentage - a.percentage).slice(0, 3).map(x => `${AGE[x.age] || x.age}歲${Math.round(x.percentage)}%`).join('、'),
+    area: (st.demo.areas || []).filter(x => x.area !== 'unknown' && x.percentage > 0).sort((a, b) => b.percentage - a.percentage).slice(0, 3).map(x => `${x.area}${Math.round(x.percentage)}%`).join('、'),
   } : null
   return { key: k, name, date: last, f: L.f, t: L.t, b: L.b, d1: dlt(at(1)), d7: dlt(at(7)), d30: dlt(at(30)), mtd, msg30, demo, quota: (st && st.quota) || null, firstDay: ds[0], nDays: ds.length }
 }
