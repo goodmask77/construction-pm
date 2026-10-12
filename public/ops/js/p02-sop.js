@@ -696,7 +696,7 @@ function sopRender(){
       <span class="hint" style="font-weight:800;margin-right:2px;flex:0 0 auto">${stDisp(oneSt)}的階段</span>
       <span style="${chipS(!curTg)}" onclick="sopCatSet(null)">全部</span>
       ${L1.map(cg=>`<span style="${chipS(curTg===cg)}" onclick="sopCatSet('${cg}')">${sopEsc(cg)}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${stItemsAll.filter(i9=>i9.tg===cg).length}</span></span>`).join('')}
-      ${sopCanSt(oneSt)?`<span style="${chipS(false)}" onclick="sopTgAdd('${oneSt}')">＋ 階段</span>`:''}
+      ${sopCanSt(oneSt)&&window._sopStTool===oneSt?`<span style="${chipS(false)}" onclick="sopTgAdd('${oneSt}')">＋ 階段</span>`:''}
     </div>`
   }
   // 操作行：只看待完成 / 收合
@@ -722,7 +722,7 @@ function sopRender(){
     const toolOn = canE && window._sopStTool === st
     // 第一層標題：站名＋負責人＋進度；右側「✎ 編輯」（有權限才出現）→ 展開這一站的工具列
     s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:5px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${coll?'⏵':'⏷'} ${stDisp(st)}</span>${own9?`<span style="font-weight:700;font-size:12px;color:#D4A72C">⭐${own9}</span>`:''}<span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
-      <span style="margin-left:auto;display:inline-flex;gap:4px;align-items:center" onclick="event.stopPropagation()">${canE?`<button style="${toolOn?edBOn:edB}" title="編輯這一站（階段／動作／站名）" onclick="sopStTool('${st}')">✎ 編輯</button>`:''}${sugBtn}<button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
+      <span style="margin-left:auto;display:inline-flex;gap:4px;align-items:center" onclick="event.stopPropagation()">${canE?`<button style="${toolOn?edBOn:edB}" title="編輯這一站（階段／動作／站名）" onclick="sopStTool('${st}')">${toolOn?'✓ 完成編輯':'✎ 編輯'}</button>`:''}${sugBtn}<button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
     if (toolOn) s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;padding:8px 10px;border:1.5px dashed var(--primary);border-radius:9px;align-items:center;font-size:13px">
       <span class="hint" style="font-weight:800">編輯「${stDisp(st)}」：</span>
       <button class="mini on" onclick="sopTgAdd('${st}')">＋ 階段</button>
@@ -748,7 +748,8 @@ function sopRender(){
     const stList = stItems.filter(i => !window._sopPending || !(log[i.id] && log[i.id].done)).sort(sopItemCmp)
     const groups = (oneSt===st && curTg) ? [curTg] : [...L, '']
     // v4.70.98 拖曳排序（張良 2026-10-12「類別跟項目都要可以拖曳排序」）：階段整組拖（☰ 在階段標題）、動作在階段內拖（☰ 在動作前）；有編輯權限才有把手；「只看待完成」時動作不給拖（清單不完整會排錯）
-    const dragTg = canE && !(oneSt===st && curTg), dragIt = canE && !window._sopPending
+    // v4.70.99（張良 2026-10-12「不是應該按編輯才會出現可編輯的按鈕嗎」）：站名旁「✎ 編輯」按下去（toolOn）才出現把手／階段✎／動作✎編輯／＋新增動作
+    const dragTg = toolOn && !(oneSt===st && curTg), dragIt = toolOn && !window._sopPending
     const hs = 'cursor:grab;touch-action:none;color:var(--muted);font-size:16px;padding:0 4px;flex:0 0 auto;user-select:none'
     s += `<div class="sopStBody" data-st="${sopEsc(st)}">`
     groups.forEach(g => {
@@ -757,7 +758,7 @@ function sopRender(){
       if (g && !gi.length && window._sopPending) return
       const tk = st + '|' + g, tOn = canE && !!g && window._sopTgTool === tk
       s += `<div class="${g?'sopTgGrp':'sopTgNone'}" data-tg="${sopEsc(g)}">`
-      if (g || L.length) s += `<div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px;padding:3px 8px;border-left:3px solid ${g?'var(--primary)':'var(--line)'}">${dragTg&&g?`<span class="sopTgH" title="拖曳排階段順序" style="${hs}">☰</span>`:''}<span style="flex:1"># ${sopEsc(g||'未分階段')} <span class="hint" style="font-weight:700">${gi.filter(i=>log[i.id]&&log[i.id].done).length}/${gi.length}</span></span>${canE&&g?`<button style="${tOn?edBOn:edB};padding:2px 8px;font-size:12px" title="編輯這個階段（改名／排序／刪除／加動作）" onclick="sopTgTool('${st}','${g}')">✎</button>`:''}</div>`
+      if (g || L.length) s += `<div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px;padding:3px 8px;border-left:3px solid ${g?'var(--primary)':'var(--line)'}">${dragTg&&g?`<span class="sopTgH" title="拖曳排階段順序" style="${hs}">☰</span>`:''}<span style="flex:1"># ${sopEsc(g||'未分階段')} <span class="hint" style="font-weight:700">${gi.filter(i=>log[i.id]&&log[i.id].done).length}/${gi.length}</span></span>${toolOn&&g?`<button style="${tOn?edBOn:edB};padding:2px 8px;font-size:12px" title="編輯這個階段（改名／排序／刪除／加動作）" onclick="sopTgTool('${st}','${g}')">✎</button>`:''}</div>`
       if (tOn) s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px 8px;padding:6px 10px;border:1.5px dashed var(--primary);border-radius:9px;align-items:center;font-size:13px">
         <span class="hint" style="font-weight:800">階段「${sopEsc(g)}」：</span>
         <button class="mini on" onclick="sopItemEdit(null,'${st}','${g}')">＋ 新增動作到這階段</button>
@@ -782,7 +783,7 @@ function sopRender(){
             </div>
             ${(lg&&lg.done) ? `<span onclick="event.stopPropagation();sopView('${it.id}')" title="查看完成紀錄" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer"><span style="color:var(--green);font-weight:800;font-size:13px">${sopEsc(lg.by||'')} · ${lg.ts}</span>${lg.photo?`<img src="${lg.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:6px;border:1px solid var(--green)">`:''}</span>` : state==='open' ? `<button class="mini on" style="flex:0 0 auto;padding:6px 16px" onclick="event.stopPropagation();sopDoOrExpand('${it.id}')">完成</button>` : sopBadgeOutline(state)}
             <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
-            ${canE?`<button style="${edB};padding:3px 9px" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">✎ 編輯</button>`:''}
+            ${toolOn?`<button style="${edB};padding:3px 9px" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">✎ 編輯</button>`:''}
           </div>
           ${window._sopEdit===it.id ? sopEditForm(it, false) : (open ? sopActPanel(it, lg, state) : '')}
         </div>`
@@ -790,8 +791,8 @@ function sopRender(){
       s += `</div></div>` // 閉 sopItList + sopTgGrp
     })
     s += `</div>` // 閉 sopStBody
-    // V3 原地新增動作：站末尾＋新增動作（有權限才出現），點了在此展開空白編輯表單
-    if (canE) {
+    // V3 原地新增動作：站末尾＋新增動作（編輯中才出現），點了在此展開空白編輯表單
+    if (toolOn) {
       if (window._sopEdit === '__new__:'+st) s += sopEditForm({ title:'', start:'', end:'', req:true, photo:false, desc:'', st, tg:(window._sopNewTg||curTg||'') }, true)
       else s += `<button class="mini on" style="margin:6px 0 4px;padding:7px 14px" onclick="sopItemEdit(null,'${st}','${curTg||''}')">＋ 新增動作</button>`
     }
