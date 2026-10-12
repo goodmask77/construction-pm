@@ -63,6 +63,8 @@ const api = async (body) => { try { const r = await fetch('/api/mail-sync?gorder
 function toast (t, bad) { const el = $('toast'); el.textContent = t; el.className = 'toast' + (bad ? ' bad' : ''); el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0' }, 2200) }
 const photoOf = s => s.photo ? '/ops/menu/photos/' + s.photo + '.webp' : ''
 const canEdit = () => D && D.editable && !D.closed && ME
+const idBody = () => ME ? (ME.src === 'line' ? { uid: ME.uid, pt: ME.pt } : { anon: ME.anon }) : {}
+const isHost = () => !!(D && (D.demo || !D.host || (ME && ME.uid === D.host)))
 const L = GC.STATUS_LABEL
 // ── 身分：LINE 中繼帶來 → 全站記住 → 不再問（規格 B） ──
 function identify () {
@@ -106,7 +108,7 @@ function renderBar () {
   $('barSum').innerHTML = `<b>$${fmt(my.total)}</b> <span style="font-size:14px">我的餐點 ${n} 道</span><small>${t.n} 人・${t.nDone} 人點好・全單 $${fmt(t.total)}</small>`
   $('barSum').onclick = () => cartSheet('mine')
   const b = $('barBtn')
-  if (D.status === 'priced') { b.textContent = '確認金額無誤'; b.disabled = false; b.onclick = confirmGo }
+  if (D.status === 'priced') { if (isHost()) { b.textContent = '確認金額無誤'; b.disabled = false; b.onclick = confirmGo } else { b.textContent = '等主辦人確認'; b.disabled = false; b.onclick = () => cartSheet('all') } }
   else if (!canEdit()) { b.textContent = '大家的'; b.disabled = false; b.onclick = () => cartSheet('all') }
   else if (MINE.done) { b.textContent = '已點好・修改'; b.disabled = false; b.onclick = () => cartSheet('mine') }
   else { b.textContent = '我點好了'; b.disabled = !MINE.lines.length; b.onclick = () => { MINE.done = true; mineChanged(true); toast('已點好，謝謝！'); cartSheet('all') } }
@@ -184,8 +186,8 @@ function cartSheet (tab) {
       const shared = (D.shared || []).map((s, j) => `<div class="ln"><div class="t"><div class="nm">${esc(GC.labelOf(MENU, { ...s, q: 1 }))}</div><div class="d">共用，不分攤到個人</div></div><div style="display:flex;align-items:center;gap:8px">${canEdit() ? `<button class="btn sm" data-sq="${j}:-1">−</button>` : ''}<b>${s.q}</b>${canEdit() ? `<button class="btn sm" data-sq="${j}:1">＋</button>` : ''}<span class="p">$${fmt(GC.pickPrice(MENU, s, D.frozen).price * s.q)}</span></div></div>`).join('')
       body += `<div class="grp"><div class="ttl">大家共用（披薩等）</div>${shared || '<div style="font-size:13px;color:var(--mute);margin-top:6px">沒有共用品項</div>'}${canEdit() ? `<div style="display:flex;gap:8px;margin-top:8px"><select id="sharedPick">${GC.flatItems(MENU).filter(i => !i.soon).map(i => `<option value="${i.id}">${esc(i.name)} ${i.price}</option>`).join('')}</select><button class="btn sm" id="btnShared" style="white-space:nowrap">＋ 加入</button></div>` : ''}</div>`
       body += `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:10px;font-size:14px"><div style="display:flex;justify-content:space-between"><span>個人餐點</span><b>$${fmt(t.people)}</b></div><div style="display:flex;justify-content:space-between"><span>共用</span><b>$${fmt(t.shared)}</b></div>${t.disc ? `<div style="display:flex;justify-content:space-between"><span>折扣</span><b>−$${fmt(t.disc)}</b></div>` : ''}<div style="display:flex;justify-content:space-between;font-size:18px;margin-top:6px"><b>全單總額</b><b style="color:var(--red)">$${fmt(t.total)}</b></div>${t.pend ? `<div style="color:var(--warn);font-size:13px">還有 ${t.pend} 項待確認沒算</div>` : ''}</div>`
-      if (D.editable) body += `<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" id="btnShare" style="flex:1">分享連結</button><button class="btn red" id="btnSubmit" style="flex:1">${D.status === 'submitted' ? '再次送出給店家' : '送出給店家'}</button></div><div style="font-size:12px;color:var(--mute);margin-top:6px">主辦人確認大家都點好再送出；送出後官方 LINE 會收到「已收到訂單」。</div>`
-      if (D.editable) body += `<details style="margin-top:14px"><summary style="font-size:13px;color:var(--mute)">主辦人工具：貼大家傳的文字自動拆列</summary><textarea id="paste" rows="4" style="margin-top:8px" placeholder="一行一人：姓名：餐點"></textarea><button class="btn sm" id="btnParse" style="margin-top:6px">自動拆成每人一列</button></details>`
+      if (D.editable) body += isHost() ? `<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" id="btnShare" style="flex:1">分享連結</button><button class="btn red" id="btnSubmit" style="flex:1">${D.status === 'submitted' ? '再次送出給店家' : '送出給店家'}</button></div><div style="font-size:12px;color:var(--mute);margin-top:6px">你是主辦人：確認大家都點好再送出；送出後官方 LINE 會收到「已收到訂單」。</div>` : `<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" id="btnShare" style="flex:1">分享連結</button></div><div style="font-size:12px;color:var(--mute);margin-top:6px">大家點好後由主辦人送出給店家。</div>`
+      if (D.editable && isHost()) body += `<details style="margin-top:14px"><summary style="font-size:13px;color:var(--mute)">主辦人工具：貼大家傳的文字自動拆列</summary><textarea id="paste" rows="4" style="margin-top:8px" placeholder="一行一人：姓名：餐點"></textarea><button class="btn sm" id="btnParse" style="margin-top:6px">自動拆成每人一列</button></details>`
     }
     ov.innerHTML = `<div class="sheet"><div class="hd" style="padding-bottom:0;border:0"><div class="t"><div class="nm">${tb === 'mine' ? '我的餐點' : '大家的餐點'}</div></div><button class="x" data-x>✕</button></div><div class="tabs"><button class="${tb === 'mine' ? 'on' : ''}" data-tb="mine">我的 ${MINE.lines.length}</button><button class="${tb === 'all' ? 'on' : ''}" data-tb="all">大家 ${t.nDone}/${t.n} 點好</button></div><div class="bd">${body}</div><div class="ft">${tb === 'mine' && canEdit() ? `<button class="cta" id="btnDone" ${MINE.lines.length ? '' : 'disabled'}><span>${MINE.done ? '已點好 ✓（改了會自動更新）' : '我點好了'}</span><span></span></button>` : `<button class="cta" data-x><span>繼續點餐</span><span></span></button>`}</div></div>`
     ov.querySelectorAll('[data-x]').forEach(b => b.onclick = closeOv)
@@ -213,14 +215,12 @@ async function saveMine () {
   if (!d || !d.ok) { toast((d && d.error) || '儲存失敗', true); dirty = true; if (d && d.closed) { D.closed = true; render() }; return }
   if (!dirty) { D = { ...d, menu: MENU }; pullMine(); renderTop(); renderBar() }
 }
-function sharedChanged () { clearTimeout(saveT); saveT = setTimeout(async () => { const d = await api({ op: 'save', rows: D.rows, shared: D.shared }); if (!d || !d.ok) return toast((d && d.error) || '儲存失敗', true); D = { ...d, menu: MENU }; renderBar() }, 500) }
+function sharedChanged () { clearTimeout(saveT); saveT = setTimeout(async () => { const d = await api({ op: 'shared', shared: D.shared }); if (!d || !d.ok) return toast((d && d.error) || '儲存失敗', true); D = { ...d, menu: MENU }; if (ME) pullMine(); renderBar() }, 500) }
 async function parseGo (ov) {
   const ta = ov.querySelector('#paste'), b = ov.querySelector('#btnParse'); if (!ta.value.trim()) return toast('先貼文字', true)
   b.disabled = true; b.textContent = 'AI 讀取中…'
-  const d = await api({ op: 'parse', text: ta.value }); if (!d || !d.ok) { b.disabled = false; b.textContent = '自動拆成每人一列'; return toast((d && d.error) || 'AI 讀不出來', true) }
-  const rows = [...D.rows, ...d.rows.map(r => ({ ...r, uid: 'anon:' + r.pid, src: 'manual' }))]; const shared = [...D.shared]; for (const s of d.shared) { const ex = shared.find(x => x.id === s.id); if (ex) ex.q += s.q; else shared.push(s) }
-  const d2 = await api({ op: 'save', rows, shared }); if (!d2 || !d2.ok) return toast((d2 && d2.error) || '儲存失敗', true)
-  D = { ...d2, menu: MENU }; closeOv(); render(); toast(`拆出 ${d.rows.length} 人`)
+  const d = await api({ op: 'parseadd', text: ta.value, ...idBody() }); if (!d || !d.ok) { b.disabled = false; b.textContent = '自動拆成每人一列'; return toast((d && d.error) || 'AI 讀不出來', true) }
+  D = { ...d, menu: MENU }; if (ME) pullMine(); closeOv(); render(); toast(`拆出 ${d.added} 人`)
 }
 async function shareGo () { const url = D.liffUrl || (location.origin + '/order/' + code), text = `GROUN:D 團體訂餐｜${D.company || ''}\n點開連結自己選餐點${D.deadline ? '，' + D.deadline + ' 前點好' : ''}：\n${url}`; if (navigator.share) { try { await navigator.share({ text }); return } catch (_) {} } try { await navigator.clipboard.writeText(text); toast('已複製，貼到群組就好') } catch (_) { window.prompt('複製這段貼到群組', text) } }
 async function submitGo () {
@@ -229,11 +229,13 @@ async function submitGo () {
   if (t.pend && !window.confirm(`還有 ${t.pend} 項待確認（最新菜單沒有的品項），先送出讓店家處理嗎？`)) return
   if (notDone.length && !window.confirm(`還有 ${notDone.length} 人沒按「我點好了」：${notDone.join('、')}。仍要送出？`)) return
   clearTimeout(saveT); if (dirty) await saveMine()
-  const d = await api({ op: 'submit' }); if (!d || !d.ok) return toast((d && d.error) || '送出失敗', true)
+  const d = await api({ op: 'submit', ...idBody() }); if (!d || !d.ok) return toast((d && d.error) || '送出失敗', true)
   D = { ...d, menu: MENU }; closeOv(); render(); toast('已送出給店家，LINE 會收到確認'); window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-async function confirmGo () { const d = await api({ op: 'confirm' }); if (!d || !d.ok) return toast((d && d.error) || '確認失敗', true); D = { ...d, menu: MENU }; render(); toast('已確認，謝謝！') }
-setInterval(async () => { if (!D || dirty || sheet || $('ov') || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); render() } }, 20000)
+async function confirmGo () { const d = await api({ op: 'confirm', ...idBody() }); if (!d || !d.ok) return toast((d && d.error) || '確認失敗', true); D = { ...d, menu: MENU }; render(); toast('已確認，謝謝！') }
+async function refresh () { if (!D || dirty || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared) || JSON.stringify(d.imgs) !== JSON.stringify(D.imgs))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); if (sheet) { renderTop(); renderBar() } else { const ovOpen = !!$('ov'); render(); if (ovOpen) cartSheet('all') } } }
+setInterval(refresh, 20000); setInterval(() => { if (D && ['submitted', 'priced', 'confirmed'].includes(D.status)) refresh() }, 6000) // 審查第 5 點：等店家那段勤一點
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() }); window.addEventListener('focus', refresh)
 load()
 </script>
 </body>
