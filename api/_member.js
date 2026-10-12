@@ -16,14 +16,15 @@ async function ins (table, row, prefer) { const r = await fetch(`${SB_URL}/rest/
 async function upd (table, q, patch) { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ ...patch }) }); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, await r.text().catch(() => ''))), { status: r.status }); return r.json() }
 async function rpc (fn, args) { const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H(), body: JSON.stringify(args) }); const t = await r.text().catch(() => ''); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, t)), { status: r.status }); try { return JSON.parse(t) } catch (_) { return t } }
 const tableErr = (st, t) => /relation .* does not exist|42P01/.test(t) ? '會員資料表還沒建立：請把 supabase/migrations/0001_member.sql 貼到 Supabase SQL Editor 執行一次' : `資料庫錯誤 ${st}：${String(t).slice(0, 160)}`
-export const MEMBER_VER = '4783'
+export const MEMBER_VER = '4784'
 
 // ── 設定 ──
 const CFG_KEY = 'pm_member_cfg'
-const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡，消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
+const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡，消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
 export async function loadCfg () { const c = (await kvGet(CFG_KEY)) || {}; return { ...DEF_CFG, ...c, rewards: Array.isArray(c.rewards) && c.rewards.length ? c.rewards : DEF_CFG.rewards } }
 export async function saveCfg (patch, who) {
   const c = await loadCfg(); const n = { ...c, ...(patch || {}) }
+  n.yearCap = Math.max(100, Math.round(Number(n.yearCap) || 900)); n.prizeMax = Math.max(50, Math.round(Number(n.prizeMax) || 500))
   n.perAmt = Math.max(1, Math.round(Number(n.perAmt) || 10)); n.capSingle = Math.max(100, Math.round(Number(n.capSingle) || 3000)); n.welcomePts = Math.max(0, Math.round(Number(n.welcomePts) || 0))
   n.rewards = (Array.isArray(n.rewards) ? n.rewards : []).slice(0, 30).map((r, i) => ({ id: String(r.id || 'r' + (i + 1)).slice(0, 12), name: String(r.name || '').slice(0, 40), value: Math.max(0, Math.round(Number(r.value) || 0)), pts: Math.max(1, Math.round(Number(r.pts) || 1)), active: r.active !== false })).filter(r => r.name)
   n.ver = (c.ver || 1) + 1; n.by = who && who.name; n.at = nowIso()
@@ -85,7 +86,8 @@ export async function custMe ({ body }) {
   const [m, bal, pts, cps] = await Promise.all([sel('members', `id=eq.${mid}&select=*`), sel('member_balance', `member_id=eq.${mid}`), sel('member_pts', `member_id=eq.${mid}&order=created_at.desc&limit=60&select=kind,pts,amount,note,created_at`), sel('member_coupons', `member_id=eq.${mid}&order=created_at.desc&limit=30&select=id,kind,name,value,status,expires_at,redeemed_at,created_at`)])
   if (!m[0] || m[0].status === 'left') return { ok: false, needConsent: true }
   const cfg = await loadCfg()
-  return { ok: true, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt }
+  let game = null; try { game = await availableDraws(mid, m[0]) } catch (_) { game = null } // 資料表還沒建（0002）就略過
+  return { ok: true, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt, game }
 }
 export async function custUpdate ({ body }) {
   const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }
@@ -190,3 +192,55 @@ export async function staffUpdate ({ who, id, patch }) {
 // 加好友歡迎（inbox 的 follow 事件呼叫；只給文字，由 _inbox 用 replyToken 免費回）
 export async function welcomeText () { const cfg = await loadCfg(); const L = liffId(); const link = L ? `https://liff.line.me/${L}` : 'https://ground-pm.vercel.app/member'; return String(cfg.welcomeText || DEF_CFG.welcomeText).replace('{link}', link) }
 export const liffId = () => (process.env.LIFF_MEMBER_ID || process.env.LIFF_ID || '').trim() || null // LIFF app 一個端點一個：會員卡端點 https://ground-pm.vercel.app/member（liff.init 只保證在端點網址之下能用）
+
+// ── 🎡 轉盤（第二批 v4.70.84；SQL 0002）──
+const pubCamp = (c, slots) => { const free = {}, total = {}; for (const sl of (slots || [])) { total[sl.pidx] = (total[sl.pidx] || 0) + 1; if (!sl.taken_by) free[sl.pidx] = (free[sl.pidx] || 0) + 1 }
+  return { id: c.id, name: c.name, type: c.type, status: c.status, startAt: c.start_at, endAt: c.end_at, rules: c.rules || {}, prizes: (c.prizes || []).map(p => ({ ...p, left: free[p.idx] || 0, total: total[p.idx] || 0 })), free: Object.values(free).reduce((a, b) => a + b, 0), total: Object.values(total).reduce((a, b) => a + b, 0) } }
+async function activeCampaign () { const now = nowIso(); const rows = await sel('member_campaigns', `brand=eq.${BRAND}&status=eq.active&or=(start_at.is.null,start_at.lte.${now})&or=(end_at.is.null,end_at.gt.${now})&order=created_at.desc&limit=1`); return rows[0] || null }
+// 這位會員現在有幾次可抽：入會 1 抽（活動期間內入會）＋活動期間內每筆入點 1 抽，扣掉已抽過的
+async function availableDraws (mid, m) {
+  const c = await activeCampaign(); if (!c) return null
+  const slots = await sel('member_slots', `campaign_id=eq.${c.id}&select=pidx,taken_by`)
+  const camp = pubCamp(c, slots)
+  const rules = c.rules || {}; const rights = []
+  const since = c.start_at || c.created_at
+  if (rules.joinDraw !== false && m && m.created_at >= since) rights.push({ key: `join:${c.id}:${mid}`, label: '入會禮：轉一次' })
+  if (rules.visitDraw !== false) { const vis = await sel('member_visits', `member_id=eq.${mid}&created_at=gte.${since}&amount=gte.${Number(rules.minAmount) || 0}&select=id,amount,created_at&order=created_at.desc&limit=50`); for (const v of vis) rights.push({ key: `visit:${v.id}`, label: `消費 ${v.amount} 元：轉一次` }) }
+  const used = rights.length ? await sel('member_draws', `right_key=in.(${rights.map(r => '"' + r.key + '"').join(',')})&select=right_key`) : []
+  const usedSet = new Set(used.map(u => u.right_key))
+  const draws = await sel('member_draws', `member_id=eq.${mid}&campaign_id=eq.${c.id}&order=created_at.desc&limit=20&select=id,pidx,prize,created_at`)
+  return { campaign: camp, rights: rights.filter(r => !usedSet.has(r.key)), draws }
+}
+export async function custDraw ({ body }) {
+  const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期，請重新開啟會員卡' }
+  const mid = await identityOf(uid); if (!mid) return { ok: false, needConsent: true }
+  const m = (await sel('members', `id=eq.${mid}&select=*`))[0]; if (!m || m.status !== 'active') return { ok: false, error: '會員狀態不能參加' }
+  const g = await availableDraws(mid, m); if (!g) return { ok: false, error: '現在沒有進行中的活動' }
+  const key = String(body.rightKey || (g.rights[0] || {}).key || ''); if (!key || !g.rights.some(r => r.key === key)) return { ok: false, error: '沒有可用的抽獎機會' }
+  const cfg = await loadCfg()
+  const out = await rpc('member_draw', { p_member: mid, p_campaign: g.campaign.id, p_right: key, p_year_cap: cfg.yearCap || 900 })
+  if (!out || !out.ok) return { ok: false, error: (out && out.error) || '抽獎失敗' }
+  return { ok: true, drawId: out.drawId, pidx: out.pidx, prize: out.prize, capped: !!out.capped, dup: !!out.dup }
+}
+// 店家：活動管理
+export async function listCampaigns () { const cs = await sel('member_campaigns', `brand=eq.${BRAND}&order=created_at.desc&limit=30`); const ids = cs.map(c => c.id); const slots = ids.length ? await sel('member_slots', `campaign_id=in.(${ids.join(',')})&select=campaign_id,pidx,taken_by`) : []; return cs.map(c => pubCamp(c, slots.filter(sl => sl.campaign_id === c.id))) }
+export async function createCampaign ({ who, name, startAt, endAt, rules, prizes }) {
+  const cfg = await loadCfg()
+  name = String(name || '').trim().slice(0, 40); if (!name) return { ok: false, error: '請填活動名稱' }
+  const pz = (Array.isArray(prizes) ? prizes : []).slice(0, 12).map((p, i) => ({ idx: i, name: String(p.name || '').trim().slice(0, 30), kind: ['pts', 'coupon', 'none'].includes(p.kind) ? p.kind : 'none', pts: Math.max(0, Math.round(Number(p.pts) || 0)), value: Math.max(0, Math.round(Number(p.value) || 0)), count: Math.max(0, Math.min(5000, Math.round(Number(p.count) || 0))) })).filter(p => p.name)
+  if (!pz.length) return { ok: false, error: '至少一個獎項' }
+  const over = pz.find(p => p.kind !== 'none' && p.value > cfg.prizeMax); if (over) return { ok: false, error: `「${over.name}」市值 ${over.value} 超過上限 ${cfg.prizeMax}（設定可改）` }
+  const total = pz.reduce((n, p) => n + p.count, 0); if (!total || total > 5000) return { ok: false, error: '槽位總數要在 1～5000' }
+  const c = await ins('member_campaigns', { brand: BRAND, name, type: 'wheel', status: 'draft', start_at: startAt ? new Date(startAt).toISOString() : null, end_at: endAt ? new Date(endAt).toISOString() : null, rules: { joinDraw: rules && rules.joinDraw !== false, visitDraw: rules && rules.visitDraw !== false, minAmount: Math.max(0, Number((rules || {}).minAmount) || 0), couponDays: Math.max(1, Number((rules || {}).couponDays) || 30), note: String((rules || {}).note || '').slice(0, 300) }, prizes: pz, created_by: who.name })
+  const rows = []; for (const p of pz) for (let i = 0; i < p.count; i++) rows.push({ campaign_id: c.id, pidx: p.idx })
+  for (let i = 0; i < rows.length; i += 1000) await ins('member_slots', rows.slice(i, i + 1000), 'return=minimal')
+  return { ok: true, campaign: pubCamp(c, rows.map(r => ({ pidx: r.pidx, taken_by: null }))) }
+}
+export async function campaignStatus ({ who, id, status }) {
+  if (!['active', 'paused', 'ended'].includes(status)) return { ok: false, error: '狀態不對' }
+  if (status === 'active') { const cur = await activeCampaign(); if (cur && cur.id !== id) return { ok: false, error: `「${cur.name}」還在進行中，一次只能一個活動` } }
+  await upd('member_campaigns', `id=eq.${id}`, { status, updated_at: nowIso() }); return { ok: true }
+}
+export async function campaignStats ({ id }) { const c = (await sel('member_campaigns', `id=eq.${id}`))[0]; if (!c) return { ok: false, error: '找不到活動' }; const [slots, draws] = await Promise.all([sel('member_slots', `campaign_id=eq.${id}&select=pidx,taken_by`), sel('member_draws', `campaign_id=eq.${id}&order=created_at.desc&limit=100&select=id,member_id,pidx,prize,created_at`)]); const mids = [...new Set(draws.map(d => d.member_id))]; const ms = mids.length ? await sel('members', `id=in.(${mids.join(',')})&select=id,name,mno`) : []; const mm = {}; ms.forEach(m => { mm[m.id] = m }); return { ok: true, campaign: pubCamp(c, slots), draws: draws.map(d => ({ ...d, member: mm[d.member_id] || {} })) } }
+// 店家核銷券（遊戲獎品／之後的優惠券）
+export async function couponUse ({ who, couponId, ref }) { const out = await rpc('member_coupon_use', { p_coupon: couponId, p_by: who.name, p_ref: String(ref || '').slice(0, 40) || null }); return out && out.ok ? { ok: true, name: out.name } : { ok: false, error: (out && out.error) || '核銷失敗' } }
