@@ -21,7 +21,7 @@
   html,body{background:#555}
   #dlbtn{ position:fixed; top:14px; right:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #dlbtn:disabled{ opacity:.6 }
-  #fmtsel{ position:fixed; top:62px; right:14px; z-index:99; padding:6px 10px; background:#fff; color:#333; border:1px solid #bbb; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25); font-family:system-ui,sans-serif } /* v1.6 下載格式 */
+  #fmtsel{ position:fixed; top:64px; right:14px; z-index:99; padding:8px 12px; background:#fff; color:#CE1611; border:2px solid #CE1611; border-radius:10px; font-size:15px; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3); font-family:system-ui,sans-serif } /* v1.6 下載格式（張良 10-12「沒看到選格式按鈕」→ 放大紅框＋按鈕文字帶格式） */
   #artbtn,#editbtn{ position:fixed; top:14px; z-index:99; padding:12px 18px; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif; color:#fff }
   #artbtn{ right:166px; background:#6d3df0 } #editbtn{ right:286px; background:#333 } #editbtn.on{ background:#fff; color:#1a7f37; border:2px solid #1a7f37 }
   #verbtn{ position:fixed; top:14px; right:406px; z-index:99; padding:12px 18px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
@@ -92,7 +92,7 @@
 <button id="artbtn" onclick="openArt()">✨ 插圖</button>
 <button id="verbtn" onclick="openVer()" title="把目前海報存成一個版本（日期＋名稱）；隨時可回復">💾 存版本</button>
 <button id="dlbtn" onclick="downloadPoster()">⬇ 下載圖片</button>
-<select id="fmtsel" title="下載格式"><option value="png">格式：PNG</option><option value="jpg">格式：JPG</option><option value="svg">格式：SVG</option></select>
+<select id="fmtsel" onchange="fmtLabel()" title="下載格式"><option value="png">▾ 格式：PNG（最清晰）</option><option value="jpg">▾ 格式：JPG（檔案小）</option><option value="svg">▾ 格式：SVG（向量）</option></select>
 <div id="mini"></div>
 <div id="poster">
 <div id="editbar"><span>編輯中：點 Logo／分類標題／品項／底條調大小與間距；拖曳插圖移動</span><button onclick="toggleEdit()">✓ 完成，退出編輯</button><span style="font-size:14px;opacity:.85">（按 Esc 也可退出）</span></div>
@@ -366,6 +366,8 @@ function snapBy(fmt){ const el=document.getElementById('poster'), o={ width:1080
   if(fmt==='svg') return MAI.fontCSS(el).then(f=>htmlToImage.toSvg(el,f?{...o,fontEmbedCSS:f}:o));
   return htmlToImage.toPng(el,{ ...o, pixelRatio:2 }); }
 function pickFmt(){ const v=(document.getElementById('fmtsel')||{}).value; return ['png','jpg','svg'].includes(v)?v:'png'; }
+function fmtLabel(){ const f=pickFmt().toUpperCase(); const b=document.getElementById('dlbtn'); if(b&&!b.disabled) b.textContent='⬇ 下載 '+f; const a=document.getElementById('dlall'); if(a&&!a.disabled) a.textContent='⬇ 下載全部 4 張 '+f; }
+document.addEventListener('DOMContentLoaded',fmtLabel);
 // 💾 版本存檔（v1.2）：海報出一張 → 直傳 → 登記版本（含插圖位置）；回復=插圖位置套回那版
 function openVer(){ closeStk(); MAI.verOpen({ kind:'poster', defName:'直式菜單 '+MAI.now(), snap:async(p)=>{ if(p) p('出圖中…'); return [await snapPoster()]; }, cfg:()=>({poster:POSTER}), onApplied: async()=>{ loadPoster(); try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} renderStk(); fit(); } }); }
 MAI.onEsc=()=>{ if(document.getElementById('mini').classList.contains('on')){ closeStk(); closePmini(); } else if(EDIT) toggleEdit(); };
@@ -376,7 +378,7 @@ async function downloadPoster(){
     const fmt=pickFmt(); const url=await snapPoster(fmt);
     MAI.dlDataUrl(url,'GROUND菜單_直式_'+(new Date().toISOString().slice(0,10))+'.'+fmt);
   }catch(e){ alert('出圖失敗，再試一次：'+e); }
-  finally{ if(btn){ btn.textContent='⬇ 下載圖片'; btn.disabled=false; } }
+  finally{ if(btn){ btn.disabled=false; fmtLabel(); } }
 }
 </script>
 </body>

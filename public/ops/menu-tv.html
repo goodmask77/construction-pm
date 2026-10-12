@@ -21,7 +21,7 @@
   #stage{ position:fixed; left:0; top:0; width:1920px; height:1080px; transform-origin:top left; }
   #editbtn{ position:fixed; top:14px; right:160px; z-index:99; padding:12px 22px; background:#333; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #editbtn.on{ background:#fff; color:#1a7f37; border:2px solid #1a7f37 }
-  #verbtn{ position:fixed; top:14px; right:462px; z-index:99; padding:12px 18px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
+  #verbtn{ position:fixed; top:14px; right:530px; z-index:99; padding:12px 18px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   body.edit [data-edit]{ cursor:pointer; outline:3px dashed transparent; outline-offset:6px; transition:outline-color .15s; border-radius:6px }
   body.edit [data-edit]:hover{ outline-color:rgba(206,22,17,.55) }
   body.edit [data-edit].sel{ outline:3px solid #1a7f37 }
@@ -35,7 +35,7 @@
   #dlbtn{ right:14px } #adjbtn{ right:160px; background:#333 } #dlall{ position:fixed; top:14px; right:306px; z-index:99; padding:12px 18px; background:#7a0e0b; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #sw{ position:fixed; top:14px; left:14px; z-index:99; display:flex; gap:6px; font-family:system-ui,sans-serif } #sw button{ padding:10px 14px; border:none; border-radius:10px; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:700; cursor:pointer } #sw button.on{ background:#CE1611 }
   #dlbtn:disabled{ opacity:.6 }
-  #fmtsel{ position:fixed; top:62px; right:14px; z-index:99; padding:6px 10px; background:#fff; color:#333; border:1px solid #bbb; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25); font-family:system-ui,sans-serif } /* v1.8 下載格式 */
+  #fmtsel{ position:fixed; top:64px; right:14px; z-index:99; padding:8px 12px; background:#fff; color:#CE1611; border:2px solid #CE1611; border-radius:10px; font-size:15px; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3); font-family:system-ui,sans-serif } /* v1.8 下載格式（張良 10-12「沒看到選格式按鈕」→ 放大紅框＋按鈕文字帶格式） */
   #adj{ position:fixed; right:14px; top:66px; z-index:99; background:rgba(20,20,20,.94); color:#eee; padding:14px 16px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 6px 20px rgba(0,0,0,.4) }
   #adj.on{ display:block } #adj h4{ margin:6px 0 4px; font-size:14px; color:#F5EADA } #adj label{ display:flex; align-items:center; gap:8px; margin:3px 0 } #adj label span{ width:38px; font-size:12px; color:#bbb } #adj input[type=range]{ flex:1 } #adj .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
   #adj .ops{ display:flex; gap:8px; margin-top:10px } #adj button{ flex:1; padding:7px; border:none; border-radius:8px; cursor:pointer; font-weight:700 } #adj .rst{ background:#555; color:#fff } #adj .ok{ background:#CE1611; color:#fff }
@@ -100,7 +100,7 @@
 <button id="dlall" onclick="downloadAll()">⬇ 下載全部 4 張</button>
 <button id="editbtn" onclick="toggleEdit()">✎ 編輯</button>
 <button id="dlbtn" onclick="downloadTV()">⬇ 下載圖片</button>
-<select id="fmtsel" title="下載格式（單張與全部 4 張都用這個）"><option value="png">格式：PNG</option><option value="jpg">格式：JPG</option><option value="svg">格式：SVG</option></select>
+<select id="fmtsel" onchange="fmtLabel()" title="下載格式（單張與全部 4 張都用這個）"><option value="png">▾ 格式：PNG（最清晰）</option><option value="jpg">▾ 格式：JPG（檔案小）</option><option value="svg">▾ 格式：SVG（向量）</option></select>
 <div id="adj"></div>
 <div id="mini"></div>
 <div id="stage">
@@ -293,11 +293,13 @@ function snapBy(fmt){ const el=document.getElementById('tv'), o={width:1920,heig
   if(fmt==='svg') return MAI.fontCSS(el).then(f=>htmlToImage.toSvg(el,f?{...o,fontEmbedCSS:f}:o));
   return htmlToImage.toPng(el,{...o,pixelRatio:2}); }
 function pickFmt(){ const v=(document.getElementById('fmtsel')||{}).value; return ['png','jpg','svg'].includes(v)?v:'png'; }
+function fmtLabel(){ const f=pickFmt().toUpperCase(); const b=document.getElementById('dlbtn'); if(b&&!b.disabled) b.textContent='⬇ 下載 '+f; const a=document.getElementById('dlall'); if(a&&!a.disabled) a.textContent='⬇ 下載全部 4 張 '+f; }
+document.addEventListener('DOMContentLoaded',fmtLabel);
 function dl(url,name){ MAI.dlDataUrl(url,name); } // v1.8 走 Blob（SVG 大檔 data: 直接下載會失敗）
 const TODAY=()=>new Date().toISOString().slice(0,10);
 async function downloadAll(){ const btn=document.getElementById('dlall'); const keep=screenIdx, wasQ=QUAD; if(wasQ) setQuad(false); btn.textContent='產生中… 0/4'; btn.disabled=true;
   try{ const fmt=pickFmt(); for(let i=0;i<4;i++){ setScreen(i); const u=await snapPng(fmt); dl(u,'GROUND電視'+(i+1)+'_'+TODAY()+'.'+fmt); btn.textContent='產生中… '+(i+1)+'/4'; await new Promise(r=>setTimeout(r,700)); } }
-  catch(e){ alert('出圖失敗：'+e); } finally{ setScreen(keep); if(wasQ) setQuad(true); btn.textContent='⬇ 下載全部 4 張'; btn.disabled=false; } }
+  catch(e){ alert('出圖失敗：'+e); } finally{ setScreen(keep); if(wasQ) setQuad(true); btn.disabled=false; fmtLabel(); } }
 // 💾 版本存檔（v1.6）：四頁各出一張 → 直傳 → 登記版本（名稱＋日期＋誰存的）→ /prep 新菜單頁四格同步換成這版；回復=套回那版的版面設定＋照片
 async function snapAll(prog){ const keep=screenIdx, out=[], wasQ=QUAD; if(wasQ) setQuad(false); try{ for(let i=0;i<4;i++){ setScreen(i); if(prog) prog('出圖中 '+(i+1)+'/4…'); out.push(await snapPng()); } } finally{ setScreen(keep); if(wasQ) setQuad(true); } return out; }
 function openVer(){ if(EDIT) toggleEdit(); document.getElementById('adj').classList.remove('on');
@@ -308,7 +310,7 @@ async function downloadTV(){
   const btn=document.getElementById('dlbtn'); if(btn){btn.textContent='產生中…';btn.disabled=true;}
   const wasQ=QUAD; if(wasQ) setQuad(false);
   try{ const fmt=pickFmt(); const url=await snapPng(fmt); dl(url,'GROUND電視'+(screenIdx+1)+'_'+TODAY()+'.'+fmt);
-  }catch(e){ alert('出圖失敗：'+e); } finally{ if(wasQ) setQuad(true); if(btn){btn.textContent='⬇ 下載圖片';btn.disabled=false;} }
+  }catch(e){ alert('出圖失敗：'+e); } finally{ if(wasQ) setQuad(true); if(btn){btn.disabled=false; fmtLabel();} }
 }
 </script>
 </body>
