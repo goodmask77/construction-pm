@@ -10,7 +10,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
-import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
+import { awardPts, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
 import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33）
 import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34）
@@ -3565,7 +3565,6 @@ export default async function handler(req, res) {
   // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}
   // 五大面向星星評分（張良 2026-09-21 拍板：取代 L1~L10 投票——面向沿用薪資360同語彙，1~5星直覺免看定義；
   // 效率不用人評=認領計時 durMin 客觀數據）。stars 結構：issue.stars[find|fix][面向key][評分人]=1~5
-  const FACETS = ['專業', '品質', '團隊', '負責', '創新']
   if (req.query?.lb) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
@@ -3581,73 +3580,9 @@ export default async function handler(req, res) {
       kvGet('sp_finance_pm_redeem')
     ])
     const namesL = gdNames(rosterL)
-    const list = ((issDoc || {}).list || []).slice(0, 60)
-    const board = {}
-    const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0, fc: {} })
-    for (const x of list) {
-      for (const aspect of ['find', 'fix']) {
-        if (aspect === 'fix' && x.status !== 'done') continue // 待審不計
-        const target = aspect === 'find' ? x.by : x.doneBy
-        if (!target || target === '匿名') continue
-        const p = P(target)
-        if (aspect === 'find') p.nFind++; else p.nFix++
-        const st = (x.stars || {})[aspect] || {}
-        let all = []
-        for (const f of FACETS) {
-          const vs = Object.values(st[f] || {}).map(Number).filter(v => v >= 1)
-          if (vs.length) { const fo = p.fc[f] || (p.fc[f] = { sum: 0, n: 0 }); fo.sum += vs.reduce((a, b) => a + b, 0); fo.n += vs.length; all = all.concat(vs) }
-        }
-        const evAvg = all.length ? all.reduce((a, b) => a + b, 0) / all.length : 0 // 該事件該面的整體星平均
-        if (aspect === 'find') p.findPts += evAvg; else p.fixPts += evAvg
-        x[aspect + 'Avg'] = all.length ? Math.round(evAvg * 10) / 10 : null
-      }
-    }
-    namesL.forEach(nm => P(nm)) // v4.44.0 張良「直接先把每個人的名字show出來」：GD 人員全員上榜（沒分=0）
-    // ⭐ 任務積分（v4.44.0 360制度）：已完成任務的 pts 按負責人加總
-    const tpMap = {}, taskBreak = {} // taskBreak：每人任務分拆解（張良 2026-10-06「數字點進去看怎麼來的」）
-    try {
-      const catMap = {}; (Array.isArray(catsDoc) ? catsDoc : (catsDoc && catsDoc.list) || []).forEach(c => { if (c && c.id) catMap[c.id] = String(c.name || '').slice(0, 30) }) // 工程大項＝任務分類（catId→name）
-      const rowsT = Array.isArray(taskRows) ? taskRows : []
-      for (const row of rowsT) {
-        let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
-        if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) {
-          tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
-          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10), cat: (t9.catId && catMap[t9.catId]) || '領養代替購買' })
-        }
-      }
-      Object.keys(taskBreak).forEach(nm => taskBreak[nm].sort((a, b) => b.pts - a.pts))
-      Object.keys(tpMap).forEach(nm => P(nm))
-    } catch (_) {}
-    // 🏦 行為分（統一流水帳 sp_finance_pm_points）：總累積＝carry+窗內、本月＝當月；一套算法一個來源
+    // v4.70.79 算法抽到 _points.js computePointsBoard（DD 積分段落共用同一套；張良 2026-10-12「DD 又抓不到資料」治本）
     const ptsDoc = ptsDocRaw || { list: [], carry: {} }
-    const monthP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
-    // 行為分/榮譽＝排除兌換(type redeem)，兌換不讓排名掉；可用餘額balance＝全部加總(含兌換負值)
-    const behavTotal = { ...(ptsDoc.carry || {}) }, behavMonth = {}, balance = { ...(ptsDoc.carry || {}) }
-    for (const e of (ptsDoc.list || [])) {
-      const v = Number(e.pts || 0)
-      balance[e.person] = (balance[e.person] || 0) + v
-      if (e.type !== 'redeem') {
-        behavTotal[e.person] = (behavTotal[e.person] || 0) + v
-        if (String(e.date || '').slice(0, 7) === monthP && e.type === 'behavior') behavMonth[e.person] = (behavMonth[e.person] || 0) + v
-      }
-    }
-    Object.keys(behavTotal).forEach(nm => P(nm)); Object.keys(balance).forEach(nm => P(nm))
-    const rank = Object.values(board).map(p => ({
-      name: p.name, nFind: p.nFind, nFix: p.nFix,
-      findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10,
-      taskPts: Math.round((tpMap[p.name] || 0) * 10) / 10,
-      behavPts: Math.round((behavTotal[p.name] || 0) * 10) / 10,
-      behavMonth: Math.round((behavMonth[p.name] || 0) * 10) / 10,
-      balance: Math.round((balance[p.name] || 0) * 10) / 10, // 可用點（扣過兌換）
-      qualPts: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0)) * 10) / 10, // 品質分合計（發現+解決+任務）
-      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0) + (behavTotal[p.name] || 0)) * 10) / 10, // 排名用＝累積賺得(不含兌換)
-      facets: Object.fromEntries(FACETS.map(f => [f, p.fc[f] ? { avg: Math.round(p.fc[f].sum / p.fc[f].n * 10) / 10, n: p.fc[f].n } : null])),
-    })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
-    // ○○之星榮耀榜：每面向平均星最高者（至少 3 票才上榜，避免一票封神）
-    const stars5 = Object.fromEntries(FACETS.map(f => {
-      const cand = rank.filter(p => p.facets[f] && p.facets[f].n >= 3).sort((a, b) => b.facets[f].avg - a.facets[f].avg || b.facets[f].n - a.facets[f].n)
-      return [f, cand[0] ? { name: cand[0].name, avg: cand[0].facets[f].avg, n: cand[0].facets[f].n } : null]
-    }))
+    const { rank, stars5, taskBreak, balance, month: monthP, list } = computePointsBoard({ issDoc, catsDoc, taskRows, ptsDoc, names: namesL })
     // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現（defL/ptsCfgL 已於開頭平行抓）
     const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
     const isAdmL = !!(meL && (meL.role === '主管' || aprL.includes(meL.name)))
