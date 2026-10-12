@@ -310,6 +310,11 @@ export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
 }
 
 // v4.70.85 團體訂餐計價圖：已上傳好的圖片網址一次傳多張＋一段文字（走同一條 deliver：reply 免費否則 push）
+export async function sendSystemMessages({ acct, uid, messages, lastText }) { // v4.70.99 系統主動傳（團訂送出確認卡片等）：不經權限（由伺服器流程觸發）
+  const a = acctOf(acct || 'gd'); if (!a || !uid || !configured(a)) return { ok: false, error: '帳號未設' }
+  const ck = convKey(a.key, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到對話' }
+  return deliver({ a, acct: a.key, uid, ck, conv, who: { name: '系統' }, messages, msgPatch: { type: 'text', text: lastText || (messages[0] && (messages[0].text || '（卡片）' + messages[0].altText)) }, lastText: lastText || '（系統訊息）' })
+}
 export async function sendImages({ who, mgr, cfg, id, urls, text }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }

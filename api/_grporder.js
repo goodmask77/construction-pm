@@ -131,6 +131,7 @@ export async function custSubmit ({ code }) {
   o.status = 'submitted'; o.submittedAt = nowIso(); log(o, '客人', '送出')
   await putOrder(o, '團體訂餐(客人送出)')
   const t = C.totals(menu, o)
+  orderReceiptCard(o, menu, t).catch(() => {}) // v4.70.99 張良：客人要在 LINE 對話框看到「已送出」
   notifyStaff(o, { title: '團體訂餐：客人送出了', body: `${o.company || o.custName}｜${(o.rows || []).length} 人${(o.shared || []).length ? '＋共用 ' + o.shared.length + ' 項' : ''}｜暫計 ${t.total.toLocaleString()}${t.pend ? '（' + t.pend + ' 項待確認）' : ''}｜取餐 ${o.when || '待定'}` }).catch(() => {})
   return publicView(o, menu, cfg)
 }
@@ -239,4 +240,19 @@ export async function sendImgs ({ who, mgr, cfgIB, IB, id }) {
   if (['submitted', 'draft', 'sent'].includes(o.status) && !t.pend && !t.missing) { o.status = 'priced'; o.pricedAt = nowIso() } // 傳圖＝核價完成
   await putOrder(o, '團體訂餐(' + who.name + ')')
   return { ok: true, order: o, mode: r.mode }
+}
+
+// ── 送出確認卡片（傳到建單的那個 LINE 對話；LINE 內多人各自點，但只通知主辦人一則，省額度）──
+async function orderReceiptCard (o, menu, t) {
+  if (!o.convId) return
+  const [acct, uid] = String(o.convId).split(':'); if (!uid) return
+  const IB = await import('./_inbox.js')
+  const RED = '#ce1611'
+  const kv = (k, v) => ({ type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: k, size: 'sm', color: '#8a7a70', flex: 3 }, { type: 'text', text: String(v), size: 'sm', weight: 'bold', color: '#2b1d18', align: 'end', flex: 5, wrap: true }] })
+  const names = (o.rows || []).map(r => r.name).filter(Boolean)
+  const card = { type: 'bubble', size: 'kilo', header: { type: 'box', layout: 'vertical', backgroundColor: RED, paddingAll: '14px', contents: [{ type: 'text', text: '已收到你們的訂單', color: '#ffffff', weight: 'bold', size: 'lg' }, { type: 'text', text: `${o.company || o.custName || ''}・單號 ${o.id}`, color: '#ffd9d6', size: 'xxs' }] },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '14px', contents: [kv('人數', `${t.n} 人${(o.shared || []).length ? '＋共用 ' + o.shared.reduce((a, s) => a + (s.q || 1), 0) + ' 項' : ''}`), kv('暫計金額', `${t.total.toLocaleString()} 元${t.pend ? '（' + t.pend + ' 項待確認）' : ''}`), kv('取餐', `${o.when || '待定'}（${o.mode || ''}）`), { type: 'separator', margin: 'md' }, { type: 'text', text: names.length ? names.join('、') : '—', size: 'xs', color: '#8a7a70', wrap: true, margin: 'md' }, { type: 'text', text: '店家核價後會再傳計價表給你確認；截單前都還能回連結改。', size: 'xs', color: '#8a7a70', wrap: true, margin: 'sm' }] },
+    footer: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: [{ type: 'button', style: 'primary', color: RED, height: 'sm', action: { type: 'uri', label: '看訂單', uri: (process.env.LIFF_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || '').trim()}?to=order&c=${o.id}` : linkOf(o.id) } }] } }
+  await IB.sendSystemMessages({ acct, uid, messages: [{ type: 'flex', altText: `已收到訂單：${t.n} 人、暫計 ${t.total.toLocaleString()} 元`, contents: card }], lastText: '（已收到訂單卡片）' })
+  log(o, '系統', '傳「已收到訂單」卡片給主辦人')
 }
