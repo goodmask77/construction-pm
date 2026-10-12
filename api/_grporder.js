@@ -3,7 +3,7 @@
 // 資料：pm_grpord_<id> 一單一檔／pm_grpord_idx 索引（列表用）／pm_grpord_cfg 設定（搬運規則、通知誰、連結到期）；菜單**不另存**，每次即時讀 sp_finance_pm_menu.draft
 // 計價只有一支：public/ops/js/grporder-calc.js（三邊共用）
 import crypto from 'crypto'
-import { SB_URL, SB_KEY, linePush } from './_onboard.js'
+import { SB_URL, SB_KEY, linePush, uploadPrivate, signedUrl } from './_onboard.js'
 import * as C from '../public/ops/js/grporder-calc.js'
 
 const H = () => ({ apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' })
@@ -212,4 +212,31 @@ export async function custMine ({ code, body }) {
   if (o.status === 'priced') { o.status = 'submitted'; log(o, name, '核價後又改了餐點 → 退回待核價') }
   await putOrder(o, '團體訂餐(' + name + ')')
   return { ...publicView(o, menu, cfg), mine: row }
+}
+
+// ── 第二批 v4.70.85：兩張計價圖（前端 html-to-image 出 PNG → 這裡存私桶簽名一年）＋傳給客人（圖＋文字）＋客人頁顯示 ──
+export async function saveImgs ({ who, id, p1, p2 }) {
+  const o = await getOrder(id); if (!o) return { ok: false, error: '找不到這張單' }
+  const dec = (d) => { const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(String(d || '')); return m ? { buf: Buffer.from(m[2], 'base64'), ext: m[1] === 'png' ? 'png' : 'jpg', mime: 'image/' + m[1] } : null }
+  const a = dec(p1), b = dec(p2); if (!a || !b) return { ok: false, error: '圖片格式不對' }
+  if (a.buf.length > 8e6 || b.buf.length > 8e6) return { ok: false, error: '圖片太大' }
+  const ts = Date.now().toString(36); const out = {}
+  for (const [k, im] of [['p1', a], ['p2', b]]) { const path = `grporder/${o.id}/${k}_${ts}.${im.ext}`; if (!(await uploadPrivate(path, im.buf, im.mime))) return { ok: false, error: '上傳失敗' }; const url = await signedUrl(path, 365 * 86400); if (!url) return { ok: false, error: '產生網址失敗' }; out[k] = { path, url, size: im.buf.length } }
+  o.imgs = { ...out, at: nowIso(), by: who.name, total: C.totals(await loadMenu(), o).total }
+  log(o, who.name, '產生計價圖 01／02')
+  await putOrder(o, '團體訂餐計價圖(' + who.name + ')')
+  return { ok: true, imgs: o.imgs, order: o }
+}
+export async function sendImgs ({ who, mgr, cfgIB, IB, id }) {
+  const o = await getOrder(id); if (!o) return { ok: false, error: '找不到這張單' }
+  if (!o.imgs || !o.imgs.p1) return { ok: false, error: '先產生計價圖' }
+  if (!o.convId) return { ok: false, error: '這張單沒綁收件匣對話' }
+  const menu = await loadMenu(); const t = C.totals(menu, o)
+  const text = `${o.company || o.custName} 計價表（全單 ${t.total.toLocaleString()} 元${t.disc ? '，含折扣' : ''}）\n取餐 ${o.when || '待定'}（${o.mode || ''}）\n確認無誤請在點餐頁按「確認無誤」：${linkOf(o.id)}`
+  const r = await IB.sendImages({ who, mgr, cfg: cfgIB, id: o.convId, urls: [o.imgs.p1.url, o.imgs.p2.url], text })
+  if (!r.ok) return r
+  o.imgSentAt = nowIso(); log(o, who.name, '計價圖傳給客人（' + r.mode + '）')
+  if (['submitted', 'draft', 'sent'].includes(o.status) && !t.pend && !t.missing) { o.status = 'priced'; o.pricedAt = nowIso() } // 傳圖＝核價完成
+  await putOrder(o, '團體訂餐(' + who.name + ')')
+  return { ok: true, order: o, mode: r.mode }
 }

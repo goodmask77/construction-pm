@@ -86,11 +86,12 @@ function goRenderDetail () {
     if (['locked', 'done'].includes(o.status)) acts.push(`<button class="mini" onclick="goStatus('unlock')">解鎖</button>`)
     if (o.status === 'locked') acts.push(`<button class="mini" onclick="goStatus('done')">完成</button>`)
     if (o.status === 'void') acts.push(`<button class="mini" onclick="goStatus('reopen')">復原</button>`); else if (!['done'].includes(o.status)) acts.push(`<button class="mini" style="color:var(--red)" onclick="goStatus('void')">作廢</button>`)
-    acts.push(`<button class="mini" disabled title="第二批：兩張圖＋傳給客人＋雙方確認">產生計價圖（第二批）</button>`)
+    if (!['void'].includes(o.status)) acts.push(`<button class="mini on" onclick="goImg()" ${t.pend || t.missing ? 'disabled title="還有待確認"' : ''}>${o.imgs ? '重新產生計價圖' : '產生計價圖'}</button>`)
+    if (o.imgs && o.imgs.p1) acts.push(`<button class="mini on" onclick="goSendImgs('${o.id}')">${o.imgSentAt ? '再傳一次圖給客人' : '傳圖給客人'}</button><a class="mini" href="${o.imgs.p1.url}" target="_blank" style="text-decoration:none">看圖 01</a><a class="mini" href="${o.imgs.p2.url}" target="_blank" style="text-decoration:none">看圖 02</a>`)
   }
   app.innerHTML = `<section>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="mini" onclick="gorderLoad()">‹ 列表</button><h2 style="margin:0">${goEsc(o.company || o.custName || '團體訂餐')}</h2>${goPill(o.status)}<span style="flex:1"></span><span class="hint" style="font-size:12.5px">連結 <a href="${link}" target="_blank" style="color:var(--primary)">${link.replace('https://', '')}</a></span><button class="mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${link}').then(()=>goToast('已複製連結'),()=>goToast('複製失敗',true))">複製</button></div>
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">${pipe}</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">${pipe}${o.imgs ? `<span class="hint" style="font-size:12px">計價圖 ${goEsc(String(o.imgs.at).slice(5, 16).replace('T', ' '))}${o.imgSentAt ? '・已傳客人 ' + goEsc(String(o.imgSentAt).slice(5, 16).replace('T', ' ')) : ''}${o.confirmedAt ? '・客人已確認 ' + goEsc(String(o.confirmedAt).slice(5, 16).replace('T', ' ')) : ''}</span>` : ''}</div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:12px;align-items:start" class="goGrid">
       <div style="display:grid;gap:12px;min-width:0">
         <div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px">
@@ -264,4 +265,61 @@ async function goCfgSave () {
   const cfg = { carry: { bag: +g('goCf_bag') || 6, cup: +g('goCf_cup') || 6, pz: +g('goCf_pz') || 2, hand: +g('goCf_hand') || 3 }, notify: { people: g('goCf_people').split(/[,，、\s]+/).map(s => s.trim()).filter(Boolean) }, expireDays: +g('goCf_exp') || 14, linkTpl: g('goCf_tpl') }
   const d = await goPost({ op: 'cfg', cfg }); if (!d || !d.ok) return goToast((d && d.error) || '存不了', true)
   _goD.cfg = d.cfg; goClose(); goToast('設定已存')
+}
+
+// ── 第二批：兩張計價圖（html-to-image 出 PNG，版型照 10/12 張良給的樣：米底紅表頭）──
+const GO_SHEET_CSS = 'font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;color:#2b1d18;background:#f6efe4;width:1180px;padding:30px 28px;box-sizing:border-box'
+function goSheetBase (title, o, inner, foot) {
+  const m = o
+  return `<div style="${GO_SHEET_CSS}"><div style="color:#ce1611;font-weight:900;font-size:15px;letter-spacing:.04em">GROUN:D ／ ${goEsc(m.company || m.custName || '')}</div><div style="font-size:28px;font-weight:900;margin:4px 0 2px">${title}</div><div style="font-size:14px;color:#6b5b53;margin-bottom:12px">取餐 ${goEsc(m.when || '待定')}（${goEsc(m.mode || '')}）｜統編 ${goEsc(m.taxId || '—')}｜聯絡 ${goEsc(m.contact || '')}｜${m.frozen ? '鎖單價格（' + goEsc(String((m.priceAt || {}).at || '').slice(0, 10)) + '）' : '依最新菜單計價'}</div>${inner}<div style="margin-top:12px;font-size:13.5px;color:#4a3b33;line-height:1.7">${foot}</div></div>`
+}
+const goTh = (cols) => `<thead><tr>${cols.map(c => `<th style="background:#ce1611;color:#fff;padding:8px 9px;font-size:13.5px;border:1px solid #ce1611;text-align:center">${c}</th>`).join('')}</tr></thead>`
+const goTd = (v, extra) => `<td style="padding:7px 9px;border:1px solid #d8c9b6;font-size:13.5px;vertical-align:top;${extra || ''}">${v}</td>`
+const goMoney = (v) => goTd(`<b style="color:#ce1611">${goN(v)}</b>`, 'text-align:right;white-space:nowrap')
+function goSheet1Html (o, menu) {
+  const C9 = GC(), t = C9.totals(menu, o)
+  let sm = 0, ss = 0, sd = 0, sa = 0
+  const rows = (o.rows || []).map((r, i) => { const p = C9.priceRow(menu, r, o.frozen); sm += p.main; ss += p.set; sd += p.diff; sa += p.ala
+    const lines = (r.lines || []).map(l => { const it = C9.itemOf(menu, l.id) || { name: '（已下架）' }; return `<div>${goEsc(it.name)}${l.note ? '・' + goEsc(l.note) : ''}${(l.q || 1) > 1 ? ' ×' + l.q : ''}${l.set ? `<div style="font-size:12px;color:#6b5b53">套餐：${l.side ? goEsc(C9.labelOf(menu, l.side)) : '—'}＋${l.drink ? goEsc(C9.labelOf(menu, l.drink)) : '—'}</div>` : ''}</div>` }).join('')
+    return `<tr style="background:${i % 2 ? '#f5ede2' : '#fff'}">${goTd(`${String(i + 1).padStart(2, '0')}<br><b>${goEsc(r.name || '')}</b>`, 'white-space:nowrap')}${goTd(lines || '—')}${goTd(goN(p.main), 'text-align:right')}${goTd(goN(p.set), 'text-align:right')}${goTd(goN(p.diff), 'text-align:right')}${goTd(goN(p.ala), 'text-align:right')}${goMoney(p.total)}</tr>` }).join('')
+  const sharedTxt = (o.shared || []).map(s => `${goEsc(C9.labelOf(menu, { ...s, q: 1 }))} ${C9.pickPrice(menu, s, o.frozen).price}${s.q > 1 ? '×' + s.q : ''}`).join('＋') || '無'
+  const inner = `<table style="border-collapse:collapse;width:100%;background:#fff">${goTh(['姓名', '餐點（套餐＝副餐＋飲品）', '主餐價', '套餐價', '補差價', '單點價', '總金額'])}<tbody>${rows}</tbody><tfoot><tr style="background:#f0e4d4;font-weight:800">${goTd('合計 ' + (o.rows || []).length + ' 人')}${goTd(t.sets + ' 組套餐')}${goTd(goN(sm), 'text-align:right')}${goTd(goN(ss), 'text-align:right')}${goTd(goN(sd), 'text-align:right')}${goTd(goN(sa), 'text-align:right')}${goMoney(t.people)}</tr></tfoot></table>`
+  const foot = `每列＝主餐價＋套餐價（+${menu.setN}，含副餐折抵 ${menu.sideOff}、飲品折抵 ${menu.drinkOff}）＋補差價（副餐／飲品超過折抵的差額）＋單點價。<br>共用品項｜${sharedTxt}＝${goN(t.shared)}${t.disc ? '｜折扣 −' + goN(t.disc) : ''}${o.dep ? '｜已付訂金 ' + goN(o.dep) + '，尾款 ' + goN(t.total - o.dep) : ''}<div style="font-size:24px;color:#ce1611;font-weight:900;margin-top:6px">${(o.rows || []).length} 人餐點 ${goN(t.people)} ＋ 共用 ${goN(t.shared)}${t.disc ? ' − 折扣 ' + goN(t.disc) : ''} ＝ 全單 ${goN(t.total)} 元</div>`
+  return goSheetBase('01 個人明細與計價表', o, inner, foot)
+}
+function goSheet2Html (o, menu, cfg) {
+  const C9 = GC(), t = C9.totals(menu, o), agg = {}
+  const add = (pk, who, tag, mult) => { const it = C9.itemOf(menu, pk.id); if (!it) return; const q = (Number(pk.q) || 1) * (mult || 1); const k = it.id + '|' + (pk.note || ''); (agg[k] = agg[k] || { it, note: pk.note || '', q: 0, who: [] }); agg[k].q += q; agg[k].who.push(who + (tag ? '（' + tag + '）' : '') + (q > 1 ? '×' + q : '')) }
+  ;(o.rows || []).forEach((r, i) => { const w = String(i + 1).padStart(2, '0') + ' ' + (r.name || ''); for (const l of (r.lines || [])) { add(l, w, l.set ? '套餐' : '單點'); if (l.set) { if (l.side) add({ ...l.side, q: 1 }, w, '套餐副餐', l.q || 1); if (l.drink) add({ ...l.drink, q: 1 }, w, '套餐飲品', l.q || 1) } } })
+  ;(o.shared || []).forEach(s => add(s, '共用'))
+  let html = '', orig = 0
+  for (const s of menu.sections) { const list = Object.values(agg).filter(a => a.it.sec === s.key); if (!list.length) continue; const n = list.reduce((x, a) => x + a.q, 0)
+    html += `<tr><td colspan="5" style="padding:7px 9px;border:1px solid #d8c9b6;background:#e9dccb;font-weight:900">${goEsc(s.name)}｜${n} 份</td></tr>` + list.map(a => { const price = C9.pickPrice(menu, { id: a.it.id }, o.frozen).price; const sub = price * a.q; orig += sub; return `<tr style="background:#fff">${goTd(goEsc(a.it.name) + (a.note ? '・' + goEsc(a.note) : ''))}${goTd(a.q, 'text-align:right')}${goTd(price, 'text-align:right')}${goMoney(sub)}${goTd(a.who.map(goEsc).join('／'), 'font-size:12px')}</tr>` }).join('') }
+  const cr = C9.carry(menu, o, cfg && cfg.carry)
+  const check = orig + t.sets * (menu.setN - menu.sideOff - menu.drinkOff) - t.disc
+  const inner = `<table style="border-collapse:collapse;width:100%">${goTh(['餐點品項', '數量', '單價', '原價小計', '誰點的／套餐或單點'])}<tbody>${html}</tbody></table>`
+  const foot = `總額核對：原價 ${goN(orig)} ＋ ${t.sets} 組套餐 × ${menu.setN} − ${t.sets} 組副餐折抵 ${menu.sideOff} − ${t.sets} 組飲品折抵 ${menu.drinkOff}${t.disc ? ' − 折扣 ' + goN(t.disc) : ''} ＝ <b style="color:#ce1611">${goN(check)}</b>（計價表全單 ${goN(t.total)}${check === t.total ? '，一致 ✓' : '，不一致 ✗ 請檢查套餐副餐飲品有沒有漏選'}）<div style="margin-top:10px;border:2px solid #ce1611;border-radius:10px;padding:10px 12px;background:#fff">搬運建議：餐點 ${cr.food} 份裝 ${cr.bags} 袋（每袋 ${cr.cf.bag} 份）、飲料／湯 ${cr.cups} 杯裝 ${cr.cupBags} 提袋（每袋 ${cr.cf.cup} 杯）、披薩 ${cr.pz} 盒分 ${cr.stacks} 疊（每疊 ${cr.cf.pz} 盒），共 ${cr.units} 件，一人拿 ${cr.cf.hand} 件 → <b style="color:#ce1611;font-size:18px">建議 ${cr.people} 人來搬</b></div>`
+  return goSheetBase('02 餐點類別・品項整合表', o, inner, foot)
+}
+async function goImg () {
+  if (typeof htmlToImage === 'undefined') return goToast('出圖元件還沒載入，重新整理再試', true)
+  const { order: o, menu, cfg } = _goCur
+  goToast('出圖中…')
+  const wrap = document.createElement('div'); wrap.id = 'goImgWrap'; wrap.style.cssText = 'position:fixed;left:-20000px;top:0;z-index:-1'
+  wrap.innerHTML = `<div id="goSheet1">${goSheet1Html(o, menu)}</div><div id="goSheet2">${goSheet2Html(o, menu, cfg)}</div>`
+  document.body.appendChild(wrap)
+  try {
+    const opt = { pixelRatio: 2, backgroundColor: '#f6efe4', cacheBust: true }
+    const p1 = await htmlToImage.toPng(document.getElementById('goSheet1').firstElementChild, opt)
+    const p2 = await htmlToImage.toPng(document.getElementById('goSheet2').firstElementChild, opt)
+    wrap.remove()
+    const d = await goPost({ op: 'imgsave', id: o.id, p1, p2 })
+    if (!d || !d.ok) return goToast((d && d.error) || '存圖失敗', true)
+    _goCur.order = d.order; goRenderDetail(); goToast('兩張計價圖已產生，可按「傳圖給客人」')
+  } catch (e) { wrap.remove(); goToast('出圖失敗：' + String(e && e.message || e).slice(0, 60), true) }
+}
+async function goSendImgs (id) {
+  const d = await goPost({ op: 'sendimgs', id })
+  if (!d || !d.ok) return goToast((d && d.error) || '傳送失敗', true)
+  _goCur.order = d.order; goRenderDetail(); goToast('兩張圖已傳給客人（' + (d.mode === 'reply' ? '免費回覆' : '推播') + '），等客人按確認')
 }
