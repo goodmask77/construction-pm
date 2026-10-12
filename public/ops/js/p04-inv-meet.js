@@ -514,12 +514,12 @@ function meetRender(){
     h2 += `<div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">
         <div style="font-weight:800;font-size:15px;line-height:1.3;word-break:break-word">${esc(title)}</div>
-        <div class="hint" style="font-size:12px;margin-top:2px">📅 ${x.date}${ver>1?` ・<span style="color:#E8A657;font-weight:800">v${ver} 已改版要重簽</span>`:''}</div>
+        <div class="hint" style="font-size:12px;margin-top:2px">📅 ${x.date}${x.type?` ・${esc(x.type)}`:''}${ver>1?` ・<span style="color:#E8A657;font-weight:800">v${ver} 已改版要重簽</span>`:''}</div>
       </div>
       ${names.length?`<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:800;border-radius:999px;padding:4px 11px;background:${allDone?'rgba(61,190,108,.15)':'rgba(240,115,115,.15)'};color:${allDone?'var(--green)':'var(--red)'}">${allDone?'🎉':'✍️'} ${acked.length}/${names.length}</span>`:''}
     </div>`
     // 全部條列（≥2 條才列表格；單條已在標題）
-    if (itemsX.length > 1) h2 += `<table style="width:100%;border-collapse:collapse;margin:8px 0 2px">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left">${esc(it2.t)}</td></tr>`).join('')}</table>`
+    if (itemsX.length > 1) h2 += `<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin:8px 0 2px;font-size:14px">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800;white-space:nowrap">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left;white-space:normal;word-break:break-word;line-height:1.5;font-size:14px">${esc(it2.t)}</td></tr>`).join('')}</table>` // v4.70.98 手機版條列被截斷＝全域 td 是 nowrap → 這裡改自動換行＋字級固定 14px（張良 2026-10-12）
     if ((x.media||[]).length) h2 += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">${x.media.map(u=>`<img src="${u}" onclick="meetMop({op:'view',id:'${x.id}'},1);mtImgView('${String(u).replace(/'/g,"\\'")}')" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in" onerror="this.outerHTML='📎'">`).join('')}</div>` // v4.55.8 點縮圖＝App內燈箱預覽，不開新分頁（張良）
     if ((x.links||[]).length) h2 += `<div style="margin:6px 0 2px">${x.links.map(l=>lnk(x,l)).join('')}</div>`
     // 簽收：已確認(含時間)綠chip + 未確認紅chip可點催
@@ -548,12 +548,11 @@ function meetRender(){
     + cats.map(tp => pill(tp + '（' + d.list.filter(x => x.type === tp).length + '）', filt === tp, "meetFilterSet('" + tp.replace(/'/g, "\\'") + "')")).join('')
     + (meN ? pill('＋ 新增會議', false, 'meetForm()').replace('var(--muted)', 'var(--primary)') + `<button onclick="meetTypes()" title="管理會議類型" style="padding:8px 12px;border-radius:999px;font-size:13px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--muted)">⚙️</button>` : '')
     + `</div>`
-  const showCats = filt === 'all' ? cats : cats.filter(c => c === filt)
-  for (const tp of showCats) {
-    const rows = d.list.filter(x => x.type === tp)
-    if (filt === 'all') h += `<div style="font-weight:900;margin:14px 0 6px;color:var(--pdark)">${tp}（${rows.length}）</div>`
-    h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:14px;margin-bottom:6px">還沒有紀錄</div>`
-  }
+  // v4.70.98 張良 2026-10-12「最新會議應該要在最上面」：「全部」不再按類型分組（分組會讓新會議被壓在後面的類型底下），一律照會議日期＋建立時間新→舊排；類型改成每張卡片日期旁的小標籤
+  const rows = d.list.filter(x => filt === 'all' || x.type === filt)
+    .map((x, i) => ({ x, i, k: String(x.date || '') + ' ' + String(x.ts || '') }))
+    .sort((a, b) => (b.k > a.k ? 1 : b.k < a.k ? -1 : a.i - b.i)).map(o => o.x)
+  h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:14px;margin-bottom:6px">還沒有紀錄</div>`
   h += `</section>`
   app.innerHTML = h
 }
