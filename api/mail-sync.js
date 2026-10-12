@@ -4465,8 +4465,10 @@ export default async function handler(req, res) {
       if (opG === 'save') return res.status(200).json(await GO.custSave({ code: codeG, body: bG }))
       if (opG === 'who') return res.status(200).json(await GO.custWho({ code: codeG, at: bG.at }))
       if (opG === 'mine') return res.status(200).json(await GO.custMine({ code: codeG, body: bG }))
-      if (opG === 'submit') return res.status(200).json(await GO.custSubmit({ code: codeG }))
-      if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG }))
+      if (opG === 'submit') return res.status(200).json(await GO.custSubmit({ code: codeG, body: bG }))
+      if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG, body: bG }))
+      if (opG === 'shared') return res.status(200).json(await GO.custShared({ code: codeG, body: bG }))
+      if (opG === 'parseadd') return res.status(200).json(await GO.custParseAdd({ code: codeG, body: bG }))
       if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })
     } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }

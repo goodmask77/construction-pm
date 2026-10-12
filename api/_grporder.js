@@ -42,7 +42,7 @@ export const linkOf = (id) => `${ORIGIN}/order/${id}`
 export async function createOrder ({ who, acct, convId, custName, company, taxId, when, mode, contact, phone, uid, deadline, demo }) {
   let id = ''; for (let i = 0; i < 5; i++) { id = Math.random().toString(36).slice(2, 10); if (!(await kvGet(KEY(id)))) break }
   const o = { id, acct: String(acct || 'gd'), convId: String(convId || ''), uid: String(uid || ''), custName: String(custName || '').slice(0, 40), company: String(company || custName || '').slice(0, 60), taxId: String(taxId || '').replace(/\D/g, '').slice(0, 8), when: String(when || '').slice(0, 16), mode: String(mode || '外帶自取').slice(0, 10), deadline: String(deadline || '').slice(0, 16), contact: String(contact || custName || '').slice(0, 30), phone: String(phone || '').slice(0, 20),
-    rows: [], shared: [], disc: '', dep: 0, pay: { status: '未付', method: '現場', amount: 0 }, status: demo ? 'sent' : 'draft', frozen: false, demo: !!demo, assignee: who.name, createdBy: who.name, createdAt: nowIso(), edits: [] } // demo＝模擬試用：不通知、完成不累點、列表另篩
+    rows: [], shared: [], disc: '', dep: 0, pay: { status: '未付', method: '現場', amount: 0 }, status: demo ? 'sent' : 'draft', frozen: false, demo: !!demo, hostUid: String(uid || '') || null, assignee: who.name, createdBy: who.name, createdAt: nowIso(), edits: [] } // demo＝模擬試用：不通知、完成不累點、列表另篩
   log(o, who.name, '建單')
   await putOrder(o, '團體訂餐建單(' + who.name + ')')
   return { ok: true, id, link: linkOf(id), order: o }
@@ -83,6 +83,7 @@ export async function setStatus ({ who, id, status }) {
   else if (status === 'unlock') { if (!['locked', 'done'].includes(o.status)) return { ok: false, error: '沒有鎖著' }; o.frozen = false; o.status = 'priced' }
   else if (status === 'done') { if (o.status !== 'locked') return { ok: false, error: '先鎖單再標完成' }; o.status = 'done'; o.doneAt = nowIso(); try { if (o.demo) throw new Error('模擬單不累點'); const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); if (r && r.n) log(o, '系統', `會員入點：${r.n} 人共 ${r.pts} 點`) } catch (e) { log(o, '系統', '會員入點失敗：' + String(e.message || e).slice(0, 60)) } } // v4.70.86 完成＝有 LINE 身分的人自動累點
   else if (status === 'void') { o.status = 'void'; o.voidAt = nowIso() }
+  else if (status === 'reset') { if (!o.demo) return { ok: false, error: '只有模擬單能清空' }; o.rows = []; o.shared = []; o.imgs = null; o.imgSentAt = null; o.confirmedAt = null; o.frozen = false; o.hostUid = null; o.status = 'sent' }
   else if (status === 'reopen') { if (o.status !== 'void') return { ok: false, error: '只有作廢的單能復原' }; o.status = (o.rows || []).length ? 'submitted' : 'draft' }
   else return { ok: false, error: '不認識的狀態' }
   log(o, who.name, C.STATUS_LABEL[o.status] || status)
@@ -107,7 +108,7 @@ const deadlinePassed = (o) => !!(o.deadline && (Date.now() + 8 * 3600e3) > new D
 export function publicView (o, menu, cfg) {
   const t = C.totals(menu, o)
   const expired = cfg && cfg.expireDays && o.createdAt && (Date.now() - new Date(o.createdAt).getTime()) > cfg.expireDays * 86400e3 && !['locked', 'done'].includes(o.status)
-  return { ok: true, id: o.id, demo: !!o.demo, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
+  return { ok: true, id: o.id, demo: !!o.demo, host: o.hostUid || o.uid || null, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() || null, liffUrl: (process.env.LIFF_ID || process.env.LIFF_ORDER_ID || '').trim() ? `https://liff.line.me/${(process.env.LIFF_ID || process.env.LIFF_ORDER_ID).trim()}?to=order&c=${o.id}` : null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
 }
 export async function custSave ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單，請跟店家確認連結' }
@@ -123,8 +124,32 @@ export async function custSave ({ code, body }) {
   await putOrder(o, '團體訂餐(客人)')
   return publicView(o, menu, cfg)
 }
-export async function custSubmit ({ code }) {
+function callerUid (body) { if (body && body.uid && body.pt && ptOf(body.uid) === String(body.pt)) return String(body.uid); if (body && body.anon && /^[a-z0-9]{8,40}$/i.test(String(body.anon))) return 'anon:' + body.anon; return '' }
+const isHost = (o, body) => { if (o.demo) return true; const host = o.hostUid || o.uid; if (!host) return true; const u = callerUid(body); return !!u && u === host }
+// 只換共用品項（審查第 1 點：不整份蓋 rows）
+export async function custShared ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  const cfg = await loadCfg(); if (!C.CUST_EDITABLE.includes(o.status)) return { ok: false, error: '這張單已經' + (C.STATUS_LABEL[o.status] || '鎖定') }
+  if (deadlinePassed(o)) return { ok: false, error: '已經過截單時間', closed: true }
+  const menu = await loadMenu(); o.shared = C.cleanOrderBody(menu, { rows: [], shared: body.shared || [] }).shared; o.custSavedAt = nowIso()
+  if (o.status === 'priced') { o.status = 'submitted'; log(o, '客人', '核價後又改了共用 → 退回待核價') }
+  await putOrder(o, '團體訂餐(客人共用)'); return publicView(o, menu, cfg)
+}
+// 貼文字拆列：後端解析後「追加」，不蓋現有列
+export async function custParseAdd ({ code, body }) {
+  const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  const cfg = await loadCfg(); if (!C.CUST_EDITABLE.includes(o.status)) return { ok: false, error: '這張單已經' + (C.STATUS_LABEL[o.status] || '鎖定') }
+  const r = await parseText({ text: body.text }); if (!r.ok) return r
+  const fresh = await getOrder(code); const menu = await loadMenu()
+  for (const row of r.rows) fresh.rows.push({ ...row, uid: 'anon:' + row.pid, src: 'manual' })
+  for (const s of r.shared) { const ex = fresh.shared.find(x => x.id === s.id); if (ex) ex.q += s.q; else fresh.shared.push(s) }
+  if (!fresh.hostUid && !fresh.uid && fresh.rows.length) fresh.hostUid = callerUid(body) || fresh.rows[0].uid
+  fresh.custSavedAt = nowIso(); log(fresh, '客人', '貼文字拆出 ' + r.rows.length + ' 人')
+  await putOrder(fresh, '團體訂餐(客人拆列)'); return { ...publicView(fresh, menu, cfg), added: r.rows.length }
+}
+export async function custSubmit ({ code, body }) {
+  const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  if (!isHost(o, body || {})) return { ok: false, error: '只有主辦人能送出給店家' }
   if (!C.CUST_EDITABLE.includes(o.status)) return { ok: false, error: '這張單已經' + (C.STATUS_LABEL[o.status] || '鎖定') }
   if (!(o.rows || []).length && !(o.shared || []).length) return { ok: false, error: '還沒有任何餐點' }
   const menu = await loadMenu(); const cfg = await loadCfg()
@@ -135,8 +160,9 @@ export async function custSubmit ({ code }) {
   notifyStaff(o, { title: '團體訂餐：客人送出了', body: `${o.company || o.custName}｜${(o.rows || []).length} 人${(o.shared || []).length ? '＋共用 ' + o.shared.length + ' 項' : ''}｜暫計 ${t.total.toLocaleString()}${t.pend ? '（' + t.pend + ' 項待確認）' : ''}｜取餐 ${o.when || '待定'}` }).catch(() => {})
   return publicView(o, menu, cfg)
 }
-export async function custConfirm ({ code }) {
+export async function custConfirm ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單' }
+  if (!isHost(o, body || {})) return { ok: false, error: '只有主辦人能確認金額' }
   if (o.status !== 'priced') return { ok: false, error: '店家還沒核價完成，核價後才能確認' }
   const menu = await loadMenu(); const cfg = await loadCfg()
   o.status = 'confirmed'; o.confirmedAt = nowIso(); log(o, '客人', '確認無誤')
@@ -210,6 +236,7 @@ export async function custMine ({ code, body }) {
   const row = C.cleanRow(menu, { ...(o.rows.find(r => r.uid === uid) || {}), uid, src, name, pic: body.pic || (o.rows.find(r => r.uid === uid) || {}).pic || '', lines: body.lines || [], pend: body.pend || [], done: !!body.done, at: nowIso() })
   const i = o.rows.findIndex(r => r.uid === uid)
   if (!row.lines.length && !row.pend.length && body.remove) { if (i >= 0) o.rows.splice(i, 1) } else if (i >= 0) o.rows[i] = row; else o.rows.push(row)
+  if (!o.hostUid && !o.uid && o.rows.length) o.hostUid = o.rows[0].uid // 審查第 2 點：沒綁 LINE 對話的單，第一個進來點的人＝主辦人
   o.custSavedAt = nowIso()
   if (o.status === 'priced') { o.status = 'submitted'; log(o, name, '核價後又改了餐點 → 退回待核價') }
   await putOrder(o, '團體訂餐(' + name + ')')
