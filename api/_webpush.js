@@ -47,10 +47,12 @@ export async function wpPush(rids, msg) {
   return sent
 }
 
-// 群組訊息用的 /prep 連結：有設 LIFF_ID → LIFF 連結（LINE 裡點開自動認人，不再是訪客）；沒設 → 原本 https 連結
+// 群組訊息用的 /prep 連結：有設 LIFF_STAFF_ID → LIFF 連結（LINE 裡點開自動認人，不再是訪客）；沒設 → 原本 https 連結
+// v4.70.99 張良 2026-10-12「LIFE 是客人用的，內部是 DD，為什麼會走到 LIFE」：LIFF_ID 是客人（會員卡/團體訂餐，掛 LINE Login 頻道「GROUN:D LIFE」）用的，
+// 內部員工連結不能借用它（userId 跟 DD 綁定對不上、頻道開發中同事被擋）→ 內部改讀 LIFF_STAFF_ID（要在 DD 同 Provider 底下建 LIFF 才設），沒設就回 https 直連＝10-12 以前的行為
 // hash 範例：'meet=xxxx'（深層連結，不含 #）
 export const prepLink = (hash) => {
-  const L = (process.env.LIFF_ID || '').trim()
+  const L = (process.env.LIFF_STAFF_ID || '').trim()
   return L ? ('https://liff.line.me/' + L + (hash ? ('?s=' + encodeURIComponent(hash)) : ''))
     : ('https://ground-pm.vercel.app/prep' + (hash ? ('#' + hash) : ''))
 }
