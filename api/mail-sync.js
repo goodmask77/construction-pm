@@ -5254,6 +5254,53 @@ export default async function handler(req, res) {
     if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
     return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
   }
+  // ── 📬 信箱中樞（v4.70.79，api/_mailhub.js；張良 2026-10-12「重新建立信箱管理系統，很多個信箱要串接」）──
+  // GET  ?mailhub=<OPS_BOARD_KEY>&me=token&op=list | op=scan&box=&days= | op=preview&rule=<id>[&box=] | op=folders&box=
+  // POST ?mailhub=<OPS_BOARD_KEY> {token, op:boxadd|boxset|boxdel|boxtest|ruleadd|ruleset|ruledel|preview(rule草稿)|apply(box|'*',ids?,dry,days)}
+  // 全部主管限定（審核人／張良瑋／角色主管／perm admin）；密碼永遠不回前端；維護口 ?mailhubrun=<MENU_PROBE_KEY>[&dry=1] 給 cron／CC 跑每日套用
+  if (req.query?.mailhub || req.query?.mailhubrun) {
+    const MH = await import('./_mailhub.js')
+    if (req.query?.mailhubrun) {
+      const mkM = (process.env.MENU_PROBE_KEY || '').trim(), ckM = (process.env.CRON_SECRET || '').trim()
+      const kM = String(req.query.mailhubrun)
+      if (!((mkM && kM === mkM) || (ckM && kM === ckM))) return res.status(403).json({ ok: false })
+      try { return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' } })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+    }
+    const okM = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okM || String(req.query.mailhub) !== okM) return res.status(403).json({ ok: false })
+    let bM = {}
+    if (req.method === 'POST') { try { bM = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkM = String(req.method === 'POST' ? (bM.token || '') : (req.query.me || ''))
+    const [whoM, defM, pmM] = await Promise.all([sopWho(tkM), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
+    const aprM = (((defM || {}).ground || {}).approvers || ['張良瑋'])
+    if (!MH.isMgr(whoM, aprM, pmM)) return res.status(403).json({ ok: false, error: '信箱屬公司機密，只有主管／審核人能看' })
+    res.setHeader('Cache-Control', 'private, no-store')
+    const opM = String(req.method === 'POST' ? (bM.op || '') : (req.query.op || 'list'))
+    try {
+      if (req.method !== 'POST') {
+        if (opM === 'list') return res.status(200).json({ ...(await MH.overview({ kvGet })), me: { name: whoM.name } })
+        if (opM === 'scan') return res.status(200).json(await MH.scanBox({ kvGet, kvPut, id: String(req.query.box || ''), days: Math.min(60, +req.query.days || 7), who: whoM }))
+        if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: String(req.query.rule || ''), boxId: String(req.query.box || '') || null }))
+        if (opM === 'scanget') return res.status(200).json({ ok: true, scan: await MH.loadScan(kvGet, String(req.query.box || '')) })
+        return res.status(400).json({ ok: false, error: '不認得的操作' })
+      }
+      if (opM === 'boxadd') return res.status(200).json(await MH.boxAdd({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxset') return res.status(200).json(await MH.boxSet({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxdel') return res.status(200).json(await MH.boxDel({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'boxtest') { const hubT = await MH.loadHub(kvGet); const bxT = MH.boxById(hubT, String(bM.id || '')); if (!bxT) return res.status(200).json({ ok: false, error: '找不到這個信箱' }); const t = await MH.testBox(bxT); return res.status(200).json(t) }
+      if (opM === 'ruleadd') return res.status(200).json(await MH.ruleAdd({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'ruleset') return res.status(200).json(await MH.ruleSet({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'ruledel') return res.status(200).json(await MH.ruleDel({ kvGet, kvPut, body: bM, who: whoM }))
+      if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: bM.id, rule: bM.rule, boxId: bM.box || null }))
+      if (opM === 'apply') {
+        const daysA = Math.min(60, +bM.days || 7), idsA = Array.isArray(bM.ids) && bM.ids.length ? bM.ids : null
+        if (!bM.box || bM.box === '*') return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: daysA, dry: !!bM.dry, who: whoM }))
+        return res.status(200).json(await MH.applyBox({ kvGet, kvPut, id: String(bM.box), days: daysA, dry: !!bM.dry, onlyIds: idsA, who: whoM, requireConfirmed: !idsA })) // 手動指定規則＝人在現場按＝不必先勾「已確認」
+      }
+      return res.status(400).json({ ok: false, error: '不認得的操作' })
+    } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+  }
   // ── 🥬 菜商報價比價（v4.70.67，api/_vegquote.js）──
   // GET  ?vegcmp=<OPS_BOARD_KEY>&me=token|probe=<MENU_PROBE_KEY>   → 兩家逐月報價＋市場行情＋叫貨單核對＋價格異常核對
   // POST ?vegcmp=<OPS_BOARD_KEY> {token, op:'confirm'(ids?)|'refreshMarket'} → 限採購權限；confirm 走偵錯中心同一條決定流程逐筆留紀錄
