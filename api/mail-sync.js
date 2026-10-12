@@ -2067,6 +2067,11 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
+  if (req.query?.aiwhich) { // v4.70.81 每個 AI 功能頁角落「這裡由哪家 AI 處理」小標籤；只回供應商＋模型名，不含金鑰
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aiwhich) !== ok2) return res.status(403).json({ ok: false })
+    try { const { aiWhich } = await import('./_ai.js'); res.setHeader('Cache-Control', 'no-store'); return res.status(200).json({ ok: true, routes: await aiWhich() }) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e) }) }
+  }
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.tabcfg) !== ok2) return res.status(403).json({ ok: false })

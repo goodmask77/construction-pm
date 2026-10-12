@@ -43,7 +43,7 @@
     const ta = document.getElementById('rcpImpText'); if (ta) S.text = ta.value
     const ur = document.getElementById('rcpImpUrl'); if (ur) S.url = ur.value
     if (S.res) { el.innerHTML = review(); return }
-    el.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${IC.spark} AI 匯入</b><span class="hint">把食譜截圖直接貼上（⌘V／Ctrl+V），或選檔案、貼連結、貼文字 → AI 讀成材料＋步驟 → 你確認後才建草稿</span></div>`
+    el.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${IC.spark} AI 匯入</b>${aiTag('rcpimport')}<span class="hint">把食譜截圖直接貼上（⌘V／Ctrl+V），或選檔案、貼連結、貼文字 → AI 讀成材料＋步驟 → 你確認後才建草稿</span></div>`
       + `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"><label class="mini" style="cursor:pointer">${IC.file} 選檔案（圖片／CSV／Excel）<input type="file" multiple accept="image/*,.csv,.txt,.tsv,.xlsx,.xls" style="display:none" onchange="_rcpImpFiles(this.files);this.value=''"></label>`
       + `<input id="rcpImpUrl" value="${esc(S.url || '')}" placeholder="或貼連結（Google 試算表／文件要開「知道連結的人可檢視」、網頁、圖片網址）" style="flex:1;min-width:220px;${inp}"></div>`
       + (S.imgs.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${S.imgs.map((d, i) => `<div style="position:relative"><img src="${d}" style="height:84px;border-radius:8px;border:1px solid var(--line)"><button class="mini" onclick="_rcpImpDelImg(${i})" style="position:absolute;top:-6px;right:-6px;padding:2px 5px">${IC.x}</button></div>`).join('')}</div>` : '')

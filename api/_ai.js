@@ -23,17 +23,17 @@ export const hasKey = (p) => !!keyOf(p)
 export const AI_ROUTES = {
   // v4.70.77 張良 2026-10-12 拍板「照這樣」：文案／主App／讀秤／食譜匯入→ChatGPT gpt-6.1-sol（中階款，2／10）、翻譯／摘要→gpt-6-luna（0.1／0.5）、
   // D哥留 Claude opus-5-5（動作引擎答錯代價高；測試群用「雙答比對」跟 sol 比一週再決定）；備援全換 Claude 5.5 系列（比 4.x 便宜又強）
-  dd:        { label: 'D哥 LINE 機器人', where: '私訊／群組回答、動作引擎', kind: 'text',
+  dd:        { label: 'D哥 LINE 機器人', where: 'LINE 私訊／群組回答、動作引擎（聊天室 @DD 不走這裡，走「主 App AI 顧問」）', kind: 'text',
                def: { provider: 'anthropic', model: 'claude-opus-5-5' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   social:    { label: '行銷大師 AI 文案', where: '一鍵生成 5 版／分品牌各寫一版（會看圖）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
-  image:     { label: 'AI 生圖', where: '行銷大師素材庫「AI 生圖」（Claude 不會生圖，只能選 Gemini／ChatGPT）', kind: 'image',
+  image:     { label: 'AI 生圖', where: '行銷大師素材庫「AI 生圖」、菜單電視圖「AI 重畫」／直式「插圖／Logo／標語」畫圖那一段（Claude 不會生圖，只能選 Gemini／ChatGPT）', kind: 'image',
                def: { provider: 'gemini', model: 'gemini-nano-banana-2.1' }, fb: { provider: 'gemini', model: 'gemini-3.1-flash-image' } },
   translate: { label: '即時翻譯', where: 'DD 群組「翻譯模式」每句雙向翻', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6-luna' }, fb: { provider: 'anthropic', model: 'claude-haiku-5-5' } },
   summary:   { label: '對話摘要', where: 'DD 舊對話滾動濃縮（省錢用小模型即可）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6-luna' }, fb: { provider: 'anthropic', model: 'claude-haiku-5-5' } },
-  app:       { label: '主 App AI 顧問', where: '工程主 App 的 /api/ai（callAI）', kind: 'text',
+  app:       { label: '主 App AI 顧問', where: 'GD 聊天室 @DD、菜單「拍菜單 AI 建檔」、菜單 AI 圖「寫指令」那一段、設定頁測試鈕、工程主 App /api/ai', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   waste:     { label: '耗損 AI 讀秤', where: 'GD 耗損頁：看秤面讀重量＋從候選清單認物料（視覺，批次 1b v4.70.32）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
@@ -410,6 +410,15 @@ export async function aiBudgetSet(op, b, who) {
 }
 
 // ── 設定頁總覽：每功能目前設定＋三家金鑰狀態 ──
+// v4.70.81 張良 2026-10-12「app功能頁面哪裡是用什麼ai處理都幫我顯示出來」：給每個 AI 功能頁面角落的小標籤用，只回「哪家／哪個模型」不含金鑰，任何登入 GD 的人都能看
+export async function aiWhich() {
+  const cfg = await aiCfgGet(); const out = {}
+  for (const [key, R] of Object.entries(AI_ROUTES)) {
+    const c = resolve(key, cfg, null)[0] || R.def
+    out[key] = { label: R.label, where: R.where, kind: R.kind, provider: c.provider, model: c.model, co: PROV_CO[c.provider] || c.provider, custom: !!(cfg.routes && cfg.routes[key]) }
+  }
+  return out
+}
 export async function aiOverview() {
   const cfg = await aiCfgGet()
   const providers = {}; for (const [k, v] of Object.entries(AI_PROVIDERS)) providers[k] = { label: v.label, hasKey: hasKey(k), image: !!v.image, env: v.env }

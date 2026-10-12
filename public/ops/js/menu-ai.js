@@ -7,6 +7,8 @@ window.MAI = (() => {
   const TK = () => Q.get('me') || (() => { try { return localStorage.getItem('prepToken') || '' } catch (e) { return '' } })()
   const api = (ep, body) => fetch('/api/mail-sync?' + ep + '=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }).then(r => r.json())
   let assets = { photos: {}, art: [], tvcfg: null, poster: {}, vers: [] }
+  let _which = null // v4.70.81 「這裡由哪家 AI 處理」小標籤（張良 2026-10-12）
+  function aiTagFill() { (_which || (_which = fetch('/api/mail-sync?aiwhich=' + K).then(r => r.json()).then(d => (d && d.ok && d.routes) || {}).catch(() => ({})))).then(R => { const el = document.getElementById('maiAiTag'); const a = R.app, b = R.image; if (!el || !a || !b) return; el.textContent = `寫指令：${a.model} → 畫圖：${b.model}`; el.title = `寫指令由 ${a.co}「${a.model}」、畫圖由 ${b.co}「${b.model}」處理；設定頁「AI 模型」可切換` }) }
   async function load() { try { const r = await fetch('/api/mail-sync?menuassets=' + K + '&_=' + Date.now()); const d = await r.json(); if (d && d.ok) assets = d } catch (e) {} return assets }
   const CR = [245, 234, 218]
   function loadImg(src) { return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => rej(new Error('圖片載入失敗')); im.src = src.startsWith('data:') ? src : src + (src.includes('?') ? '&' : '?') + 'cb=' + Date.now() }) }
@@ -103,7 +105,8 @@ window.MAI = (() => {
   function draw() {
     const p = document.getElementById('maiPan'), s = ST; if (!p || !s) return
     const isArt = s.kind === 'art'
-    let h = `<h3><b>${s.title || (isArt ? '✨ AI 插圖' : '✨ AI 重畫照片')}</b><span class="x" onclick="MAI.close()">×</span></h3>`
+    let h = `<h3><b>${s.title || (isArt ? '✨ AI 插圖' : '✨ AI 重畫照片')}</b><span id="maiAiTag" style="font-size:11px;font-weight:700;opacity:.75;margin-left:10px;white-space:nowrap">AI…</span><span class="x" onclick="MAI.close()">×</span></h3>`
+    aiTagFill() // v4.70.81 哪家 AI 處理：寫指令（app）→ 畫圖（image）
     h += `<div class="row">`
     h += `<div class="ref ${s.ref ? 'on' : ''}" onclick="document.getElementById('maiFile').click()" title="${isArt ? '貼上截圖（Ctrl/⌘+V）或點選檔案' : '目前照片'}">${s.ref ? `<img src="${s.ref}">${isArt ? '<span class="del" onclick="event.stopPropagation();MAI.clearRef()">✕</span>' : ''}` : (isArt ? '把你喜歡的風格<br>截圖直接 ⌘V 貼上<br>或點這裡選檔案' : '沒有參考圖')}</div>`
     h += `<input type="file" id="maiFile" accept="image/*" style="display:none" onchange="MAI.pickFile(this)">`

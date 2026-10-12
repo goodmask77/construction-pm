@@ -298,7 +298,7 @@
     const isLater = !!v.scheduledAt
     const aiBox = DATA.aiReady === false ? '' : `
       <div style="border:1px dashed var(--primary);border-radius:12px;padding:12px;margin:4px 0 14px;background:#111A24">
-        <div style="font-weight:800;margin-bottom:3px">✨ AI 一鍵生成文案</div>
+        <div style="font-weight:800;margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">✨ AI 一鍵生成文案 ${aiTag('social')}</div>
         <div class="hint" style="margin-bottom:8px">上面有選圖的話，AI 會先看圖再寫。填要宣傳什麼、挑風格/語言/長度，按生成給 5 版選。</div>
         <textarea id="sfTopic" rows="2" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px" placeholder="要宣傳什麼？例：新品草莓千層上市、週末下午茶買一送一（只選圖不打字也行）"></textarea>
         <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">風格</span>${STYLES.map(s => `<button class="mini ${genStyle === s[0] ? 'on' : ''}" onclick="_socialPickStyle(this,'${s[0]}')">${s[1]}</button>`).join('')}</div>
@@ -508,7 +508,7 @@
     const ov = document.createElement('div'); ov.className = 'genImgOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:74;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => ov.remove()
     const AR = [['1:1', '正方形'], ['4:3', '橫式'], ['3:4', '直式'], ['16:9', '寬螢幕'], ['9:16', '限動／直立']]
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
-      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px">AI 生圖</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px;display:flex;align-items:center;gap:10px">AI 生圖 ${aiTag('image')}</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
       <div style="flex:1 1 auto;overflow:auto;padding:0 18px 10px">
         <textarea id="giPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 8px" placeholder="例：一盤拿坡里披薩放在木桌上，旁邊有一杯冰啤酒，海邊夕陽自然光，俯拍，質感要像美食雜誌"></textarea>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${AR.map(([v, l], i) => `<button class="mini ${i === 0 ? 'on' : ''}" data-ar="${v}" onclick="this.parentNode.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l} ${v}</button>`).join('')}</div>

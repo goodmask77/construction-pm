@@ -762,7 +762,7 @@ async function ddMsgEdit(sub, refresh){
   const ov = document.createElement('div'); ov.id='ddOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:680px;padding:16px" onclick="event.stopPropagation()">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">DD 自動訊息與群組設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">DD 自動訊息與群組設定</b>${aiTag('dd')}<button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
     <div id="ddSub" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
       <button class="mini" data-s="msg" onclick="ddSubShow('msg')">自動訊息</button>
       <button class="mini" data-s="grp" onclick="ddSubShow('grp')">DD 在的群${_ddGrps.length?'（'+_ddGrps.filter(g=>!g.gone&&!g.cfg.hide).length+'）':''}</button>
@@ -823,6 +823,7 @@ async function ddMsgSave(key, btn){
 function ddRenderGrps(box){
   const d = _ddD, esc = ddEsc
   if (!d.canEdit) { box.innerHTML = '<div class="hint">只有審核人能看／改群組清單。</div>'; return }
+  const aiHead = `<div class="hint" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">這些群裡 DD 回話用 ${aiTag('dd')}、翻譯模式用 ${aiTag('translate')}、舊對話濃縮用 ${aiTag('summary')}</div>` // v4.70.81 哪家 AI 處理
   const fmtT = t => { if (!t) return '－'; const dt = new Date(t); if (isNaN(dt)) return '－'; const dd = Math.floor((Date.now()-dt)/864e5); return dd<=0?'今天':dd===1?'昨天':dd+' 天前' }
   const row = g => { const c = g.cfg||{}; return `<div class="ddGRow" data-gid="${esc(g.gid)}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--card);${c.hide?'opacity:.55':''}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -973,6 +974,7 @@ async function aiCfgEdit(){
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:640px;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:17px">AI 模型設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('aiOv').remove()">✕</button></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pills}</div>
+    <div class="hint" style="margin-bottom:10px">每個用到 AI 的功能頁（行銷大師文案／生圖、耗損讀秤、食譜 AI 匯入、聊天室、拍菜單建檔、菜單 AI 圖、DD 群組設定）標題旁都有一顆「AI：哪家 · 哪個模型」小標籤，點它會回到這裡；下面每張卡的「用在哪」寫的就是那些頁面。</div>
     ${aiUsageHtml(d)}
     <div class="hint" style="margin-bottom:12px">每個功能各自選用哪家＋哪個模型。沒選＝走預設；選的那家壞了（額度／模型下架）會自動退回預設，不會卡住。${d.canEdit?'改完按該功能的「儲存」，「測試」會真的打一次給你看回覆與秒數。':'（只有審核人能改，目前唯讀）'}<br>金鑰只放伺服器端：要加／換金鑰跟 CC 說。</div>
     ${(d.routes||[]).map(card).join('')}${aiAbHtml(d)}</div>`

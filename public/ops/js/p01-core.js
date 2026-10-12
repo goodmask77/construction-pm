@@ -656,3 +656,13 @@ window._lcHover = function(ev, svg){
   if (px > r.width*0.55) { tip.style.left = ''; tip.style.right = (r.width - px + 10) + 'px' } else { tip.style.right = ''; tip.style.left = (px + 10) + 'px' }
 }
 window._lcLeave = function(svg){ const g = svg.querySelector('.lcCur'); if (g) g.style.display='none'; const tip = svg.parentNode.querySelector('.lcTip'); if (tip) tip.style.display='none' }
+
+// ── AI 標籤 v4.70.81（張良 2026-10-12「app功能頁面哪裡是用什麼ai處理都幫我顯示出來」）────
+// 用法：在任何 AI 功能的標題旁放 ${aiTag('social')}（route 代碼同設定頁「AI 模型」卡片）→ 自動填成「AI：OpenAI ChatGPT · gpt-6.1-sol」。
+// 資料來源 ?aiwhich（只有供應商＋模型名）一頁只抓一次；設定頁改了模型重整就跟著變。審核人點標籤直接跳到設定頁「AI 模型」。
+let _aiWhichP = null
+function aiWhichLoad(force){ if (!_aiWhichP || force) _aiWhichP = fetch('/api/mail-sync?aiwhich=' + encodeURIComponent(K) + '&_=' + Date.now()).then(r=>r.json()).then(d=>(d&&d.ok&&d.routes)||{}).catch(()=>({})); return _aiWhichP }
+function aiTagFill(){ aiWhichLoad().then(R=>{ document.querySelectorAll('[data-aitag]:not([data-aidone])').forEach(el=>{ const r=R[el.dataset.aitag]; if(!r) return; el.dataset.aidone='1'; el.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/></svg>AI：${r.co.replace(/ 的 /,' ')} · ${r.model}`; el.title = `${r.label}：由 ${r.co}「${r.model}」處理${r.custom?'（設定頁手動指定）':'（預設）'}。審核人可到設定頁「AI 模型」切換。` }) }) }
+function aiTag(route){ setTimeout(aiTagFill, 0); return `<span class="aitag" data-aitag="${route}" onclick="aiTagGo(event)" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--soft);font-size:11px;font-weight:700;color:var(--muted,#64748b);white-space:nowrap;cursor:pointer;vertical-align:middle;line-height:1.4">AI…</span>` }
+function aiTagGo(ev){ ev.stopPropagation(); ev.preventDefault(); fetch('/api/mail-sync?aicfg=' + encodeURIComponent(K) + (typeof TK==='function'&&TK()?'&me='+encodeURIComponent(TK()):'')).then(r=>r.json()).then(d=>{ if (d && d.ok && typeof aiCfgEdit === 'function') aiCfgEdit(); else alert('只有審核人能切換 AI 模型（設定頁「AI 模型」）') }).catch(()=>{}) }
+window.aiTag = aiTag; window.aiTagFill = aiTagFill; window.aiWhichLoad = aiWhichLoad
