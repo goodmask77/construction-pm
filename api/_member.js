@@ -193,7 +193,7 @@ export async function staffUpdate ({ who, id, patch }) {
 }
 // 加好友歡迎（inbox 的 follow 事件呼叫；只給文字，由 _inbox 用 replyToken 免費回）
 export async function welcomeText () { const cfg = await loadCfg(); const L = liffId(); const link = L ? `https://liff.line.me/${L}` : 'https://ground-pm.vercel.app/member'; return String(cfg.welcomeText || DEF_CFG.welcomeText).replace('{link}', link) }
-export const liffId = () => (process.env.LIFF_MEMBER_ID || process.env.LIFF_ID || '').trim() || null // LIFF app 一個端點一個：會員卡端點 https://ground-pm.vercel.app/member（liff.init 只保證在端點網址之下能用）
+export const liffId = () => (process.env.LIFF_MEMBER_ID || '').trim() || null // 只認會員卡自己的 LIFF（LIFF_ID 是員工落地頁那組，端點 /liff/，拿來開 /member 會失敗） // LIFF app 一個端點一個：會員卡端點 https://ground-pm.vercel.app/member（liff.init 只保證在端點網址之下能用）
 
 // ── 🎡 轉盤（第二批 v4.70.84；SQL 0002）──
 const pubCamp = (c, slots) => { const free = {}, total = {}; for (const sl of (slots || [])) { total[sl.pidx] = (total[sl.pidx] || 0) + 1; if (!sl.taken_by) free[sl.pidx] = (free[sl.pidx] || 0) + 1 }
