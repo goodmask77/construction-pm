@@ -55,18 +55,13 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
   function toast (t, bad) { const el = $('toast'); el.textContent = t; el.className = 'toast' + (bad ? ' bad' : ''); el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0' }, 2200) }
   let SES = LS.get('gd_member_ses'), ME = null, qrTimer = null, W = null
   const cfg = await api()
+  // v4.70.91 同一個 LIFF 中繼：/liff/?to=member 認完人 → 轉到這裡帶 #u=&mt=&n=&p=
+  try { const h = new URLSearchParams(location.hash.replace(/^#/, '')); if (h.get('u') && h.get('mt')) { SES = { uid: h.get('u'), mt: h.get('mt') }; LS.set('gd_member_ses', SES); W = { ok: true, uid: SES.uid, mt: SES.mt, name: h.get('n') || '', pic: h.get('p') || '' }; history.replaceState(null, '', location.pathname) } } catch (_) {}
   // 1) 身分：LIFF（在 LINE 內或 LINE Login）
   async function login () {
     if (!cfg.liff) { $('loading').innerHTML = '會員卡還在準備中（LINE 登入尚未開通）。請稍後再試，或到櫃檯請店員幫您建立會員。'; return false }
-    try {
-      await new Promise((res, rej) => { if (window.liff) return res(); const s = document.createElement('script'); s.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s) })
-      await liff.init({ liffId: cfg.liff })
-      if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return false }
-      W = await api({ op: 'who', at: liff.getAccessToken() })
-      if (!W.ok) { $('loading').textContent = W.error || '登入失敗'; return false }
-      SES = { uid: W.uid, mt: W.mt }; LS.set('gd_member_ses', SES)
-      return true
-    } catch (e) { $('loading').innerHTML = 'LINE 登入失敗，請從 GROUN:D 官方帳號重新打開會員卡。'; return false }
+    $('loading').innerHTML = `<div style="text-align:center"><div style="margin-bottom:10px">請用 LINE 開啟會員卡，會自動帶入你的 LINE 名字。</div><a class="btn line" href="${esc(cfg.liffUrl)}" style="display:inline-block;text-decoration:none">用 LINE 開啟會員卡</a></div>`
+    return false
   }
   async function loadMe () {
     const d = await api({ op: 'me', ...SES })
@@ -77,7 +72,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
   // 試上次 session，不行再走 LIFF
   let okS = false
   if (SES && SES.uid) okS = await loadMe()
-  if (!okS) { if (await login()) { if (W && W.needConsent) renderConsent(); else await loadMe() } }
+  if (!okS) { if (W && W.ok && SES) { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } else { const w2 = await api({ op: 'who2', ...SES }); W = { ...W, consentText: (w2 && w2.consentText) || '', consentVer: (w2 && w2.consentVer) || '', needConsent: true }; renderConsent() } } else await login() }
 
   function renderConsent () {
     const name = (W && W.name) || ((ME || {}).member || {}).name || ''

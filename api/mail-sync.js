@@ -4456,11 +4456,12 @@ export default async function handler(req, res) {
   if (req.query?.mcard) {
     const MB = await import('./_member.js')
     res.setHeader('Cache-Control', 'private, no-store')
-    if (req.method !== 'POST') return res.status(200).json({ ok: true, liff: MB.liffId(), ver: MB.MEMBER_VER })
+    if (req.method !== 'POST') return res.status(200).json({ ok: true, liff: MB.liffId(), liffUrl: MB.memberLiffUrl(), ver: MB.MEMBER_VER })
     let bC = {}; try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const opC = String(bC.op || '')
     try {
       if (opC === 'who') return res.status(200).json(await MB.custWho({ at: bC.at }))
+      if (opC === 'who2') return res.status(200).json(await MB.custWho2({ body: bC }))
       if (opC === 'consent') return res.status(200).json(await MB.custConsent({ body: bC }))
       if (opC === 'me') return res.status(200).json(await MB.custMe({ body: bC }))
       if (opC === 'update') return res.status(200).json(await MB.custUpdate({ body: bC }))

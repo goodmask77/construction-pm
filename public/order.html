@@ -76,21 +76,13 @@ async function load () {
 }
 // ── 身分：LINE（LIFF）優先，其次上次記住的，再來手打名字 ──
 async function identify () {
-  const saved = LS.get('go_me_' + code) || LS.get('go_me')
-  if (saved && saved.uid) { ME = saved; pullMine(); }
-  if (D.liff && !(ME && ME.src === 'line')) {
-    try {
-      await new Promise((res, rej) => { if (window.liff) return res(); const s = document.createElement('script'); s.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s) })
-      await window.liff.init({ liffId: D.liff }); liffReady = true
-      if (window.liff.isLoggedIn()) {
-        const w = await api({ op: 'who', at: window.liff.getAccessToken() })
-        if (w && w.ok) { ME = { uid: w.uid, name: w.name, pic: w.pic, pt: w.pt, src: 'line' }; LS.set('go_me_' + code, ME); LS.set('go_me', ME); pullMine() }
-      }
-    } catch (_) { liffReady = false }
-  }
+  // v4.70.91 同一個 LIFF 中繼：liff.line.me/<ID>?to=order&c=碼 → /liff/ 認完人 → 轉回這裡帶 #u=&pt=&n=&p=
+  try { const h = new URLSearchParams(location.hash.replace(/^#/, '')); if (h.get('u') && h.get('pt')) { ME = { uid: h.get('u'), pt: h.get('pt'), name: h.get('n') || '', pic: h.get('p') || '', src: 'line' }; LS.set('go_me_' + code, ME); LS.set('go_me', ME); history.replaceState(null, '', location.pathname) } } catch (_) {}
+  if (!ME) { const saved = LS.get('go_me_' + code) || LS.get('go_me'); if (saved && saved.uid) ME = saved }
+  if (ME) pullMine()
 }
 function pullMine () { const r = (D.rows || []).find(x => x.uid === ME.uid); MINE = r ? { lines: JSON.parse(JSON.stringify(r.lines || [])), pend: JSON.parse(JSON.stringify(r.pend || [])), done: !!r.done } : { lines: [], pend: [], done: false }; if (r && r.name && ME.src !== 'line') ME.name = r.name }
-function lineLogin () { if (!liffReady) return toast('LINE 登入還沒準備好，先打名字也可以', true); window.liff.login({ redirectUri: location.href }) }
+function lineLogin () { if (!D.liffUrl) return toast('LINE 登入尚未開通，先打名字也可以', true); location.href = D.liffUrl }
 function manualStart () { const n = ($('meName') || {}).value || ''; if (!n.trim()) return toast('請填名字', true); let anon = LS.get('go_anon'); if (!anon) { anon = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8); LS.set('go_anon', anon) }; ME = { uid: 'anon:' + anon, anon, name: n.trim().slice(0, 30), src: 'manual' }; LS.set('go_me_' + code, ME); pullMine(); render() }
 function switchUser () { ME = null; MINE = { lines: [], pend: [], done: false }; try { localStorage.removeItem('go_me_' + code) } catch (_) {}; render() }
 // ── 畫面 ──
@@ -106,7 +98,7 @@ function render () {
     <div class="card"><h2>${esc(D.company || D.custName || '團體訂餐')}</h2><div class="sub">取餐 ${esc(D.when || '待定')}・${esc(D.mode || '')}${D.deadline ? '・截單 ' + esc(D.deadline) : ''}</div>${stBanner}</div>`
   const imgCard = D.imgs && D.imgs.p1 ? `<div class="card"><h3>店家計價表</h3><div class="sub" style="margin-bottom:6px">${esc(String(D.imgs.at || '').slice(0, 16).replace('T', ' '))} 產生${D.status === 'priced' ? '，沒問題請主辦人按下方「確認無誤」' : ''}</div><a href="${esc(D.imgs.p1.url)}" target="_blank"><img src="${esc(D.imgs.p1.url)}" style="width:100%;border-radius:10px;border:1px solid var(--line)" alt="01 個人明細與計價表"></a><a href="${esc(D.imgs.p2.url)}" target="_blank"><img src="${esc(D.imgs.p2.url)}" style="width:100%;border-radius:10px;border:1px solid var(--line);margin-top:8px" alt="02 品項整合表"></a></div>` : ''
   const idCard = ME ? `<div class="card me">${ME.pic ? `<img src="${esc(ME.pic)}" alt="">` : `<div class="av">${esc(ME.name.slice(0, 1))}</div>`}<div style="flex:1"><b>${esc(ME.name)}</b><div class="sub">${ME.src === 'line' ? 'LINE 帳號' : '手打名字'}・${MINE.done ? '<span style="color:var(--ok);font-weight:800">已點好</span>' : MINE.lines.length ? '還沒按「我點好了」' : '還沒點'}</div></div><button class="btn sm" id="btnSwitch">不是你？</button></div>`
-    : `<div class="card"><h3>先告訴我們你是誰</h3>${D.liff ? `<button class="btn line" id="btnLine" style="width:100%;margin-bottom:8px">用 LINE 登入（自動帶名字）</button><div class="sub" style="text-align:center;margin-bottom:6px">或</div>` : ''}<div class="row"><input id="meName" placeholder="你的名字" style="flex:1"><button class="btn red" id="btnManual">開始點餐</button></div></div>`
+    : `<div class="card"><h3>先告訴我們你是誰</h3>${D.liffUrl ? `<a class="btn line" href="${esc(D.liffUrl)}" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">用 LINE 開啟（自動帶名字）</a><div class="sub" style="text-align:center;margin-bottom:6px">或</div>` : ''}<div class="row"><input id="meName" placeholder="你的名字" style="flex:1"><button class="btn red" id="btnManual">開始點餐</button></div></div>`
   const seg = `<div class="seg"><button class="${view === 'menu' ? 'on' : ''}" data-v="menu">點餐</button><button class="${view === 'mine' ? 'on' : ''}" data-v="mine">我的餐點${MINE.lines.length ? ' ' + MINE.lines.reduce((n, l) => n + (l.q || 1), 0) : ''}</button><button class="${view === 'all' ? 'on' : ''}" data-v="all">大家的 ${t.n}</button></div>`
   let body = ''
   if (view === 'menu') {
@@ -223,8 +215,7 @@ async function parseGo () {
   D = { ...d2, menu: MENU }; render(); toast(`拆出 ${d.rows.length} 人${d.shared.length ? '＋共用 ' + d.shared.length + ' 項' : ''}`)
 }
 async function shareGo () {
-  const url = location.origin + '/order/' + code, text = `GROUN:D 團體訂餐｜${D.company || ''}\n點開連結自己選餐點${D.deadline ? '，' + D.deadline + ' 前點好' : ''}：\n${url}`
-  if (liffReady && window.liff.isApiAvailable && window.liff.isApiAvailable('shareTargetPicker')) { try { await window.liff.shareTargetPicker([{ type: 'text', text }]); return toast('已分享') } catch (_) {} }
+  const url = D.liffUrl || (location.origin + '/order/' + code), text = `GROUN:D 團體訂餐｜${D.company || ''}\n點開連結自己選餐點${D.deadline ? '，' + D.deadline + ' 前點好' : ''}：\n${url}`
   if (navigator.share) { try { await navigator.share({ text }); return } catch (_) {} }
   try { await navigator.clipboard.writeText(text); toast('已複製，貼到群組就好') } catch (_) { window.prompt('複製這段貼到群組', text) }
 }
