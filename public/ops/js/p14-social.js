@@ -831,7 +831,7 @@
   // 讀 /api/lineoa-sync?lineoa=K：四個官方帳號（GROUN:D／A Beach／104招募／DD）每日好友／目標好友／封鎖＋屬性＋訊息額度；數字算法跟 DD 用同一份 sum（後端 summarize）
   let OA = null, oaAcct = 'gd', oaRange = 90
   const OA_GEN = { male: '男性', female: '女性', unknown: '不明' }
-  const OA_AGE = { from0to14: '0~14', from15to19: '15~19', from20to24: '20~24', from25to29: '25~29', from30to34: '30~34', from35to39: '35~39', from40to44: '40~44', from45to49: '45~49', from50: '50 以上', unknown: '不明' }
+  const OA_AGE = { from0to14: '0~14', from15to19: '15~19', from20to24: '20~24', from25to29: '25~29', from30to34: '30~34', from35to39: '35~39', from40to44: '40~44', from45to49: '45~49', from50to54: '50~54', from55to59: '55~59', from60to64: '60~64', from65to69: '65~69', from70: '70 以上', from50: '50 以上', unknown: '不明' }
   const OA_APP = { ios: 'iPhone', android: 'Android', others: '其他' }
   const OA_SUB = { within7days: '7 天內', within30days: '8~30 天', within90days: '31~90 天', within180days: '91~180 天', within365days: '181~365 天', over365days: '1 年以上', unknown: '不明' }
   const OA_MSG = { broadcast: '群發', targeting: '分眾群發', autoResponse: '自動回應', welcomeResponse: '加入歡迎', chat: '聊天手動回', apiBroadcast: 'API 群發', apiPush: 'API 推播', apiMulticast: 'API 多人推播', apiNarrowcast: 'API 分眾', apiReply: 'API 回覆' }
@@ -890,10 +890,10 @@
     const dm = A.demo
     if (dm) {
       const gItems = (dm.genders || []).map(g => ({ l: OA_GEN[g.gender] || g.gender, v: g.percentage, t: pct(g.percentage), c: g.gender === 'female' ? '#2BB7A6' : g.gender === 'male' ? '#4D4DD9' : '#8C98A8' }))
-      const aItems = (dm.ages || []).sort((a, b) => b.percentage - a.percentage).map(a => ({ l: (OA_AGE[a.age] || a.age) + (a.age === 'unknown' ? '' : ' 歲'), v: a.percentage, t: pct(a.percentage) }))
-      const rItems = (dm.areas || []).sort((a, b) => b.percentage - a.percentage).slice(0, 8).map(a => ({ l: a.area === 'unknown' ? '不明' : a.area, v: a.percentage, t: pct(a.percentage) }))
+      const aItems = (dm.ages || []).filter(a => a.percentage > 0).sort((a, b) => b.percentage - a.percentage).map(a => ({ l: (OA_AGE[a.age] || a.age) + (a.age === 'unknown' ? '' : ' 歲'), v: a.percentage, t: pct(a.percentage) }))
+      const rItems = (dm.areas || []).filter(a => a.percentage > 0).sort((a, b) => b.percentage - a.percentage).slice(0, 8).map(a => ({ l: a.area === 'unknown' ? '不明' : a.area, v: a.percentage, t: pct(a.percentage) }))
       const pItems = (dm.appTypes || []).map(a => ({ l: OA_APP[a.appType] || a.appType, v: a.percentage, t: pct(a.percentage) }))
-      const sItems = (dm.subs || []).map(a => ({ l: OA_SUB[a.subscriptionPeriod] || a.subscriptionPeriod, v: a.percentage, t: pct(a.percentage) }))
+      const sItems = (dm.subs || []).filter(a => a.percentage > 0).map(a => ({ l: OA_SUB[a.subscriptionPeriod] || a.subscriptionPeriod, v: a.percentage, t: pct(a.percentage) }))
       h += `<section><h2 style="margin:0 0 4px">好友屬性</h2><div class="hint" style="margin-bottom:12px;line-height:1.6">LINE 用使用者的行為推估出來的（不是客人自己填的），只算目標好友、延遲約 3 天；「不明」＝LINE 推不出來。看大方向用，不要拿來算精確人數。${A.demoAt ? '更新 ' + esc(String(A.demoAt).slice(0, 16).replace('T', ' ')) : ''}</div>`
         + `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">`
         + `<div><b>性別</b>${bars(gItems, COL.b)}</div>`

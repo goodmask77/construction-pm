@@ -50,7 +50,8 @@ export async function loadDays(k, days) {
   const end = ymd(tpe()), start = addDays(end, -Math.max(1, Math.min(MAX_BACK + 10, days || 400)))
   const yms = new Set(); for (let d = start; d <= end; d = addDays(d, 1)) yms.add(d.slice(0, 7))
   const out = {}
-  for (const ym of yms) { const doc = await kvGet(moKey(k, ym)); if (doc && doc.days) for (const [d, v] of Object.entries(doc.days)) if (d >= start && d <= end) out[d] = v }
+  const docs = await Promise.all([...yms].map(ym => kvGet(moKey(k, ym)))) // 月檔並行讀（原本逐月讀 14 個月×4 帳號要 10 秒）
+  for (const doc of docs) if (doc && doc.days) for (const [d, v] of Object.entries(doc.days)) if (d >= start && d <= end) out[d] = v
   return out
 }
 
@@ -137,7 +138,7 @@ export function summarize(k, name, days, st) {
   return { key: k, name, date: last, f: L.f, t: L.t, b: L.b, d1: dlt(at(1)), d7: dlt(at(7)), d30: dlt(at(30)), mtd, msg30, demo, quota: (st && st.quota) || null, firstDay: ds[0], nDays: ds.length }
 }
 export const GEN = { male: '男', female: '女', unknown: '不明' }
-export const AGE = { from0to14: '0~14', from15to19: '15~19', from20to24: '20~24', from25to29: '25~29', from30to34: '30~34', from35to39: '35~39', from40to44: '40~44', from45to49: '45~49', from50: '50+', unknown: '不明' }
+export const AGE = { from0to14: '0~14', from15to19: '15~19', from20to24: '20~24', from25to29: '25~29', from30to34: '30~34', from35to39: '35~39', from40to44: '40~44', from45to49: '45~49', from50to54: '50~54', from55to59: '55~59', from60to64: '60~64', from65to69: '65~69', from70: '70+', from50: '50+', unknown: '不明' }
 
 export async function runCollect(opts = {}) {
   const mc = monthCache()
@@ -150,11 +151,10 @@ export async function runCollect(opts = {}) {
   await mc.flush()
   // 摘要
   const sum = { at: new Date().toISOString(), accts: {} }
-  for (const a of ACCOUNTS) {
-    if (!configured(a)) continue
+  await Promise.all(ACCOUNTS.filter(configured).map(async a => {
     const [days, st] = await Promise.all([loadDays(a.key, 45), kvGet(stKey(a.key))])
     const s = summarize(a.key, a.name, days, st); if (s) sum.accts[a.key] = s
-  }
+  }))
   await kvPut(SUM_KEY, sum, 'LINE官方統計')
   return { ok: true, accounts: out }
 }
@@ -168,12 +168,10 @@ export default async function handler(req, res) {
       let ran = null
       if (q.run) { try { ran = await runCollect({ batch: 6 }) } catch (e) { ran = { ok: false, error: e.message } } }
       const nD = Math.min(MAX_BACK + 10, Math.max(7, Number(q.days) || 400))
-      const accts = []
-      for (const a of ACCOUNTS) {
-        if (!configured(a)) continue
+      const accts = await Promise.all(ACCOUNTS.filter(configured).map(async a => {
         const [days, st] = await Promise.all([loadDays(a.key, nD), kvGet(stKey(a.key))])
-        accts.push({ key: a.key, name: a.name, color: a.color, days, demo: (st && st.demo) || null, demoAt: (st && st.demoAt) || null, demoUnavailable: !!(st && st.demoUnavailable && !st.demo), demoHist: (st && st.demoHist) || {}, quota: (st && st.quota) || null, lastRun: (st && st.lastRun) || null, sum: summarize(a.key, a.name, days, st) })
-      }
+        return { key: a.key, name: a.name, color: a.color, days, demo: (st && st.demo) || null, demoAt: (st && st.demoAt) || null, demoUnavailable: !!(st && st.demoUnavailable && !st.demo), demoHist: (st && st.demoHist) || {}, quota: (st && st.quota) || null, lastRun: (st && st.lastRun) || null, sum: summarize(a.key, a.name, days, st) }
+      }))
       return res.status(200).json({ ok: true, accts, ran })
     }
     // cron／手動：?batch=N&only=gd
