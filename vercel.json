@@ -15,6 +15,10 @@
     {
       "source": "/order/:code",
       "destination": "/order.html"
+    },
+    {
+      "source": "/member",
+      "destination": "/member.html"
     }
   ],
   "crons": [

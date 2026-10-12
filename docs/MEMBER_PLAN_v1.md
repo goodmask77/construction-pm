@@ -1,5 +1,10 @@
 # GROUN:D 自建會員＋遊戲 執行計畫 v1（2026-10-12，三家 AI 第二輪討論後）
 
+> **張良 10-12 裁決**：分歧 G～K 照 CC 建議；現場入點＝**店員輸會員號碼或掃會員 QR＋金額（單號選填）**，掃發票／Wixtar API 之後再說。喬亞 POS 行動報表＝Wixtar POS（同一家）。
+> **PR 1 程式 v4.70.83 已做**（feat/member）：建表 SQL `supabase/migrations/0001_member.sql`（張良貼 Supabase 跑一次）、後端 `api/_member.js`、端點 `?member=`（店家）／`?mcard=`（客人）、客人會員卡 `/member`（LIFF）、GD 分頁「會員」`p26-member.js`、GD 官方帳號加好友 reply 歡迎＋會員卡連結。前置仍缺：LIFF ID＋LINE_LOGIN_CHANNEL_ID。
+> **PR 3 程式 v4.70.86 已做**（feat/member-3）：團訂標完成→有 LINE 身分者自動入點（共用歸主辦人、上限 grpShareCap%）；收件匣對話表頭顯示會員號碼／點數＋「入點」「會員卡」；客人掃電子發票自助集點（設定開＋賣方統編；48 小時、發票號碼去重）；拉霸皮膚（活動玩法選拉霸）；主管推播分眾（全部／近 30 天／沉睡／未消費／有點數，預覽人數與額度、測試發給我、正式發送確認、紀錄；客人可勾不收行銷）；入點對帳報表（每日入點 vs Wixtar 日結＋店員排行＋可疑）。未做：DD query_member、金流。
+> **PR 2 程式 v4.70.84 已做**（feat/member-game，接在 PR 1 後）：`supabase/migrations/0002_member_game.sql`（member_campaigns／member_slots／member_draws＋RPC member_draw 原子抽獎＋member_coupon_use 條件核銷）；資格＝活動期間入會 1 抽＋每筆入點 1 抽（right_key 唯一，重送回原結果）；固定獎池一槽一列、缺貨不補；每人全年中獎市值 ≤ cfg.yearCap（900）超過改銘謝惠顧；獎品市值 ≤ cfg.prizeMax（500）；客人會員卡 CSS 轉盤；GD 會員分頁「轉盤活動」（主管建活動／啟用／暫停／結束／紀錄）＋券核銷。
+
 > 張良 2026-10-12：只做 GD；要簡單拉霸／轉盤；可考慮沿用內部排行榜／兌換商城／積分／等級概念；先討論怎麼規劃執行。
 > 輸入：A 稿 `line-member-system-spec.md`（精簡 P0）、B 稿 `CC_LINE_CRM_Games_Execution_Spec_v1.md`（完整 W0–W6＋遊戲引擎）、第一輪紀錄 `MEMBER_REVIEW_3AI.md`。
 > 第二輪三家（ChatGPT gpt-6.1-sol／Gemini gemini-3.8-flash／Claude 獨立子代理）可看第一輪摘要，原文存 `docs/_member_r2_{openai,gemini,claude}_raw.md`。本文件＝CC 整理的共識、分歧與建議，待張良裁決後開工。

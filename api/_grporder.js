@@ -81,7 +81,7 @@ export async function setStatus ({ who, id, status }) {
     o.frozen = true; o.status = 'locked'; o.lockedAt = nowIso(); o.lockedTotal = t.total
   }
   else if (status === 'unlock') { if (!['locked', 'done'].includes(o.status)) return { ok: false, error: '沒有鎖著' }; o.frozen = false; o.status = 'priced' }
-  else if (status === 'done') { if (o.status !== 'locked') return { ok: false, error: '先鎖單再標完成' }; o.status = 'done'; o.doneAt = nowIso() }
+  else if (status === 'done') { if (o.status !== 'locked') return { ok: false, error: '先鎖單再標完成' }; o.status = 'done'; o.doneAt = nowIso(); try { const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); if (r && r.n) log(o, '系統', `會員入點：${r.n} 人共 ${r.pts} 點`) } catch (e) { log(o, '系統', '會員入點失敗：' + String(e.message || e).slice(0, 60)) } } // v4.70.86 完成＝有 LINE 身分的人自動累點
   else if (status === 'void') { o.status = 'void'; o.voidAt = nowIso() }
   else if (status === 'reopen') { if (o.status !== 'void') return { ok: false, error: '只有作廢的單能復原' }; o.status = (o.rows || []).length ? 'submitted' : 'draft' }
   else return { ok: false, error: '不認識的狀態' }
@@ -107,7 +107,7 @@ const deadlinePassed = (o) => !!(o.deadline && (Date.now() + 8 * 3600e3) > new D
 export function publicView (o, menu, cfg) {
   const t = C.totals(menu, o)
   const expired = cfg && cfg.expireDays && o.createdAt && (Date.now() - new Date(o.createdAt).getTime()) > cfg.expireDays * 86400e3 && !['locked', 'done'].includes(o.status)
-  return { ok: true, id: o.id, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ID || '').trim() || null, totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
+  return { ok: true, id: o.id, company: o.company, custName: o.custName, taxId: o.taxId, when: o.when, deadline: o.deadline || '', closed: deadlinePassed(o), mode: o.mode, contact: o.contact, rows: o.rows, shared: o.shared, disc: o.disc, dep: o.dep, status: o.status, frozen: !!o.frozen, priceAt: o.priceAt || null, editable: C.CUST_EDITABLE.includes(o.status) && !expired, expired: !!expired, liff: (process.env.LIFF_ORDER_ID || '').trim() || null, /* 團體訂餐自己的 LIFF app（端點 /order/） */ totals: t, carry: C.carry(menu, o, cfg && cfg.carry), submittedAt: o.submittedAt || null, confirmedAt: o.confirmedAt || null, imgs: o.imgs || null, custSavedAt: o.custSavedAt || null }
 }
 export async function custSave ({ code, body }) {
   const o = await getOrder(code); if (!o) return { ok: false, error: '找不到這張點餐單，請跟店家確認連結' }
