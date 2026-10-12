@@ -4525,6 +4525,7 @@ export default async function handler(req, res) {
       if (opM === 'update') return res.status(200).json(await MB.staffUpdate({ who: whoM, id: String(bM.id || ''), patch: bM.patch || {} }))
       if (opM === 'cfg') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能改會員設定' }); return res.status(200).json(await MB.saveCfg(bM.cfg || {}, whoM)) }
       if (opM === 'richmenu') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.richMenuSetup({ who: whoM })) }
+      if (opM === 'delete') return res.status(200).json(await MB.deleteMember({ who: whoM, mgr: mgrM, id: String(bM.id || '') })) // 🗑 v4.71.2 主管刪除會員（連子資料）
       if (opM === 'bdayrun') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管' }); return res.status(200).json(await MB.birthdayRun({ who: whoM })) } // 🎂 v4.71.1 手動跑一次生日禮（每天 08:00 cron-daily 也會跑；冪等不會重發）
       if (opM === 'pushsend') { if (!mgrM) return res.status(403).json({ ok: false, error: '只有主管能推播' }); return res.status(200).json(await MB.pushSend({ who: whoM, segment: String(bM.segment || 'all'), text: bM.text, test: !!bM.test })) }
       if (opM === 'couponuse') return res.status(200).json(await MB.couponUse({ who: whoM, couponId: String(bM.couponId || ''), ref: bM.ref }))

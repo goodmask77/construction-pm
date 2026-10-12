@@ -16,7 +16,7 @@ async function ins (table, row, prefer) { const r = await fetch(`${SB_URL}/rest/
 async function upd (table, q, patch) { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ ...patch }) }); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, await r.text().catch(() => ''))), { status: r.status }); return r.json() }
 async function rpc (fn, args) { const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H(), body: JSON.stringify(args) }); const t = await r.text().catch(() => ''); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, t)), { status: r.status }); try { return JSON.parse(t) } catch (_) { return t } }
 const tableErr = (st, t) => /relation .* does not exist|42P01/.test(t) ? '會員資料表還沒建立：請把 supabase/migrations/0001_member.sql 貼到 Supabase SQL Editor 執行一次' : `資料庫錯誤 ${st}：${String(t).slice(0, 160)}`
-export const MEMBER_VER = '4810'
+export const MEMBER_VER = '4812'
 
 // ── 設定 ──
 const CFG_KEY = 'pm_member_cfg'
@@ -223,6 +223,22 @@ export async function createByStaff ({ who, name, phone, note }) {
   const cfg = await loadCfg()
   const m = await ins('members', { brand: BRAND, mno: await newMno(), name, phone: phone || null, src: 'staff', consent_ver: cfg.consentVer, consent_at: nowIso(), status: 'active', note: String(note || '').slice(0, 200) || null })
   return { ok: true, member: pub(m) }
+}
+// 🗑 刪除會員 v4.71.2（張良 2026-10-12「好像沒有刪除的功能」）：主管限定、真刪除＝連點數流水／消費／券／抽獎／推薦／任務／問卷／LINE 身分一起清掉（測試資料清理用；正式客人建議用「退會」留帳）
+async function del (table, q) { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method: 'DELETE', headers: H({ Prefer: 'return=minimal' }) }); if (!r.ok && r.status !== 404) { const t = await r.text().catch(() => ''); if (!/relation .* does not exist|PGRST205|42P01/.test(t)) throw new Error(tableErr(r.status, t)) } }
+export async function deleteMember ({ who, mgr, id }) {
+  if (!mgr) return { ok: false, error: '只有主管能刪除會員' }
+  if (!/^[0-9a-f-]{36}$/i.test(String(id || ''))) return { ok: false, error: '會員 id 不對' }
+  const m = (await sel('members', `id=eq.${id}&select=id,name,mno`))[0]; if (!m) return { ok: false, error: '找不到這位會員' }
+  const e = encodeURIComponent(id)
+  await upd('member_slots', `taken_by=eq.${e}`, { taken_by: null }).catch(() => {}) // 轉盤槽位：還回獎池（不刪槽位）
+  for (const t of ['member_draws', 'member_coupons', 'member_pts', 'member_visits', 'member_missions_done', 'member_surveys']) await del(t, `member_id=eq.${e}`)
+  await del('member_referrals', `or=(referrer_id.eq.${e},referee_id.eq.${e})`)
+  await upd('members', `ref_by=eq.${e}`, { ref_by: null }).catch(() => {})
+  await del('member_identities', `member_id=eq.${e}`)
+  await del('members', `id=eq.${e}`)
+  console.log('member deleted', JSON.stringify({ by: who && who.name, id, mno: m.mno, name: m.name }))
+  return { ok: true, deleted: { id, mno: m.mno, name: m.name } }
 }
 export async function staffUpdate ({ who, id, patch }) {
   const p = { updated_at: nowIso() }
