@@ -295,7 +295,7 @@ function menuRender(){
   </div>
   ${edAll?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--card);border:1.5px solid var(--line);border-radius:10px">
     <span class="mut" style="font-size:12px">編輯</span>
-    <button class="mini" id="menuOcrBtn" onclick="menuOcr()" title="拍／上傳新菜單照片（最多 4 張），AI 逐項抄成菜單，預覽後可覆蓋或只補新品項，之後直接在下面改">📷 拍菜單 AI 建檔</button>
+    <button class="mini" id="menuOcrBtn" onclick="menuOcr()" title="拍／上傳新菜單照片（最多 4 張），AI 逐項抄成菜單，預覽後可覆蓋或只補新品項，之後直接在下面改">📷 拍菜單 AI 建檔</button>${aiTag('app')}
     <button class="mini" onclick="menuSecForm()">＋ 新增分類</button>
     <button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>
   </div>`:''}

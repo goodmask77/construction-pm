@@ -62,7 +62,7 @@ function chRenderPane() {
   const canEdit = r.kind === 'group' && (_chMe.mgr || true)
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
       ${mobile ? `<button class="mini" style="padding:6px 8px" onclick="chBack()">${CH_ICON.back}</button>` : ''}
-      <div style="flex:1;min-width:0"><b style="font-size:16px">${chEsc(r.name)}</b><div class="hint" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.kind === 'all' ? '全部夥伴' : r.kind === 'personal' ? '只有本人與主管看得到' : CH_ICON.users + ' ' + chEsc((r.memberNames || []).join('、'))}</div></div>
+      <div style="flex:1;min-width:0"><b style="font-size:16px">${chEsc(r.name)}</b> ${aiTag('app')}<div class="hint" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.kind === 'all' ? '全部夥伴' : r.kind === 'personal' ? '只有本人與主管看得到' : CH_ICON.users + ' ' + chEsc((r.memberNames || []).join('、'))}</div></div>
       ${r.kind === 'group' ? `<button class="mini" style="padding:6px 8px" onclick="chRoomSettings('${chEsc(r.id)}')" title="聊天室設定">${CH_ICON.gear}</button>` : ''}
     </div>
     <div id="chMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
