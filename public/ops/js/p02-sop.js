@@ -233,7 +233,7 @@ function canTab(k){
 // 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
 const EDIT_FN = {
   actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board', heatHideToggle:'board', heatShowAll:'board',
-  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop', sopSummarySend:'sop', sopStTool:'sop', sopTgTool:'sop', sopTgAdd:'sop', sopTgRen:'sop', sopTgDel:'sop', sopTgMove:'sop',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop', sopSummarySend:'sop', sopStTool:'sop', sopTgTool:'sop', sopTgAdd:'sop', sopTgRen:'sop', sopTgDel:'sop', sopTgMove:'sop', sopDragInit:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
   lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb', lbRdDecide:'lb', lbGrant:'lb', lbGrantGo:'lb', lbRwMng:'lb', lbRwSave:'lb', lbRwDel:'lb', lbRwAdd:'lb',
   menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu', mnDragStart:'menu', menuSecCombo:'menu', menuItemCombo:'menu',
@@ -745,14 +745,19 @@ function sopRender(){
     // 第二層：這一站自己的階段分組（照該站階段順序；沒階段的動作墊底「未分階段」）；選了某階段只顯示那一組。同階段內照設定時間排（早的在上）
     const L = sopStCats(st)
     const tgOf2 = it9 => it9.tg && L.includes(it9.tg) ? it9.tg : ''
-    const stList = stItems.filter(i => !window._sopPending || !(log[i.id] && log[i.id].done)).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99')))
+    const stList = stItems.filter(i => !window._sopPending || !(log[i.id] && log[i.id].done)).sort(sopItemCmp)
     const groups = (oneSt===st && curTg) ? [curTg] : [...L, '']
+    // v4.70.98 拖曳排序（張良 2026-10-12「類別跟項目都要可以拖曳排序」）：階段整組拖（☰ 在階段標題）、動作在階段內拖（☰ 在動作前）；有編輯權限才有把手；「只看待完成」時動作不給拖（清單不完整會排錯）
+    const dragTg = canE && !(oneSt===st && curTg), dragIt = canE && !window._sopPending
+    const hs = 'cursor:grab;touch-action:none;color:var(--muted);font-size:16px;padding:0 4px;flex:0 0 auto;user-select:none'
+    s += `<div class="sopStBody" data-st="${sopEsc(st)}">`
     groups.forEach(g => {
       const gi = stList.filter(i => tgOf2(i) === g)
       if (!g && !gi.length) return // 沒有「未分階段」的動作就不印那個標題
       if (g && !gi.length && window._sopPending) return
       const tk = st + '|' + g, tOn = canE && !!g && window._sopTgTool === tk
-      if (g || L.length) s += `<div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px;padding:3px 8px;border-left:3px solid ${g?'var(--primary)':'var(--line)'}"><span style="flex:1"># ${sopEsc(g||'未分階段')} <span class="hint" style="font-weight:700">${gi.filter(i=>log[i.id]&&log[i.id].done).length}/${gi.length}</span></span>${canE&&g?`<button style="${tOn?edBOn:edB};padding:2px 8px;font-size:12px" title="編輯這個階段（改名／排序／刪除／加動作）" onclick="sopTgTool('${st}','${g}')">✎</button>`:''}</div>`
+      s += `<div class="${g?'sopTgGrp':'sopTgNone'}" data-tg="${sopEsc(g)}">`
+      if (g || L.length) s += `<div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px;padding:3px 8px;border-left:3px solid ${g?'var(--primary)':'var(--line)'}">${dragTg&&g?`<span class="sopTgH" title="拖曳排階段順序" style="${hs}">☰</span>`:''}<span style="flex:1"># ${sopEsc(g||'未分階段')} <span class="hint" style="font-weight:700">${gi.filter(i=>log[i.id]&&log[i.id].done).length}/${gi.length}</span></span>${canE&&g?`<button style="${tOn?edBOn:edB};padding:2px 8px;font-size:12px" title="編輯這個階段（改名／排序／刪除／加動作）" onclick="sopTgTool('${st}','${g}')">✎</button>`:''}</div>`
       if (tOn) s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px 8px;padding:6px 10px;border:1.5px dashed var(--primary);border-radius:9px;align-items:center;font-size:13px">
         <span class="hint" style="font-weight:800">階段「${sopEsc(g)}」：</span>
         <button class="mini on" onclick="sopItemEdit(null,'${st}','${g}')">＋ 新增動作到這階段</button>
@@ -760,6 +765,7 @@ function sopRender(){
         <button class="mini" onclick="sopTgMove('${st}','${g}',-1)">▲</button><button class="mini" onclick="sopTgMove('${st}','${g}',1)">▼</button>
         <button class="mini" style="color:var(--red)" onclick="sopTgDel('${st}','${g}')">🗑 刪階段</button>
       </div>`
+      s += `<div class="sopItList" data-st="${sopEsc(st)}" data-tg="${sopEsc(g)}">`
       gi.forEach(it => {
         const lg = log[it.id]
         const state = sopState(it, lg, now, wd, log)
@@ -769,6 +775,7 @@ function sopRender(){
         // v4.59.0 收合列：名稱(點展開)＋時間區間＋狀態徽章＋「✎ 編輯」(有權限才出現)；展開＝說明/標準照/子項目/拍照完成
         s += `<div id="sopit-${it.id}" style="padding:9px 2px;border-bottom:1px solid var(--line)">
           <div style="display:flex;align-items:center;gap:8px">
+            ${dragIt?`<span class="sopItH" title="拖曳排動作順序" style="${hs}">☰</span>`:''}
             <div style="flex:1;min-width:0;cursor:pointer" onclick="sopActToggle('${it.id}')">
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-weight:700;color:var(--ink)">${open?'▾':'▸'} ${sopEsc(it.title)}</span>${it.req===false?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 4px">選做</span>':''}${subs.length?`<span class="hint" style="font-size:12px">子項 ${subDoneN}/${subs.length}</span>`:''}</div>
               <div class="hint" style="font-size:12px">${sopFmtRange(it)}</div>
@@ -780,7 +787,9 @@ function sopRender(){
           ${window._sopEdit===it.id ? sopEditForm(it, false) : (open ? sopActPanel(it, lg, state) : '')}
         </div>`
       })
+      s += `</div></div>` // 閉 sopItList + sopTgGrp
     })
+    s += `</div>` // 閉 sopStBody
     // V3 原地新增動作：站末尾＋新增動作（有權限才出現），點了在此展開空白編輯表單
     if (canE) {
       if (window._sopEdit === '__new__:'+st) s += sopEditForm({ title:'', start:'', end:'', req:true, photo:false, desc:'', st, tg:(window._sopNewTg||curTg||'') }, true)
@@ -843,7 +852,29 @@ function sopRender(){
   s += `</div></div></section>` // 閉 sopSide + sopCols + section
   el.innerHTML = s
   if (window._sopEdit) renderSieSubs() // 原地編輯中→補填子項目清單
+  sopDragInit(el)
 }
+// v4.70.98 兩層拖曳排序：階段整組（sopStBody 內的 sopTgGrp，把手 .sopTgH）→ tgord；動作（sopItList 內的 #sopit-*，把手 .sopItH）→ itord 存 ord
+function sopDragInit(el){
+  if (!window.Sortable) return
+  el.querySelectorAll('.sopStBody').forEach(box => {
+    if (!box.querySelector('.sopTgH')) return
+    new Sortable(box, { handle:'.sopTgH', draggable:'.sopTgGrp', animation:150, onEnd: () => {
+      const list = [...box.querySelectorAll('.sopTgGrp')].map(e => e.dataset.tg).filter(Boolean)
+      if (list.length) sopstOp({ op:'tgord', st: box.dataset.st, list })
+    } })
+  })
+  el.querySelectorAll('.sopItList').forEach(box => {
+    if (!box.querySelector('.sopItH')) return
+    new Sortable(box, { handle:'.sopItH', draggable:'[id^="sopit-"]', animation:150, onEnd: () => {
+      const list = [...box.querySelectorAll('[id^="sopit-"]')].map(e => e.id.slice(6))
+      // 樂觀更新：先改本地 ord 立即重畫，再送後端
+      list.forEach((id, i) => { const it = (sopData.def.items||[]).find(x => x.id === id); if (it) it.ord = i })
+      if (list.length) sopstOp({ op:'itord', st: box.dataset.st, tg: box.dataset.tg, list })
+    } })
+  })
+}
+const sopItemCmp = (a,b) => ((Number.isFinite(a.ord)?a.ord:9999) - (Number.isFinite(b.ord)?b.ord:9999)) || String(a.due||'99:99').localeCompare(String(b.due||'99:99')) // 手動拖過的順序優先，沒拖過照時間
 // 流程範本（第1期：唯讀總覽——站→階段→動作，含時間區間/必做/子項數；編輯走今日執行頁設定模式）
 function sopTemplateHtml(now, wd){
   const items = sopData.def.items || []
@@ -856,7 +887,7 @@ function sopTemplateHtml(now, wd){
     h += `<div style="font-weight:900;color:var(--pdark);background:var(--psoft);border-radius:8px;padding:5px 10px;margin:10px 0 4px">${sopEsc(st)} <span class="hint" style="font-weight:700">${stItems.length} 項</span></div>`
     const groups = [...cats, ''].filter(g => stItems.some(i => (i.tg&&cats.includes(i.tg)?i.tg:'')===g))
     groups.forEach(g => {
-      const gi = stItems.filter(i => (i.tg&&cats.includes(i.tg)?i.tg:'')===g).sort((a,b)=>String(a.start||a.due||'99:99').localeCompare(String(b.start||b.due||'99:99')))
+      const gi = stItems.filter(i => (i.tg&&cats.includes(i.tg)?i.tg:'')===g).sort(sopItemCmp)
       if (!gi.length) return
       h += `<div class="hint" style="font-weight:800;margin:6px 0 2px"># ${g||'未分階段'}</div>`
       gi.forEach(it => { h += `<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--line);font-size:14px"><span style="flex:1;min-width:0">${sopEsc(it.title)}${it.req===false?' <span class="hint">選做</span>':''}${(it.subs||[]).length?` <span class="hint">・${it.subs.length}子項</span>`:''}</span><span class="hint">${sopFmtRange(it)}</span></div>` })
