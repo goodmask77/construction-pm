@@ -16,14 +16,15 @@ async function ins (table, row, prefer) { const r = await fetch(`${SB_URL}/rest/
 async function upd (table, q, patch) { const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ ...patch }) }); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, await r.text().catch(() => ''))), { status: r.status }); return r.json() }
 async function rpc (fn, args) { const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H(), body: JSON.stringify(args) }); const t = await r.text().catch(() => ''); if (!r.ok) throw Object.assign(new Error(tableErr(r.status, t)), { status: r.status }); try { return JSON.parse(t) } catch (_) { return t } }
 const tableErr = (st, t) => /relation .* does not exist|42P01/.test(t) ? '會員資料表還沒建立：請把 supabase/migrations/0001_member.sql 貼到 Supabase SQL Editor 執行一次' : `資料庫錯誤 ${st}：${String(t).slice(0, 160)}`
-export const MEMBER_VER = '4784'
+export const MEMBER_VER = '4786'
 
 // ── 設定 ──
 const CFG_KEY = 'pm_member_cfg'
-const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡，消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
+const DEF_CFG = { perAmt: 10, capSingle: 3000, capDailyStaff: 20000, welcomePts: 0, rewards: [{ id: 'r1', name: '飲料升級（套餐飲品任選）', value: 40, pts: 100, active: true }], yearCap: 900, prizeMax: 500, sellerTaxId: '', invoiceScan: false, grpShareCap: 50, welcomeText: '歡迎加入 GROUN:D！點下面連結開啟會員卡，消費出示會員號碼或 QR 就能累點：\n{link}', consentText: 'GROUN:D（{entity}）為提供會員點數、優惠與訂單服務，蒐集您的 LINE 名稱、手機號碼（選填）與消費紀錄，於營運期間在台灣境內使用。您可隨時在會員卡頁查詢、更正資料或退會；退會後個資會匿名化，交易紀錄依法保留。', entity: '', consentVer: '2026-10-12', ver: 1 }
 export async function loadCfg () { const c = (await kvGet(CFG_KEY)) || {}; return { ...DEF_CFG, ...c, rewards: Array.isArray(c.rewards) && c.rewards.length ? c.rewards : DEF_CFG.rewards } }
 export async function saveCfg (patch, who) {
   const c = await loadCfg(); const n = { ...c, ...(patch || {}) }
+  n.sellerTaxId = String(n.sellerTaxId || '').replace(/\D/g, '').slice(0, 8); n.invoiceScan = !!n.invoiceScan; n.grpShareCap = Math.max(0, Math.min(100, Math.round(Number(n.grpShareCap) || 50)))
   n.yearCap = Math.max(100, Math.round(Number(n.yearCap) || 900)); n.prizeMax = Math.max(50, Math.round(Number(n.prizeMax) || 500))
   n.perAmt = Math.max(1, Math.round(Number(n.perAmt) || 10)); n.capSingle = Math.max(100, Math.round(Number(n.capSingle) || 3000)); n.welcomePts = Math.max(0, Math.round(Number(n.welcomePts) || 0))
   n.rewards = (Array.isArray(n.rewards) ? n.rewards : []).slice(0, 30).map((r, i) => ({ id: String(r.id || 'r' + (i + 1)).slice(0, 12), name: String(r.name || '').slice(0, 40), value: Math.max(0, Math.round(Number(r.value) || 0)), pts: Math.max(1, Math.round(Number(r.pts) || 1)), active: r.active !== false })).filter(r => r.name)
@@ -87,7 +88,8 @@ export async function custMe ({ body }) {
   if (!m[0] || m[0].status === 'left') return { ok: false, needConsent: true }
   const cfg = await loadCfg()
   let game = null; try { game = await availableDraws(mid, m[0]) } catch (_) { game = null } // 資料表還沒建（0002）就略過
-  return { ok: true, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt, game }
+  const mkt = (await kvGet('pm_member_mktout')) || {}
+  return { ok: true, member: pub(m[0]), balance: (bal[0] || {}).balance || 0, earned: (bal[0] || {}).earned || 0, ledger: pts, coupons: cps, qr: cardToken(mid), rewards: cfg.rewards.filter(r => r.active), perAmt: cfg.perAmt, game, invoiceScan: !!(cfg.invoiceScan && cfg.sellerTaxId), mktOut: !!mkt[uid] }
 }
 export async function custUpdate ({ body }) {
   const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }
@@ -244,3 +246,73 @@ export async function campaignStatus ({ who, id, status }) {
 export async function campaignStats ({ id }) { const c = (await sel('member_campaigns', `id=eq.${id}`))[0]; if (!c) return { ok: false, error: '找不到活動' }; const [slots, draws] = await Promise.all([sel('member_slots', `campaign_id=eq.${id}&select=pidx,taken_by`), sel('member_draws', `campaign_id=eq.${id}&order=created_at.desc&limit=100&select=id,member_id,pidx,prize,created_at`)]); const mids = [...new Set(draws.map(d => d.member_id))]; const ms = mids.length ? await sel('members', `id=in.(${mids.join(',')})&select=id,name,mno`) : []; const mm = {}; ms.forEach(m => { mm[m.id] = m }); return { ok: true, campaign: pubCamp(c, slots), draws: draws.map(d => ({ ...d, member: mm[d.member_id] || {} })) } }
 // 店家核銷券（遊戲獎品／之後的優惠券）
 export async function couponUse ({ who, couponId, ref }) { const out = await rpc('member_coupon_use', { p_coupon: couponId, p_by: who.name, p_ref: String(ref || '').slice(0, 40) || null }); return out && out.ok ? { ok: true, name: out.name } : { ok: false, error: (out && out.error) || '核銷失敗' } }
+
+// ── 第三批 v4.70.86：團訂自動入點／收件匣顯示會員／電子發票自助集點／行銷推播／對帳報表 ──
+// 團體訂餐標「完成」→ 有 LINE 身分的人依自己小計入點；共用品項歸主辦人（建單對話那位客人），上限＝全單的 grpShareCap%；冪等 grp:<訂單>:<列 pid>
+export async function earnFromOrder (o) {
+  const C = await import('../public/ops/js/grporder-calc.js'); const menu = C.normMenu(await kvGet('sp_finance_pm_menu'))
+  const cfg = await loadCfg(); const t = C.totals(menu, o); let n = 0, pts = 0
+  const put = async (mid, amount, ref, note) => { if (!mid || amount <= 0) return; let v; try { v = await ins('member_visits', { brand: BRAND, member_id: mid, amount, source: 'grporder', external_ref: ref, by_name: '系統', note }) } catch (e) { if (e.status === 409) return; throw e }; const p = ptsFor(cfg, amount); if (p > 0) { try { await ins('member_pts', { brand: BRAND, member_id: mid, kind: 'earn', pts: p, amount, ref: v.id, idem_key: 'visit:' + v.id, note }, 'return=minimal'); n++; pts += p } catch (e) { if (e.status !== 409) throw e } } }
+  for (const r of (o.rows || [])) { if (r.src !== 'line' || !r.uid) continue; const mid = await identityOf(r.uid); if (!mid) continue; const amt = C.priceRow(menu, r, o.frozen).total; await put(mid, amt, `grp:${o.id}:${r.pid}`, `團體訂餐 ${o.company || ''}`) }
+  if (t.shared > 0 && o.uid) { const mid = await identityOf(o.uid); const cap = Math.round(t.total * (cfg.grpShareCap || 50) / 100); await put(mid, Math.min(t.shared, cap), `grp:${o.id}:shared`, `團體訂餐共用品項 ${o.company || ''}`) }
+  return { n, pts }
+}
+export async function byUid (uid) { const mid = await identityOf(String(uid || '')); if (!mid) return { ok: true, member: null }; const m = (await sel('members', `id=eq.${mid}&select=id,mno,name,status,created_at`))[0]; if (!m) return { ok: true, member: null }; const bal = (await sel('member_balance', `member_id=eq.${mid}`))[0] || {}; const last = (await sel('member_visits', `member_id=eq.${mid}&order=created_at.desc&limit=1&select=created_at,amount`))[0] || null; return { ok: true, member: { ...m, balance: bal.balance || 0, lastVisit: last } } }
+// 電子發票左 QR：發票號碼10＋民國日期7＋隨機碼4＋銷售額8(hex)＋總計8(hex)＋買方統編8＋賣方統編8＋加密24＋...；賣方＝自家才算、48 小時內、發票號碼唯一
+export function parseInvoiceQR (txt) {
+  const t = String(txt || '').trim(); if (!/^[A-Z]{2}\d{8}\d{7}\d{4}[0-9A-F]{8}[0-9A-F]{8}\d{8}\d{8}/.test(t)) return null
+  const no = t.slice(0, 10), ymd = t.slice(10, 17), total = parseInt(t.slice(29, 37), 16), buyer = t.slice(37, 45), seller = t.slice(45, 53)
+  const y = Number(ymd.slice(0, 3)) + 1911, dt = `${y}-${ymd.slice(3, 5)}-${ymd.slice(5, 7)}`
+  return { no, date: dt, total, buyer, seller }
+}
+export async function custInvoice ({ body }) {
+  const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期，請重新開啟會員卡' }
+  const mid = await identityOf(uid); if (!mid) return { ok: false, needConsent: true }
+  const cfg = await loadCfg(); if (!cfg.invoiceScan || !cfg.sellerTaxId) return { ok: false, error: '掃發票集點尚未開放' }
+  const inv = parseInvoiceQR(body.qr); if (!inv) return { ok: false, error: '這不是電子發票的 QR（請掃發票左邊那顆）' }
+  if (inv.seller !== cfg.sellerTaxId) return { ok: false, error: '這張不是 GROUN:D 開的發票' }
+  const age = Date.now() - new Date(inv.date + 'T00:00:00+08:00').getTime(); if (age > 3 * 86400e3 || age < -86400e3) return { ok: false, error: '只能登錄 48 小時內的發票' }
+  if (!(inv.total > 0)) return { ok: false, error: '發票金額讀不到' }
+  let v; try { v = await ins('member_visits', { brand: BRAND, member_id: mid, amount: inv.total, source: 'invoice', external_ref: 'inv:' + inv.no, by_name: '客人自助', note: '發票 ' + inv.no }) } catch (e) { if (e.status === 409) return { ok: false, error: `發票 ${inv.no} 已經登錄過了` }; throw e }
+  const pts = ptsFor(cfg, inv.total); if (pts > 0) { try { await ins('member_pts', { brand: BRAND, member_id: mid, kind: 'earn', pts, amount: inv.total, ref: v.id, idem_key: 'visit:' + v.id, note: '發票 ' + inv.no }, 'return=minimal') } catch (e) { if (e.status !== 409) throw e } }
+  return { ok: true, pts, amount: inv.total, no: inv.no, ...(await custMe({ body })) }
+}
+export async function custMktOut ({ body }) { const uid = await custAuth(body); if (!uid) return { ok: false, error: '登入已過期' }; const d = (await kvGet('pm_member_mktout')) || {}; if (body.out) d[uid] = nowIso(); else delete d[uid]; await kvSet('pm_member_mktout', d, '會員行銷選項'); return { ok: true, mktOut: !!body.out } }
+// 分眾：all／active30（近 30 天有消費）／sleep30（有消費但近 30 天沒來）／never（沒消費過）／pts（有點數）
+async function segmentUids (seg) {
+  const ids = await sel('member_identities', 'provider=eq.line&select=line_uid,member_id'); const ms = await sel('members', `brand=eq.${BRAND}&status=eq.active&select=id`); const act = new Set(ms.map(m => m.id))
+  const vis = await sel('member_visits', 'select=member_id,created_at&order=created_at.desc&limit=5000'); const last = {}; for (const v of vis) if (!last[v.member_id]) last[v.member_id] = v.created_at
+  const bal = await sel('member_balance', 'balance=gt.0&select=member_id'); const hasPts = new Set(bal.map(b => b.member_id))
+  const cut = Date.now() - 30 * 86400e3; const mkt = (await kvGet('pm_member_mktout')) || {}
+  return ids.filter(i => act.has(i.member_id) && !mkt[i.line_uid]).filter(i => { const l = last[i.member_id]; if (seg === 'active30') return l && new Date(l).getTime() >= cut; if (seg === 'sleep30') return l && new Date(l).getTime() < cut; if (seg === 'never') return !l; if (seg === 'pts') return hasPts.has(i.member_id); return true }).map(i => i.line_uid)
+}
+export async function pushPreview ({ segment }) { const IB = await import('./_inbox.js'); const a = IB.acctOf('gd'); const uids = await segmentUids(segment); let quota = null; try { quota = await IB.quotaOf(a) } catch (_) {} return { ok: true, n: uids.length, quota } }
+export async function pushSend ({ who, segment, text, test }) {
+  text = String(text || '').trim().slice(0, 1000); if (!text) return { ok: false, error: '沒有內容' }
+  const IB = await import('./_inbox.js'); const a = IB.acctOf('gd'); const { token } = IB.creds(a); if (!token) return { ok: false, error: 'GROUN:D 官方帳號金鑰未設' }
+  let uids
+  if (test) { const ros = await kvGet('sp_crew_kb_roster'); const me = ((ros || {}).people || []).find(x => x.name === who.name && x.lineUserId); if (!me) return { ok: false, error: '你的 LINE 沒綁在名冊，無法測試發給自己' }; uids = [me.lineUserId] } else uids = await segmentUids(segment)
+  if (!uids.length) return { ok: false, error: '這個分眾沒有人' }
+  let sent = 0, fail = 0
+  for (let i = 0; i < uids.length; i += 500) { const r = await fetch('https://api.line.me/v2/bot/message/multicast', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', 'X-Line-Retry-Key': crypto.randomUUID() }, body: JSON.stringify({ to: uids.slice(i, i + 500), messages: [{ type: 'text', text }] }) }); if (r.ok) sent += Math.min(500, uids.length - i); else fail += Math.min(500, uids.length - i) }
+  const d = (await kvGet('pm_member_push')) || { list: [] }; d.list = [{ t: nowIso(), by: who.name, segment: test ? 'test' : segment, n: uids.length, sent, fail, text: text.slice(0, 200) }, ...(d.list || [])].slice(0, 100); await kvSet('pm_member_push', d, '會員推播(' + who.name + ')')
+  return { ok: true, n: uids.length, sent, fail }
+}
+export async function pushLog () { return ((await kvGet('pm_member_push')) || { list: [] }).list }
+// 對帳：每天店員入點金額 vs POS 實收；店員入點排行；可疑（同會員 10 分內兩筆、單筆超上限）
+export async function report ({ days }) {
+  const n = Math.min(60, Number(days) || 14); const since = new Date(Date.now() - n * 86400e3).toISOString()
+  const vis = await sel('member_visits', `created_at=gte.${since}&order=created_at.desc&limit=5000&select=id,member_id,amount,source,external_ref,by_name,created_at`)
+  const cfg = await loadCfg()
+  const tw = (iso) => new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(0, 10)
+  const byDay = {}; for (const v of vis) { const d = tw(v.created_at); (byDay[d] = byDay[d] || { staff: 0, inv: 0, grp: 0, n: 0 }); byDay[d][v.source === 'staff' ? 'staff' : v.source === 'invoice' ? 'inv' : 'grp'] += v.amount; byDay[d].n++ }
+  const months = [...new Set(Object.keys(byDay).map(d => d.slice(0, 7)))]; const pos = {}
+  for (const mo of months) { const doc = await kvGet('sp_finance_pm_pos_d_' + mo); for (const [d, rec] of Object.entries((doc || {}).days || {})) pos[d] = Number((rec || {}).revenue ?? ((rec || {}).sum || {}).revenue ?? 0) || 0 }
+  const rows = Object.keys(byDay).sort().reverse().map(d => ({ date: d, ...byDay[d], pos: pos[d] || 0, ratio: pos[d] ? Math.round((byDay[d].staff + byDay[d].inv) / pos[d] * 100) : null }))
+  const staff = {}; for (const v of vis.filter(x => x.source === 'staff')) { (staff[v.by_name] = staff[v.by_name] || { n: 0, amount: 0 }); staff[v.by_name].n++; staff[v.by_name].amount += v.amount }
+  const flags = []; const byM = {}; for (const v of vis) { (byM[v.member_id] = byM[v.member_id] || []).push(v) }
+  for (const [mid, list] of Object.entries(byM)) { list.sort((a, b) => a.created_at < b.created_at ? -1 : 1); for (let i = 1; i < list.length; i++) if (new Date(list[i].created_at) - new Date(list[i - 1].created_at) < 10 * 60e3) flags.push({ kind: '10 分內兩筆', memberId: mid, at: list[i].created_at, by: list[i].by_name, amount: list[i].amount }) }
+  for (const v of vis) if (v.amount > cfg.capSingle) flags.push({ kind: '超過單筆上限', memberId: v.member_id, at: v.created_at, by: v.by_name, amount: v.amount })
+  const mids = [...new Set(flags.map(f => f.memberId))]; const ms = mids.length ? await sel('members', `id=in.(${mids.join(',')})&select=id,name,mno`) : []; const mm = {}; ms.forEach(m => { mm[m.id] = m })
+  return { ok: true, days: rows, staff: Object.entries(staff).map(([name, x]) => ({ name, ...x })).sort((a, b) => b.amount - a.amount), flags: flags.slice(0, 50).map(f => ({ ...f, member: mm[f.memberId] || {} })) }
+}

@@ -44,6 +44,7 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
 <div class="wrap" id="root"><div class="brand"><b>GROUN:D</b><small>會員卡</small></div><div class="card sub" id="loading">讀取中…</div></div>
 <div class="toast" id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script>
 (async () => {
   const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
@@ -99,14 +100,16 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
         <div style="margin-top:14px" class="row"><div style="flex:1"><div class="lbl">可用點數</div><div class="pts">${fmt(ME.balance)}</div></div><div><div class="lbl">會員號碼</div><div class="mno">${esc(m.mno || '')}</div></div></div>
         <div class="qrbox"><canvas id="qr"></canvas><div class="sub" style="margin-top:6px;color:#555">結帳時出示此 QR 或報會員號碼・<span id="qrT">60</span> 秒自動更新</div></div></div>
       ${gameCard()}
-      <div class="card"><h3>怎麼累點</h3><div class="sub">每消費 ${ME.perAmt} 元 1 點，結帳時給店員掃 QR 或報會員號碼。團體訂餐用 LINE 登入點餐會自動累點。</div></div>
+      <div class="card"><h3>怎麼累點</h3><div class="sub">每消費 ${ME.perAmt} 元 1 點，結帳時給店員掃 QR 或報會員號碼。團體訂餐用 LINE 登入點餐會自動累點。</div>${ME.invoiceScan ? `<button class="btn" id="btnInv" style="width:100%;margin-top:8px">掃發票自己集點（48 小時內）</button>` : ''}</div>
       <div class="card"><h3>可以換什麼</h3>${rws || '<div class="sub">尚未開放</div>'}<div class="sub" style="margin-top:6px">到櫃檯出示會員卡，請店員幫您兌換（直接扣點）。</div></div>
       <div class="card"><h3>點數紀錄</h3>${led}</div>
       <div class="card"><h3>兌換紀錄</h3>${cps}</div>
       <details class="card"><summary>個人資料</summary><div style="margin-top:8px"><label class="sub">名字</label><input id="pName" value="${esc(m.name || '')}"><label class="sub" style="display:block;margin-top:8px">手機</label><input id="pPhone" value="${esc(m.phone || '')}" inputmode="tel"><label class="sub" style="display:block;margin-top:8px">生日（填一次後不能自己改）</label><input id="pBday" type="date" value="${esc(m.birthday || '')}" ${m.birthday ? 'disabled' : ''}><button class="btn" id="pSave" style="margin-top:10px">儲存</button></div>
-        <div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:10px"><div class="sub">退會後個資會匿名化，點數與紀錄依法保留、不能再使用。</div><button class="btn sm" id="pLeave" style="margin-top:6px;color:var(--red)">退會</button></div></details>`
+        <div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:10px"><div class="sub">退會後個資會匿名化，點數與紀錄依法保留、不能再使用。</div><label class="row" style="margin-top:8px;font-size:13px"><input type="checkbox" id="pMkt" ${ME.mktOut ? 'checked' : ''} style="width:auto"> 不要收 GROUN:D 的行銷訊息（點數、訂單通知不受影響）</label><button class="btn sm" id="pLeave" style="margin-top:6px;color:var(--red)">退會</button></div></details>`
     drawQR(); clearInterval(qrTimer); let left = 60; qrTimer = setInterval(async () => { left--; const t = $('qrT'); if (t) t.textContent = left; if (left <= 0) { left = 60; const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; drawQR(); const p = document.querySelector('.pts'); if (p) p.textContent = fmt(d.balance) } } }, 1000)
-    const bw = $('btnWheel'); if (bw) bw.onclick = openWheel
+    const bw = $('btnWheel'); if (bw) bw.onclick = (ME.game && ME.game.campaign && ME.game.campaign.type === 'slot') ? openSlot : openWheel
+    const bi = $('btnInv'); if (bi) bi.onclick = scanInvoice
+    const pm = $('pMkt'); if (pm) pm.onchange = async () => { const d = await api({ op: 'mktout', ...SES, out: pm.checked }); toast(d && d.ok ? (d.mktOut ? '已關閉行銷訊息' : '已開啟行銷訊息') : '失敗', !(d && d.ok)) }
     $('pSave').onclick = async () => { const d = await api({ op: 'update', ...SES, name: $('pName').value, phone: $('pPhone').value, birthday: $('pBday').disabled ? null : $('pBday').value }); if (!d || !d.ok) return toast((d && d.error) || '儲存失敗', true); ME = d; render(); toast('已儲存') }
     $('pLeave').onclick = async () => { if (!window.confirm('確定退會？退會後點數與紀錄不能再使用。')) return; const d = await api({ op: 'leave', ...SES }); if (!d || !d.ok) return toast((d && d.error) || '失敗', true); LS.del('gd_member_ses'); $('root').innerHTML = '<div class="brand"><b>GROUN:D</b><small>會員卡</small></div><div class="card">已退會，謝謝您曾經的支持。要再加入隨時從官方帳號打開會員卡即可。</div>' }
   }
@@ -137,6 +140,34 @@ details summary{cursor:pointer;font-weight:700;font-size:13.5px}
       const w = $('wheel'); const turns = 360 * 5 + (360 - center); w.style.transform = `rotate(${turns}deg)`
       setTimeout(() => { const pz = d.prize || {}; $('wheelRes').innerHTML = `<div class="result">${pz.kind === 'none' ? `<div>這次沒中</div><b>銘謝惠顧</b>${pz.capped ? '<div class="sub">你今年中獎已達上限，下次再來</div>' : ''}` : `<div>恭喜！抽中</div><b>${esc(pz.name)}</b><div class="sub">${pz.kind === 'pts' ? '點數已入帳' : '券已放進你的兌換紀錄，到櫃檯出示給店員核銷'}</div>`}</div>`; b.style.display = 'none' }, 4300)
     }
+  }
+  // 🎰 拉霸：三條直式捲軸，伺服器先決定結果，前端依序停在抽到的獎項
+  function openSlot () {
+    const g = ME.game, c = g.campaign, prizes = c.prizes || [], N = prizes.length || 1
+    const ov = document.createElement('div'); ov.className = 'wheelOv'; ov.id = 'wheelOv'
+    const reel = (k) => `<div style="width:84px;height:120px;overflow:hidden;background:#fff;border-radius:12px;border:3px solid #ce1611;position:relative"><div id="reel${k}" style="transition:transform 2.6s cubic-bezier(.15,.8,.1,1);display:flex;flex-direction:column">${[...prizes, ...prizes, ...prizes, ...prizes, ...prizes, ...prizes].map(p => `<div style="height:120px;display:grid;place-items:center;text-align:center;font-size:12.5px;font-weight:900;color:#2b1d18;padding:4px;line-height:1.2">${esc(p.name)}</div>`).join('')}</div></div>`
+    ov.innerHTML = `<div style="font-weight:900;font-size:18px;margin-bottom:12px">${esc(c.name)}</div><div style="display:flex;gap:8px;background:#8f0e0a;padding:14px;border-radius:18px;box-shadow:0 14px 40px rgba(0,0,0,.5)">${reel(0)}${reel(1)}${reel(2)}</div><button class="wheelBtn" id="wheelGo">拉！</button><div id="wheelRes"></div><button class="btn" id="wheelClose" style="margin-top:14px;background:transparent;color:#fff;border-color:rgba(255,255,255,.5)">關閉</button>`
+    document.body.appendChild(ov)
+    $('wheelClose').onclick = () => { ov.remove(); refreshMe() }
+    $('wheelGo').onclick = async () => {
+      const b = $('wheelGo'); b.disabled = true; b.textContent = '轉動中…'
+      const d = await api({ op: 'draw', ...SES, rightKey: (g.rights[0] || {}).key })
+      if (!d || !d.ok) { b.disabled = false; b.textContent = '拉！'; return toast((d && d.error) || '抽獎失敗', true) }
+      const idx = Math.max(0, prizes.findIndex(p => p.idx === d.pidx))
+      ;[0, 1, 2].forEach(k => { const r = $('reel' + k); const stop = (3 + k) * N + idx; r.style.transitionDuration = (2.2 + k * 0.5) + 's'; r.style.transform = `translateY(-${stop * 120}px)` })
+      setTimeout(() => { const pz = d.prize || {}; $('wheelRes').innerHTML = `<div class="result">${pz.kind === 'none' ? `<div>這次沒中</div><b>銘謝惠顧</b>${pz.capped ? '<div class="sub">你今年中獎已達上限，下次再來</div>' : ''}` : `<div>恭喜！抽中</div><b>${esc(pz.name)}</b><div class="sub">${pz.kind === 'pts' ? '點數已入帳' : '券已放進你的兌換紀錄，到櫃檯出示給店員核銷'}</div>`}</div>`; b.style.display = 'none' }, 3600)
+    }
+  }
+  // 🧾 掃電子發票左邊那顆 QR 自己集點
+  function scanInvoice () {
+    if (typeof Html5Qrcode === 'undefined') return toast('掃描元件還沒載入，請再試一次', true)
+    const ov = document.createElement('div'); ov.className = 'wheelOv'; ov.id = 'invOv'
+    ov.innerHTML = `<div style="background:#fff;color:var(--ink);border-radius:16px;padding:14px;width:100%;max-width:380px"><div style="font-weight:900;margin-bottom:6px">掃發票左邊的 QR</div><div id="invReader" style="width:100%;border-radius:12px;overflow:hidden"></div><div id="invMsg" class="sub" style="margin-top:8px">對準發票左邊那顆 QR code…</div><div style="text-align:right;margin-top:10px"><button class="btn sm" id="invClose">關閉</button></div></div>`
+    document.body.appendChild(ov)
+    const h5 = new Html5Qrcode('invReader'); let busy = false
+    const stop = () => { try { h5.stop().then(() => { try { h5.clear() } catch (_) {} }).catch(() => {}) } catch (_) {} ov.remove() }
+    $('invClose').onclick = stop
+    h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, async (txt) => { if (busy) return; busy = true; $('invMsg').textContent = '登錄中…'; const d = await api({ op: 'invoice', ...SES, qr: txt }); if (!d || !d.ok) { busy = false; $('invMsg').innerHTML = `<span style="color:var(--red)">${esc((d && d.error) || '登錄失敗')}</span>`; return } stop(); ME = d; render(); toast(`發票 ${d.no} 已登錄，+${d.pts} 點`) }, () => {}).catch(() => { $('invMsg').innerHTML = '<span style="color:var(--red)">開不了鏡頭，請允許相機權限</span>' })
   }
   async function refreshMe () { const d = await api({ op: 'me', ...SES }); if (d && d.ok) { ME = d; render() } }
   function drawQR () { try { const c = $('qr'); if (c && window.QRCode) QRCode.toCanvas(c, ME.qr, { width: 200, margin: 1, color: { dark: '#2b1d18' } }) } catch (_) {} }
