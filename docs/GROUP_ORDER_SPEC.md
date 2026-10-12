@@ -77,7 +77,10 @@ cfg 預設：主餐＋薯條一份＝1 袋位；每袋 4 袋位；披薩 1 盒�
 - 流程：客人確認金額（confirmed）或店家鎖單（locked）後 → **只有主辦人**在客人頁看到「LINE Pay 付款 $應付」→ 整頁導去 LINE Pay → 付完導回點餐單頁顯示「付款完成」→ 後端確認扣款、`pay` 改成 已付清／已付訂金＋method=LINE Pay＋paidAt＋txId，寫 edits，店家收鈴鐺＋LINE 通知；GD 團訂分頁側欄顯示「已收款 金額・LINE Pay・時間」。
 - 應付金額＝鎖單快照總額（沒鎖＝即時總額）− 已收金額；付清後按鈕消失；模擬單不開付款。
 - 安全：建立付款時把 transactionId 存 `pay.tx`，導回時 id 要對得上才確認；導回頁重新整理不會重扣（已確認過直接回成功）；金流只改 `pay`，不碰餐點內容。
-- **張良前置（沒設就整個付款功能不出現，其他流程照舊）**：到 LINE Pay 商家後台（沙盒：pay.line.me/tw/developers/techsupport/sandbox/creation 申請測試商家）拿 Channel ID／Channel Secret → Vercel env `LINEPAY_CHANNEL_ID`、`LINEPAY_CHANNEL_SECRET`；正式上線再加 `LINEPAY_ENV=prod`（沒設＝沙盒，客人頁會標「沙盒測試」）。
+- **v4.71.3 綠界 ECPay 也接了（第二家）＋電子發票**：共用模組 `api/_ecpay.js`。金流＝AioCheckOut V5（信用卡／ATM 虛擬帳號／超商代碼，CheckMacValue SHA256 已對綠界測試站驗過）；客人頁「線上付款」改成選單（LINE Pay／信用卡／ATM／超商，依設定顯示）→ `op=ecpayreq` → `?gorder=<碼>&ecpaygo=<交易號>` 自動送表單 → 綠界背景回呼 `&ecpayret=1`（付款結果，回 1|OK）／`&ecpayinfo=1`（ATM 帳號、超商代碼 → `pay.pending` 顯示在客人頁與 GD 側欄）→ 客人導回 `&ecpayback=1`（信用卡）／`&ecpayclient=1`（取號後返回 → #paypending）。LINE Pay／綠界付款成功共用 `markPaid()`。
+- **電子發票**（綠界 B2C API 3.0.0，AES-128-CBC；測試站已開立＋作廢成功）：有統編＝公司發票（Print=1，需抬頭＋地址；統編先驗檢查碼）／沒統編＝個人發票存綠界載具（需 email 或手機）。線上付清自動開（cfg.invoice.auto）；GD 側欄「開發票」手動開（可改統編／抬頭／地址／email）、「作廢」；發票號碼顯示在客人頁與側欄；存 `o.invoice{no,date,random,amount,taxId,title,test}`，作廢進 `o.invoiceVoided[]`。客人付款時若單上有統編會先要公司地址（`o.addr`）。
+- **測試模式**：GD 團體訂餐設定頁勾「用綠界測試商家」／「用綠界發票測試商家」＝沒 env 時改打綠界公開測試商家（3002607／2000132）走測試站，整個流程可先跑，不會真扣款、發票是假的；填正式 env 自動切正式。
+- **張良前置（沒設就整個付款功能不出現，其他流程照舊）**：綠界正式金鑰 env `ECPAY_MERCHANT_ID`／`ECPAY_HASH_KEY`／`ECPAY_HASH_IV`，發票另三個 `ECPAY_INV_MERCHANT_ID`／`ECPAY_INV_HASH_KEY`／`ECPAY_INV_HASH_IV`；LINE Pay：到 LINE Pay 商家後台（沙盒：pay.line.me/tw/developers/techsupport/sandbox/creation 申請測試商家）拿 Channel ID／Channel Secret → Vercel env `LINEPAY_CHANNEL_ID`、`LINEPAY_CHANNEL_SECRET`；正式上線再加 `LINEPAY_ENV=prod`（沒設＝沙盒，客人頁會標「沙盒測試」）。
 
 ## 10. 開發批次（一次做一批，改程式開 PR）
 | 批次 | 內容 | 驗收 |
