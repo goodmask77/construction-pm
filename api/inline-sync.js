@@ -264,14 +264,14 @@ function holBlocks(hol, from, to) {
 }
 const holShort = (n) => String(n || '').replace(/臺灣光復暨金門古寧頭大捷紀念日/, '光復節').replace(/開國紀念日/, '元旦').replace(/農曆除夕/, '除夕').replace(/和平紀念日/, '228').replace(/行憲紀念日/, '行憲日')
 const dayStat = (arr) => { // 一天的訂位 → 統計（候補 ty=4 不算人次；待確認 st=3 另計）
-  const o = { r: 0, g: 0, l: 0, dn: 0, wl: 0, uc: 0, ucG: 0, big: 0 }
+  const o = { r: 0, g: 0, l: 0, dn: 0, wl: 0, uc: 0, ucG: 0, big: 0, bg: 0 }
   for (const r of arr || []) {
     if (isCx(r)) continue
     if (r.ty === 4) { o.wl++; continue }
     o.r++; o.g += r.n || 0
     if ((r.t || '') < '16:00') o.l += r.n || 0; else o.dn += r.n || 0
     if (r.st === 3) { o.uc++; o.ucG += r.n || 0 }
-    if ((r.n || 0) >= 20) o.big++
+    if ((r.n || 0) >= 20) { o.big++; o.bg += r.n || 0 }
   }
   return o
 }
@@ -330,15 +330,16 @@ function custActs(ol) {
       const need = +(x.sh.avgH * Math.min(1.8, Math.max(0.6, (x.est || x.g) / x.sh.avgG))).toFixed(1)
       const diff = +(x.sh.h - need).toFixed(1), per = x.sh.n ? Math.max(5, x.sh.h / x.sh.n) : 7 // 一人一班平均時數
       const slot = (x.l + x.dn) ? (x.l >= x.dn ? '午場' : '晚場') : (x.sh.lh >= x.sh.dh ? '午場' : '晚場')
-      if (diff <= -per) acts.push({ k: `staffL_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#F07373', t: `${lb}預估 ${x.est || x.g} 人（近 8 週同週幾平均 ${x.sh.avgG} 人排 ${x.sh.avgH} 小時）需要約 ${need} 小時，現排 ${x.sh.n} 人 ${x.sh.h} 小時：**${slot}建議加 ${Math.ceil(-diff / per)} 人**（約 ${Math.round(-diff)} 小時）` })
-      else if (diff >= per && x.d > td) { const cut = x.sh.lh >= x.sh.dh ? '午場' : '晚場'; acts.push({ k: `staffH_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#8C98A8', t: `${lb}預估只有 ${x.est || x.g} 人（平均 ${x.sh.avgG}），需要約 ${need} 小時，現排 ${x.sh.n} 人 ${x.sh.h} 小時：**${cut}可少 ${Math.floor(diff / per)} 人**（省約 ${Math.round(diff)} 小時）` }) }
+      const far = x.d > addDays(td, 6) && x.sh.h < x.sh.avgH * 0.85 ? '（一週後的班表可能還沒排完，先參考）' : ''
+      if (diff <= -per) acts.push({ k: `staffL_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#F07373', t: `${lb}預估 ${x.est || x.g} 人（近 8 週同週幾平均 ${Math.round(x.sh.avgG)} 人排 ${Math.round(x.sh.avgH)} 小時）需要約 ${Math.round(need)} 小時，現排 ${x.sh.n} 人 ${Math.round(x.sh.h)} 小時：**${slot}建議加 ${Math.min(6, Math.ceil(-diff / per))} 人**（約 ${Math.round(-diff)} 小時）${far}` })
+      else if (diff >= per && x.d > td) { const cut = x.sh.lh >= x.sh.dh ? '午場' : '晚場'; acts.push({ k: `staffH_${x.d}`, d: x.d, p: 3.5, kind: 'staff', c: '#8C98A8', t: `${lb}預估只有 ${x.est || x.g} 人（平均 ${Math.round(x.sh.avgG)}），需要約 ${Math.round(need)} 小時，現排 ${x.sh.n} 人 ${Math.round(x.sh.h)} 小時：**${cut}可少 ${Math.floor(diff / per)} 人**（省約 ${Math.round(diff)} 小時）` }) }
     }
     if (x.wx && x.wx.pop >= 60 && isWkd(x.d)) acts.push({ k: `rain_${x.d}`, d: x.d, p: 5, kind: 'rain', c: '#6EB1FF', t: `${lb}降雨機率 ${x.wx.pop}%（${x.wx.n}）：週末現場客會少，備料保守、提醒訂位客` })
     if (lv.k === 'cold' && isWkd(x.d) && x.d > td) acts.push({ k: `cold_${x.d}`, d: x.d, p: 4, kind: 'cold', c: '#8C98A8', t: `${lb}週末已訂 ${x.g} 人、預估最終只有 **${x.est} 人**（去年同日 ${base}）：社群發文、推熟客補客` })
   }
   for (const x of ol.week || []) { if (x.ratio != null && x.ratio < 70) acts.push({ k: `low_${x.d}`, d: x.d, p: 6, kind: 'low', c: '#E8A657', t: `上週 ${mdOf(x.d)}（${wdOf(x.d)}）只來 **${x.g} 人**，近 8 週同週幾平均 ${x.base}（${x.ratio}%）：查那天發生什麼（天氣／活動／評論）` }) }
   acts.sort((a, b) => a.d.localeCompare(b.d) || a.p - b.p)
-  return acts.slice(0, 12)
+  return acts.slice(0, 16)
 }
 const ACT_ST_KEY = 'sp_finance_pm_inline_actst' // 行動建議狀態 {keys:{k:{st:'done',by,at,tid}}}；key 帶日期，30 天自動清
 async function actStates() { const d = (await kvGet(ACT_ST_KEY)) || { keys: {} }; const lim = addDays(twToday(), -30); for (const k of Object.keys(d.keys || {})) { const m = /(\d{4}-\d{2}-\d{2})/.exec(k); if (m && m[1] < lim) delete d.keys[k] }; return d }
@@ -396,7 +397,7 @@ async function custOutlook() {
   const days = H14.map((d, i) => {
     const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly)), w = new Date(d + 'T00:00:00Z').getUTCDay()
     const sh = shiftStat(schArr(d))
-    const fr = fillAt(d, i), est = fr != null && fr >= 0.15 ? Math.round(s.g / fr) : s.g
+    const fr = fillAt(d, i), est = fr != null && fr >= 0.15 ? s.bg + Math.round((s.g - s.bg) / fr) : s.g // 大組（≥20 人）不放大：那種都是提早幾週訂好的，只有散客照曲線補
     return { d, hol: holShort(hol[d] || ''), ...s, est: Math.max(est, s.g), fill: fr != null ? Math.round(fr * 100) : null, wx: wx[d] || null, sh: { n: sh.n, h: sh.h, fo: sh.fo, ki: sh.ki, lh: sh.lh, dh: sh.dh, names: sh.names.slice(0, 30), avgH: avg(wdH[w]), avgG: avg(wdG[w]) }, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
   })
   // ② 連假倒數
