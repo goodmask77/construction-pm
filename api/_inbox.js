@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4827' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4828' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -446,6 +446,62 @@ export async function importChat({ who, mgr, cfg, id, csv, dry }) {
   return { ok: true, ...sum }
 }
 // ── v4.71.11 問 AI（張良 2026-10-14「要有 AI 對話框，讓我即時詢問一些內容回覆給客戶」）：看這段對話＋備忘錄回答；要擬回覆就放在【回覆草稿】區塊，前端一鍵放進回覆框（不會自動發出）──
+// ── v4.71.22 問 AI 直通訂位檔期（張良 2026-10-14「這邊的 AI 功能能直通 inline 嗎，像 DD 可以回答訂位狀況」）──
+// 從「問題＋客人最近訊息＋備忘錄」抓日期（1/7、1月7日、2027-01-07、明年…；沒寫年份＝今天以後最近的那天），當場讀 inline 訂位月檔＋當日備註＋EM 包場案件給 AI
+export function pickDates(text, today) {
+  const ty = +today.slice(0, 4), out = new Set(), months = new Set()
+  const pad = (n) => String(n).padStart(2, '0')
+  const ok = (m, d) => m >= 1 && m <= 12 && d >= 1 && d <= 31
+  const s = String(text || '')
+  for (const m of s.matchAll(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/g)) if (ok(+m[2], +m[3])) out.add(`${m[1]}-${pad(m[2])}-${pad(m[3])}`)
+  let yHint = 0, lastEnd = -9
+  for (const m of s.matchAll(/(明年|後年|今年)?\s*(?<!\d)(\d{1,2})\s*(?:\/|月)\s*(\d{1,2})(?![\d:])/g)) {
+    if (m[1]) yHint = { 今年: 0, 明年: 1, 後年: 2 }[m[1]]
+    else if (m.index - lastEnd > 3) yHint = 0 // 「明年1/7、1/8」才延用年份；隔開的句子不延用
+    lastEnd = m.index + m[0].length
+    const mo = +m[2], d = +m[3]; if (!ok(mo, d)) continue
+    let y = ty + yHint; let iso = `${y}-${pad(mo)}-${pad(d)}`
+    if (!m[1] && !yHint && iso < today) iso = `${y + 1}-${pad(mo)}-${pad(d)}`
+    out.add(iso)
+  }
+  const CN = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12 }
+  for (const m of s.matchAll(/(明年|後年|今年)?\s*(?<![\d/一二三四五六七八九十期拜])(\d{1,2}|十[一二]?|[一二三四五六七八九])\s*月(?!\s*[\d一二三四五六七八九十])/g)) {
+    const mo = CN[m[2]] || +m[2]; if (mo < 1 || mo > 12) continue
+    const yh = m[1] ? { 今年: 0, 明年: 1, 後年: 2 }[m[1]] : 0
+    let ym = `${ty + yh}-${pad(mo)}`; if (!m[1] && ym < today.slice(0, 7)) ym = `${ty + 1}-${pad(mo)}`
+    months.add(ym)
+  }
+  return { dates: [...out].filter(d => d >= today).sort().slice(0, 10), months: [...months].sort().slice(0, 2) }
+}
+export async function resvBrief({ dates, months }) {
+  if (!dates.length && !months.length) return ''
+  const mos = [...new Set([...dates.map(d => d.slice(0, 7)), ...months])].slice(0, 4)
+  const kv = await kvGetMany([...mos.map(m => 'sp_finance_pm_inline_' + m), 'sp_finance_pm_inline_notes', 'sp_finance_pm_em'])
+  const notes = ((kv.sp_finance_pm_inline_notes || {}).days) || {}
+  const em = ((kv.sp_finance_pm_em || {}).projects) || []
+  const ST = { 1: '已確認', 3: '待確認', 4: '已入座', 6: '已確認' }
+  const wd = (d) => '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+  const dayRecs = (d) => ((((kv['sp_finance_pm_inline_' + d.slice(0, 7)] || {}).days) || {})[d] || []).filter(r => r.st !== 2 && r.st !== 5)
+  const emOn = (d) => em.filter(p => p.date === d && !/取消|流失|作廢/.test(p.status || ''))
+  const emLine = (p) => `包場案件「${p.title || p.code}」${p.cust ? '客戶 ' + p.cust : ''}${p.n ? '・' + p.n + ' 人' : ''}${p.start ? '・' + p.start + (p.end ? '–' + p.end : '') : ''}${p.venue ? '・區域 ' + p.venue : ''}${p.status ? '・' + p.status : ''}${p.deposit ? '・訂金 ' + p.deposit : ''}`
+  const L = []
+  for (const d of dates) {
+    const rs = dayRecs(d), lu = rs.filter(r => r.t && r.t < '17:00'), di = rs.filter(r => !r.t || r.t >= '17:00')
+    const sum = (a) => a.reduce((t, r) => t + (r.n || 0), 0)
+    L.push(`${d}（${wd(d)}）：${rs.length ? `inline 已有 ${rs.length} 組 ${sum(rs)} 人（午 ${lu.length} 組 ${sum(lu)} 人／晚 ${di.length} 組 ${sum(di)} 人）` : 'inline 目前沒有訂位'}`)
+    const cn = (x) => String(x || '').replace(/Purpose:\s*✅一般用餐無特殊需求✅/g, '').replace(/\s+/g, ' ').trim() // 訂位表單預設勾選＝不是真備註
+    rs.filter(r => (r.n || 0) >= 10 || cn(r.note) || cn(r.inote)).sort((a, b) => String(a.t).localeCompare(String(b.t))).slice(0, 15).forEach(r => L.push(`  - ${r.t || '未填時間'} ${r.name || ''} ${r.n || 0} 人｜${ST[r.st] || r.st}${cn(r.note) ? '｜客註：' + cn(r.note).slice(0, 60) : ''}${cn(r.inote) ? '｜店註：' + cn(r.inote).slice(0, 60) : ''}`))
+    ;(notes[d] || []).forEach(n => n && n.note && L.push(`  - 當日備註：${String(n.note).replace(/\s+/g, ' ').slice(0, 100)}`))
+    emOn(d).forEach(p => L.push('  - ' + emLine(p)))
+  }
+  for (const ym of months) {
+    const days = (((kv['sp_finance_pm_inline_' + ym] || {}).days) || {})
+    const ds = new Set([...Object.keys(days), ...Object.keys(notes).filter(d => d.startsWith(ym)), ...em.filter(p => String(p.date || '').startsWith(ym)).map(p => p.date)])
+    const rows = [...ds].filter(d => d.startsWith(ym)).sort().map(d => { const rs = dayRecs(d); const big = rs.filter(r => (r.n || 0) >= 20).map(r => `${r.name} ${r.n}人${r.t ? ' ' + r.t : ''}`); const ems = emOn(d).map(p => `包場「${p.title || p.code}」${p.n ? p.n + '人' : ''}`); const nt = (notes[d] || []).filter(n => /包場|全包|關閉|公休|不開/.test(String(n.note || ''))).length ? '有包場／公休註記' : ''; return (big.length || ems.length || nt) ? `  - ${d.slice(5)}（${wd(d)}）${rs.length} 組 ${rs.reduce((t, r) => t + (r.n || 0), 0)} 人${big.length ? '；大組：' + big.join('、') : ''}${ems.length ? '；' + ems.join('、') : ''}${nt ? '；' + nt : ''}` : '' }).filter(Boolean)
+    L.push(`${ym} 整月（只列有 20 人以上大組／包場案件／包場公休註記的日子）：${rows.length ? '' : '沒有'}`); rows.forEach(r => L.push(r))
+  }
+  return L.join('\n')
+}
 export async function inboxAi({ who, mgr, cfg, id, q, hist }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
@@ -458,15 +514,19 @@ export async function inboxAi({ who, mgr, cfg, id, q, hist }) {
   const lines = rows.map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : m.dir === 'out' ? '我們（' + (m.by || '') + '）' : '系統'}：${String(m.text || (m.media ? '（圖片／檔案）' : '')).slice(0, 500)}`)
   const memos = [...(conv.note ? [{ by: '', text: conv.note }] : []), ...(conv.memos || [])].map(m => `・${m.by ? m.by + '：' : ''}${m.text}`)
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  const pk = pickDates([question, ...(Array.isArray(hist) ? hist : []).slice(-4).map(h => h.text), ...rows.filter(m => m.dir === 'in').slice(-15).map(m => m.text), ...memos].join('\n'), today)
+  let resv = ''; try { resv = await resvBrief(pk) } catch (_) { resv = '（訂位資料暫時讀不到）' }
   const SYS = `你是「${a.name}」餐廳 LINE 官方帳號的客服助手，幫店內同事（${who.name}）處理這位客人的對話。今天是 ${today}（台灣）。
 規則：
 - 一律繁體中文、口語、簡短。
 - 不知道的事實（價格、營業時間、能不能包場、發票規定、活動內容）不要編，直接說「這要跟店裡確認」，並列出要確認什麼。
 - 同事要你「擬回覆／幫我回」時，把要傳給客人的話放在【回覆草稿】和【/回覆草稿】中間；語氣親切、像店家本人，不要提到 AI。
 - 沒被要求擬回覆時就直接回答同事的問題，不要硬塞草稿。
+- 問到檔期／訂位／某天能不能辦：只能根據下面【A Beach 訂位檔期】回答（inline 訂位系統＋包場案件，系統剛剛即時讀的），列出那天已有幾組幾人、有沒有大組或包場；能不能再接、場地容量、價格這些資料裡沒有的，說「要跟店裡確認」。沒列到的日期就說還沒查到，請同事把日期寫清楚（例如 1/7）。
 
 【客人】${conv.alias || conv.name || '客人'}${conv.alias && conv.name ? '（LINE 名稱 ' + conv.name + '）' : ''}；狀態：${({ new: '新', open: '處理中', wait: '等待中', done: '已完成' })[conv.status] || conv.status}${conv.waitUntil ? '（' + conv.waitUntil + ' 要再回覆）' : ''}
 【內部備忘錄】${memos.length ? '\n' + memos.join('\n') : '（無）'}
+【A Beach 訂位檔期】${resv ? '\n' + resv : '（這次問題和對話裡沒有看到具體日期，所以沒有查）'}
 【最近對話】
 ${lines.join('\n') || '（沒有訊息）'}`
   const messages = [...(Array.isArray(hist) ? hist : []).slice(-8).map(h => ({ role: h.role === 'ai' ? 'assistant' : 'user', content: String(h.text || '').slice(0, 2000) })).filter(m => m.content), { role: 'user', content: question }]
