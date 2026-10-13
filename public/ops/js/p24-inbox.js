@@ -65,13 +65,18 @@ async function inboxLoad(convId) {
   curStore = 'inbox'; setTabs('inbox')
   const b = document.getElementById('tab-inbox'); if (b) b.className = 'on'
   document.getElementById('upd').textContent = '收件匣'
-  if (!_ibD) app.innerHTML = '<section><h2>收件匣</h2><div class="hint">讀取中…</div></section>'
+  // v4.71.11 速度鐵則（docs/PERF_RULES.md）：先畫上次的清單（記憶體→本機快取），背景再抓新的；第一次進來才看到「讀取中」
+  if (!_ibD) { try { const c = JSON.parse(localStorage.getItem('ibListCache') || 'null'); if (c && c.ok && c.ver === IB_VER) _ibD = c } catch (_) {} }
+  if (_ibD) { if (convId) _ibCur = convId; ibRender() } else app.innerHTML = '<section><h2>收件匣</h2><div class="hint">讀取中…</div></section>'
   const d = await ibGet('op=list')
+  if (curStore !== 'inbox') return
+  if (d && d.ok) { try { localStorage.setItem('ibListCache', JSON.stringify(d)) } catch (_) {} }
   ibVerCheck(d)
   if (!d || !d.ok) { app.innerHTML = '<section><h2>收件匣</h2><div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px">' + ibEsc((d && d.error) || '讀不到收件匣') + '</div></section>'; return }
+  const had = !!document.getElementById('ibWrap')
   _ibD = d
   if (convId) _ibCur = convId
-  ibRender()
+  if (had) ibRenderList(); else ibRender() // 已經用快取畫好了→只更新清單，不重畫對話區（不洗掉正在打的字）
   _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000)
   if (_ibCur) ibOpen(_ibCur, true)
 }
