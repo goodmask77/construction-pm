@@ -515,7 +515,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, from: fromV, to: todayV, daysWithEvents: out.length, out })
   }
   // ⏱ 收件匣速度量測口（v4.71.11 速度鐵則 docs/PERF_RULES.md：PR 要附 API 時間＋資料量）：GET ?inboxperf=<MENU_PROBE_KEY> → 清單／前 3 個對話各量 3 次（主管視角）
-  // v4.71.20 CC 代辦收件匣（張良 2026-10-14「先幫我搞定雅婷匯入＋重點整理進備忘錄」）：只認 CC_AGENT_KEY、只開 找對話／匯入舊紀錄／加備忘 三件事，留名「CC（AI 整理）」
+  // v4.71.20 CC 代辦收件匣（張良 2026-10-14「先幫我搞定雅婷匯入＋重點整理進備忘錄」）：只認 CC_AGENT_KEY、只開 找對話／匯入舊紀錄／加備忘／計數／問 AI 驗證，留名「CC（AI 整理）」
   if (req.query?.inboxcc) {
     const ck = (process.env.CC_AGENT_KEY || '').trim()
     if (!ck || String(req.query.inboxcc) !== ck || req.method !== 'POST') return res.status(403).json({ ok: false })
@@ -525,6 +525,8 @@ export default async function handler(req, res) {
     if (b.op === 'find') { const q = String(b.q || ''); return res.status(200).json({ ok: true, list: (await IB.listConvs({ who, mgr: true, cfg })).filter(c => !q || String(c.name || '').includes(q)).slice(0, 10).map(c => ({ id: c.id, name: c.name, acct: c.acct, lastT: c.lastT, memoN: c.memoN })) }) }
     if (b.op === 'import') return res.status(200).json(await IB.importChat({ who, mgr: true, cfg, id: String(b.id || ''), csv: b.csv, dry: !!b.dry }))
     if (b.op === 'count') { const r = await IB.getConv({ who, mgr: true, cfg, id: String(b.id || ''), markRead: false }); const L = (r.list || []); return res.status(200).json({ ok: !!r.ok, n: L.length, imp: L.filter(m => m.imp).length, memos: ((r.conv || {}).memos || []).length, first: (L[0] || {}).t, msgs: b.full ? L.map(m => ({ t: m.t, dir: m.dir, by: m.by, text: m.text, imp: !!m.imp })) : undefined }) }
+    if (b.op === 'ai') return res.status(200).json(await IB.inboxAi({ who, mgr: true, cfg, id: String(b.id || ''), q: b.q, hist: [] })) // v4.71.22 驗證問 AI 讀訂位檔期
+    if (b.op === 'resv') { const tdy = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); const pk = IB.pickDates(String(b.q || ''), tdy); return res.status(200).json({ ok: true, pk, text: await IB.resvBrief(pk) }) }
     if (b.op === 'memo') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'memo', id: String(b.id || ''), value: b.value }))
     return res.status(400).json({ ok: false })
   }
