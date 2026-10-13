@@ -86,7 +86,12 @@ export async function botInfo(a) { return lineApi(a, '/v2/bot/info') }
 export async function webhookInfo(a) { return lineApi(a, '/v2/bot/channel/webhook/endpoint') }
 export async function webhookSet(a, endpoint) { return lineApi(a, '/v2/bot/channel/webhook/endpoint', { method: 'PUT', body: JSON.stringify({ endpoint }) }) }
 export async function webhookTest(a, endpoint) { return lineApi(a, '/v2/bot/channel/webhook/test', { method: 'POST', body: JSON.stringify(endpoint ? { endpoint } : {}) }) }
+const _quotaC = {} // v4.71.11 速度鐵則：額度 60 秒快取（每開一個對話都打兩次 LINE API → 0.3 秒）
 export async function quotaOf(a) {
+  const hit = _quotaC[a.key]; if (hit && Date.now() - hit.t < 60e3) return hit.v
+  const v = await quotaOfRaw(a); _quotaC[a.key] = { t: Date.now(), v }; return v
+}
+async function quotaOfRaw(a) {
   const [q, c] = await Promise.all([lineApi(a, '/v2/bot/message/quota'), lineApi(a, '/v2/bot/message/quota/consumption')])
   return { limit: q.data?.value ?? null, type: q.data?.type || '', used: c.data?.totalUsage ?? null }
 }
@@ -244,18 +249,30 @@ export async function listConvs({ who, mgr, cfg, acct }) {
   vis.sort((x, y) => rank(x) - rank(y) || String(y.lastT || '').localeCompare(String(x.lastT || '')))
   return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
 }
+async function signMany(paths, expiresIn) { // Supabase 批次簽名：一個請求簽多張；失敗退回一張一張
+  const out = {}; if (!paths.length) return out
+  try {
+    const r = await fetch(`${SB_URL}/storage/v1/object/sign/ground-private`, { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn, paths }) })
+    const d = r.ok ? await r.json() : null
+    if (Array.isArray(d)) for (const x of d) if (x && x.path && x.signedURL) out[x.path] = SB_URL + '/storage/v1' + x.signedURL
+  } catch (_) {}
+  const miss = paths.filter(p => !out[p]); if (miss.length) await Promise.all(miss.map(async p => { try { const u = await signedUrl(p, expiresIn); if (u) out[p] = u } catch (_) {} }))
+  return out
+}
 export async function getConv({ who, mgr, cfg, id, markRead }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
   const ck = convKey(acct, uid)
-  const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
-  const rows = await kvLike(`pm_inbox_m_${acct}_${uid}_`, 300, 'id.desc')
+  // v4.71.11 速度鐵則：對話／訊息／額度同時抓；圖片網址一次批次簽（原本一張一個請求、全部排隊 → 0.7~1 秒）
+  const [conv, rows, quotaP] = await Promise.all([kvGet(ck), kvLike(`pm_inbox_m_${acct}_${uid}_`, 300, 'id.desc'), quotaOf(a).catch(() => ({}))])
+  if (!conv) return { ok: false, error: '找不到這個對話' }
   rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
-  const list = await Promise.all(rows.map(async m => { const o = { ...m }; if (m.media) { try { o.url = await signedUrl(m.media, 1800) } catch (_) {} } return o }))
+  const urls = await signMany(rows.filter(m => m.media).map(m => m.media), 1800)
+  const list = rows.map(m => { const o = { ...m }; if (m.media && urls[m.media]) o.url = urls[m.media]; return o })
   if (markRead && conv.unread) { conv.unread = 0; conv.readBy = who.name; conv.readT = nowIso(); await kvSet(ck, conv) }
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
-  const quota = await quotaOf(a)
+  const quota = quotaP
   return { ok: true, conv: { ...conv, replyToken: undefined }, list, replyFree: !!fresh, replyLeft: fresh ? Math.max(0, 50 - Math.round((Date.now() - new Date(conv.replyT).getTime()) / 1000)) : 0, quota, acctName: a.name }
 }
 
