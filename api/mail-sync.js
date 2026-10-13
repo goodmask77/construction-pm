@@ -504,7 +504,7 @@ export default async function handler(req, res) {
     const tm = async (fn) => { const ts = []; let bytes = 0; for (let i = 0; i < 3; i++) { const t0 = Date.now(); const r = await fn(); ts.push(Date.now() - t0); bytes = JSON.stringify(r).length } return { ms: ts, kb: Math.round(bytes / 1024) } }
     const list = await IB.listConvs({ who, mgr: true, cfg })
     const out = { list: { ...(await tm(() => IB.listConvs({ who, mgr: true, cfg }))), n: list.length } }
-    for (const c of list.slice(0, 3)) out['conv_' + c.acct] = await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))
+    for (const c of list.slice(0, 6)) { const r0 = await IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }); const media = (r0.list || []).filter(m => m.media); out['conv_' + c.acct + '_' + String(c.uid || c.id).slice(-4)] = { ...(await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))), img: media.length, imgOk: media.filter(m => m.url).length } }
     if (list[0]) out.cust = await tm(() => IB.inboxCust({ who, mgr: true, cfg, id: (list.find(c => c.acct === 'gd') || list[0]).id }))
     if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
     return res.status(200).json({ ok: true, ...out })
