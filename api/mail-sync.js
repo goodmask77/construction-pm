@@ -1270,7 +1270,9 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.opsboard) !== ok2) return res.status(403).json({ ok: false })
     const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
     const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
-    const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices')])
+    const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2, slotExDoc] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices'), kvGet('sp_finance_pm_pos_slotex')])
+    // 🚫 包場/非常態大單日（張良 2026-10-08／10-10：10/4 包場 76,500 計入總營收、但不進時段平均/熱力圖/每日列/品項平均）：v4.71.7 提早讀，品項明細也用同一份
+    const slotEx = new Set(((slotExDoc || {})[storeQ]) || [])
     const todayAct = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
     const actDoc = (await kvGet('sp_finance_pm_prep_act_'+todayAct.slice(0,7))) || { days:{} } // 實際備料（張良 2026-10-01：每天可填、留紀錄做分析）
     // 排除「盤中未完整日」（張良 2026-09-24 抓包：今天的半天資料 11:00 起混進統計，把當天星期的平均拉低
@@ -1319,8 +1321,12 @@ export default async function handler(req, res) {
     const priceMap2 = ((pricesDoc2 || {})[storeQ]) || {} // 張良手填牌價優先；0=不顯示（與 App 同口徑）
     const items2 = {}; const itemsH2 = {}; const catOrder2 = []; const setByDate = {}
     let n30 = 0, nPrev = 0
-    for (const e of entries) {
-      const inCur = e.date >= from30, inPrev = !inCur && e.date >= from60
+    // v4.71.7（張良 2026-10-13「品項明細要即時」）：今天盤中那筆也跑進來、但只填逐日欄（o.q[今天]），30日均/vs近60/累計/金額照舊只算打烊後正式日結；
+    //   包場日（slotEx）整天跳過＝不佔分母、不出欄（跟每日數據表「不拉平均、隱藏該列」同一口徑）
+    const liveDate9 = liveE9.length ? liveE9[0].date : null
+    for (const e of [...entries, ...liveE9]) {
+      if (slotEx.has(e.date)) continue
+      const inCur = !e.intraday && e.date >= from30, inPrev = !e.intraday && !inCur && e.date >= from60
       if (inCur) n30++; else if (inPrev) nPrev++
       const secs = ((dayDet2(e.date) || {}).sheets || {})['總銷售額 (以類別分類)']
       if (!Array.isArray(secs)) continue
@@ -1347,7 +1353,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    const datesAll = entries.map(e => e.date)
+    const datesAll = [...entries, ...liveE9].filter(e => !slotEx.has(e.date)).map(e => e.date) // v4.71.7 逐日欄＝正式日結＋今天盤中（最右一欄標「盤中」）、包場日不出欄
     const GD_ORDER2 = ['披薩', '漢堡', '越法三明治', '義大利麵', '小點', '湯品', '基礎飲品', '咖啡飲品', '奶香飲品', '檸檬飲品', '甜點']
     const catsAll = [...new Set(Object.values(items2).map(o => o.cat))]
     catsAll.sort((a, b) => { const ia = GD_ORDER2.indexOf(a), ib = GD_ORDER2.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) })
@@ -1356,7 +1362,7 @@ export default async function handler(req, res) {
     const cats2 = catsAll.map(cn => ({
       name: cn,
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
-      items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
+      items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0 || (liveDate9 && o.q[liveDate9] > 0))).sort((a, b) => b.q30 - a.q30) // v4.71.7 今天才第一次賣的新品也列（只有盤中欄有數）
         .map(o => { const ov = priceMap2[o.k] != null ? priceMap2[o.k] : priceMap2[o.n]
           // 售價：手填/灌檔牌價優先；GD 不用金額÷份數估（套餐拆帳會拉低＝張良 2026-09-22 抓包「菜單金額不對」），AB 才估
           const price = ov != null ? (Number(ov) || null) : (isAB2 && o.q30 > 0 && o.amt30 > 0 ? Math.round(o.amt30 / o.q30 / 5) * 5 : null)
@@ -1426,7 +1432,7 @@ export default async function handler(req, res) {
     })
     // 時段平均（近30天，分平日/週末；GD 才有）
     // 🚫 排除包場/非常態大單日（張良 2026-10-08：10/4 包場 76,500 不進時段平均/熱力圖，但仍計入總營收）：清單 sp_finance_pm_pos_slotex.dates
-    const slotEx = new Set(((await kvGet('sp_finance_pm_pos_slotex')) || {})[storeQ] || [])
+    // （slotEx 已在最上面跟 pos 一起讀，品項明細同一份）
     const hourAgg = { wk: {}, we: {} }, hourN = { wk: 0, we: 0 }
     for (const e of w30) {
       if (slotEx.has(e.date)) continue // 包場日不算進時段平均
@@ -1571,10 +1577,14 @@ export default async function handler(req, res) {
       }
       hist = Object.values(byMoH).sort((a, b) => (a.month < b.month ? 1 : -1))
     } catch (_) {}
-    // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
+    // Vercel 邊緣快取（張良 2026-09-21 嫌慢→快取；2026-10-13「確保即時更新」抓包：原本 s-maxage=300＋stale-while-revalidate=1800
+    //   ＝過期後還能再端 30 分鐘舊資料，首頁打開看到 16:53 的數字其實已 17:10）→ 改 60 秒快取＋最多再端 60 秒舊的；前端本來就有本機快取秒開，速度不受影響
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=60')
+    // v4.71.7 資料時間（給畫面顯示「喬亞/Eats365 幾點抓的」，不再拿回應產生時間冒充更新時間）
+    const liveAt = liveE9.length ? (liveE9[0].fetchedAt || null) : null
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor, hist,
+      liveDate: liveDate9, liveAt, // 今天盤中那筆的日期＋抓取時刻（HH:MM 台北）；打烊後正式值接手＝null
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,

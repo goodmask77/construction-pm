@@ -386,9 +386,11 @@ async function posHide(kEnc, hide){
 function itemsRender(){
   const d = window._bd, el = document.getElementById('itemsec')
   if (!d || !el || !d.cats) return
-  const dts = d.dates.map(s=>s.slice(5))
+  // v4.71.7（張良 2026-10-13 品項明細要即時）：最右（最新）一欄若是今天盤中＝表頭標「盤中 HH:MM」、整欄淡紅底；30日均/累計照舊只算打烊後正式值
+  const liveIdx = d.liveDate ? d.dates.indexOf(d.liveDate) : -1
+  const dts = d.dates.map((s,i)=> i===liveIdx ? `<span style="color:#F87171">${s.slice(5)}<br><span style="font-size:10.5px;font-weight:600">盤中${d.liveAt?' '+d.liveAt:''}</span></span>` : s.slice(5))
   const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
-  const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
+  const qCells = q => [...q].map((v,i)=>'<td'+(i===liveIdx?' style="background:rgba(248,113,113,.08);color:#F87171;font-weight:700"':'')+'>'+(v||0)+'</td>').reverse().join('')
   d.cats.forEach(c=>c.items.forEach(o=>{ o.cat = c.name }))
   const sv = o => itmSort.c==='grow' ? (o.grow==='新'?9e9:(o.grow==null||typeof o.grow!=='number'?-9e9:o.grow)) : (o[itmSort.c]!=null?o[itmSort.c]:-9e9)
   const srt = list => [...list].sort((a,b)=>(sv(a)-sv(b))*itmSort.d)
@@ -407,7 +409,7 @@ function itemsRender(){
   const flat = itmView !== 'group'
   const th3 = `<th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('avg30')">30日均${arrow('avg30')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('grow')">vs近60${arrow('grow')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('cum30')">30天累計${arrow('cum30')}</th>`
   const nCols = 2 + (flat?1:0) + 3 + dts.length // 品項+(品類)+%+三欄+日
-  s += `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:var(--soft);z-index:2;text-align:left">品項</th>${flat?'<th>品類</th>':''}<th>%</th>${th3}${dts.map(t2=>'<th>'+t2+'</th>').reverse().join('')}</tr></thead><tbody>`
+  s += `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:var(--soft);z-index:2;text-align:left">品項</th>${flat?'<th>品類</th>':''}<th>%</th>${th3}${dts.map(t2=>'<th style="white-space:nowrap">'+t2+'</th>').reverse().join('')}</tr></thead><tbody>`
   const nameCell = (o,bg) => `<td class="iname" style="position:sticky;left:0;background:${bg};z-index:1${o.hid?';opacity:.5':''}" title="${o.n}">${o.n}${o.price?` <span style="font-size:11.5px;color:var(--muted);font-weight:600">$${o.price}</span>`:''}${itmMng?` <button class="mini" style="padding:1px 7px" onclick="posHide('${encodeURIComponent(o.k)}',${o.hid?0:1})">${o.hid?'恢復':'隱藏'}</button>`:''}</td>`
   const itemRow = o => `<tr style="${o.hid?'opacity:.6':''}">${nameCell(o,o.hid?'#1E242D':'var(--card)')}${flat?`<td><span style="font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:1px 7px;white-space:nowrap">${o.cat||''}</span></td>`:''}<td class="mut">${o.pct!=null?o.pct+'%':'—'}</td><td class="avg">${o.avg30!=null?o.avg30:'—'}</td><td>${growCell(o.grow)}</td><td>${o.cum30!=null?o.cum30:'—'}</td>${o.q?qCells(o.q):`<td colspan="${dts.length}"></td>`}</tr>`
   const hidRow = o => itemRow({ ...o, hid:1, pct:null, avg30:null, grow:null, q:null })
