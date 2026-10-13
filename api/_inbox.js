@@ -91,7 +91,7 @@ export async function quotaOf(a) {
   const hit = _quotaC[a.key]; if (hit && Date.now() - hit.t < 60e3) return hit.v
   const v = await quotaOfRaw(a); _quotaC[a.key] = { t: Date.now(), v }; return v
 }
-async function quotaOfRaw(a) {
+export async function quotaOfRaw(a) {
   const [q, c] = await Promise.all([lineApi(a, '/v2/bot/message/quota'), lineApi(a, '/v2/bot/message/quota/consumption')])
   return { limit: q.data?.value ?? null, type: q.data?.type || '', used: c.data?.totalUsage ?? null }
 }

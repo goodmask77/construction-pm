@@ -505,6 +505,7 @@ export default async function handler(req, res) {
     const list = await IB.listConvs({ who, mgr: true, cfg })
     const out = { list: { ...(await tm(() => IB.listConvs({ who, mgr: true, cfg }))), n: list.length } }
     for (const c of list.slice(0, 3)) out['conv_' + c.acct] = await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))
+    if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
     return res.status(200).json({ ok: true, ...out })
   }
   // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
