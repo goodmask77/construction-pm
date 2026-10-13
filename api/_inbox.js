@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4830' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4831' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -263,7 +263,7 @@ export async function listConvs({ who, mgr, cfg, acct }) {
   const vis = all.filter(c => c && c.acct && canSeeAcct(cfg, who, mgr, c.acct))
   // v4.71.18 一律照最後訊息時間新→舊（張良 2026-10-14「沒有按照時間排序，summer 剛回完還在最下面」；原本先排未讀／狀態，回完變處理中就沉底）
   vis.sort((x, y) => String(y.lastT || '').localeCompare(String(x.lastT || '')))
-  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', cat: c.cat || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
+  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', cat: c.cat || '', memoN: (c.memos || []).length + (c.note ? 1 : 0), bk: c.bk ? { date: c.bk.date, time: c.bk.time, n: c.bk.n, name: c.bk.name, by: c.bk.by, ok: !!c.bk.ok } : null, bkSt: c.bkSt ? { st: c.bkSt.st, pct: c.bkSt.pct, dayN: c.bkSt.dayN, ref: c.bkSt.ref, em: c.bkSt.em, rec: c.bkSt.rec } : null }))
 }
 async function signMany(paths, expiresIn) { // Supabase 批次簽名：一個請求簽多張；失敗退回一張一張
   const out = {}; if (!paths.length) return out
@@ -384,9 +384,14 @@ export async function convOp({ who, mgr, cfg, op, id, value }) {
   else if (op === 'custset') { const v = value && typeof value === 'object' ? value : {}; conv.phone = String(v.phone || '').replace(/[^\d+]/g, '').slice(0, 15); conv.phoneBy = 'man'; conv.email = String(v.email || '').trim().slice(0, 80); conv.company = String(v.company || '').trim().slice(0, 60); conv.tags = (Array.isArray(v.tags) ? v.tags : []).map(x => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 12) }
   else if (op === 'memodel') conv.memos = (conv.memos || []).filter(m => m.id !== String(value))
   else if (op === 'rename') conv.alias = String(value || '').slice(0, 40)
+  else if (op === 'bkset') { // v4.71.23 人工設定／修改／清除確定訂位日期；ok=已用別的名字在 inline 訂好
+    const v = value && typeof value === 'object' ? value : null
+    if (!v || !v.date) { conv.bk = { by: 'man', cleared: true, t: nowIso() }; delete conv.bkSt }
+    else { if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date)) return { ok: false, error: '日期格式不對' }; conv.bk = { date: v.date, time: /^\d{1,2}:\d{2}$/.test(v.time || '') ? v.time : '', n: +v.n || 0, name: String(v.name || (conv.bk || {}).name || '').slice(0, 40), phone: String((conv.bk || {}).phone || ''), ok: !!v.ok, by: 'man', byWho: who.name, t: nowIso() }; conv.bkSt = await bkCheckOne(conv) }
+  }
   else return { ok: false, error: '不認識的操作' }
   await kvSet(ck, conv)
-  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [], cat: conv.cat || '', catBy: conv.catBy || '', phone: conv.phone || '', email: conv.email || '', company: conv.company || '', tags: conv.tags || [] } }
+  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [], bk: conv.bk && conv.bk.date ? conv.bk : null, bkSt: conv.bkSt || null, cat: conv.cat || '', catBy: conv.catBy || '', phone: conv.phone || '', email: conv.email || '', company: conv.company || '', tags: conv.tags || [] } }
 }
 // ── v4.71.20 匯入舊帳號聊天記錄（張良 2026-10-14「這個聊天記錄可以直接匯入目前 app 對話框嗎」）──
 // LINE 官方帳號後台「下載聊天記錄」的 CSV：前 3 行帳號名／時區／下載時間，第 4 行表頭（傳送者類型,傳送者名稱,傳送日期,傳送時間,內容）
@@ -670,6 +675,100 @@ export async function inboxClassify() {
   let n = 0
   for (const c of todo) { const v = map[c.id]; c.aiCatN = (c.aiCatN || 0) + 1; if (v && cats.includes(v)) { c.cat = v; c.catBy = 'ai'; n++ } await kvSet(convKey(c.acct, c.uid), c, '收件匣AI分類') }
   return { ok: true, n, tried: todo.length }
+}
+// ── v4.71.23 確定訂位日期 × inline 有沒有訂（張良 2026-10-14「偵測客人已經確定的訂位日期、inline 訂位了沒，常態顯示讓我不會漏掉」）──
+// conv.bk＝{date,time,n,name,phone,by:'ai'|'man',ok(人工標已訂),t}；conv.bkSt＝{st:'ok'|'maybe'|'none',rec,dayG,dayN,ref,pct,em,at}；conv.bkRem＝{d,h,sent}
+// 提醒（張良 B）：活動前兩週起每天提醒；還沒到兩週但那天 inline 已訂到平常滿位的一半以上（訂不到位的風險）就提早每天提醒；時間每天隨機 12~20 點
+const BK_ACCTS = ['ab'] // inline 只有 A Beach
+const twToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+const bkDays = (d) => Math.round((Date.parse(d + 'T00:00:00Z') - Date.parse(twToday() + 'T00:00:00Z')) / 864e5)
+export async function bkDetect({ limit = 15, force } = {}) {
+  const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
+  const todo = all.filter(c => c && BK_ACCTS.includes(c.acct) && c.lastT && (force || !c.bkChkT || c.lastT > c.bkChkT || (c.memos || []).some(m => m.t > c.bkChkT)) && !bkManLock(c) && (Date.now() - new Date(c.lastT).getTime() < 180 * 864e5)).slice(0, limit)
+  if (!todo.length) return { ok: true, n: 0 }
+  const { aiCall } = await import('./_ai.js'); const today = twToday()
+  const tw = (t) => new Date(new Date(t).getTime() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+  let n = 0
+  const one = async (c) => {
+    const rows = await kvLike(`pm_inbox_m_${c.acct}_${c.uid}_`, 80, 'id.desc'); rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
+    const lines = rows.filter(m => m.text && m.dir !== 'sys').map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : '店家'}：${String(m.text).slice(0, 300)}`).join('\n').slice(-9000)
+    const memos = (c.memos || []).map(m => m.text).join('\n').slice(0, 2000)
+    let j = null
+    try {
+      const r = await aiCall('inbox', { system: `你判斷餐廳客服對話裡「客人已經確定要來的訂位／包場日期」。今天是 ${today}（台灣）。
+只有雙方已經講定（店家答應、客人確認，或已談到訂金／意向書／報價）才算確定；客人只是詢問、比較幾個日期、還在考慮，都不算。
+只回 JSON，不要其他字：{"confirmed":true/false,"date":"YYYY-MM-DD","time":"HH:MM 或空字串","n":人數數字或0,"name":"訂位人或公司名稱","phone":"電話或空字串","why":"一句話理由"}。年份沒寫就推算成今天以後最近的那天。多個確定日期只回最近的未來那個。`, messages: [{ role: 'user', content: `【客人 LINE 名稱】${c.alias || c.name || ''}\n【內部備忘錄】\n${memos || '（無）'}\n【對話】\n${lines || '（無）'}` }], maxTokens: 400, effort: 'low', timeoutMs: 60000 })
+      j = JSON.parse(String(r.text || '').replace(/^[^{]*/, '').replace(/[^}]*$/, ''))
+    } catch (_) { return }
+    const cur = await kvGet(convKey(c.acct, c.uid)); if (!cur || bkManLock(cur)) return // 先重讀再寫：不蓋掉這段時間進來的新訊息／人工設定
+    if (j && j.confirmed && /^\d{4}-\d{2}-\d{2}$/.test(j.date || '')) { cur.bk = { date: j.date, time: /^\d{1,2}:\d{2}$/.test(j.time || '') ? j.time : '', n: +j.n || 0, name: String(j.name || '').slice(0, 40), phone: String(j.phone || '').replace(/[^\d+]/g, '').slice(0, 15), why: String(j.why || '').slice(0, 80), by: 'ai', t: nowIso() }; n++ }
+    else if (cur.bk && (cur.bk.by === 'ai' || cur.bk.cleared)) delete cur.bk
+    cur.bkChkT = nowIso()
+    if (cur.bk) cur.bkSt = await bkCheckOne(cur)
+    else delete cur.bkSt
+    await kvSet(convKey(c.acct, c.uid), cur, '收件匣訂位偵測')
+  }
+  for (let i = 0; i < todo.length; i += 5) await Promise.all(todo.slice(i, i + 5).map(one))
+  return { ok: true, n, tried: todo.length }
+}
+const _bkMo = {} // 同一輪內共用；5 分鐘過期（函式實例會被重複使用，不能一直拿舊資料）
+async function bkMonth(ym) { const h = _bkMo[ym]; if (!h || Date.now() - h.t > 300e3) _bkMo[ym] = { t: Date.now(), p: kvGet('sp_finance_pm_inline_' + ym).then(x => ((x || {}).days) || {}).catch(() => ({})) }; return _bkMo[ym].p }
+let _bkEm = null
+async function bkEm() { if (!_bkEm || Date.now() - _bkEm.t > 300e3) _bkEm = { t: Date.now(), p: kvGet('sp_finance_pm_em').then(x => (x || {}).projects || []).catch(() => []) }; return _bkEm.p }
+const bkManLock = (c) => !!(c.bk && c.bk.by === 'man' && (!c.bk.cleared || String(c.lastT || '') <= String(c.bk.t || ''))) // 人工設過就不讓 AI 改；人工清除後客人又有新訊息才重新判斷
+async function bkRef(date) { // 那個星期幾「平常最滿」的人數：過去 26 週同星期幾的單日訂位人數，去掉有 40 人以上大組的日子（包場會撐爆）取最大
+  const wd = new Date(date + 'T00:00:00Z').getUTCDay(); const today = twToday(); const vals = []
+  for (let k = 1; k <= 26; k++) {
+    const d = new Date(Date.parse(today + 'T00:00:00Z') - k * 7 * 864e5 + (((wd - new Date(today + 'T00:00:00Z').getUTCDay()) + 7) % 7) * 864e5).toISOString().slice(0, 10)
+    if (d >= today) continue
+    const rs = ((await bkMonth(d.slice(0, 7)))[d] || []).filter(r => r.st !== 2 && r.st !== 5)
+    if (!rs.length || rs.some(r => (r.n || 0) >= 40)) continue
+    vals.push(rs.reduce((t, r) => t + (r.n || 0), 0))
+  }
+  return vals.length ? Math.max(...vals) : 0
+}
+export async function bkCheckOne(c) {
+  const b = c.bk || {}; if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date || '')) return null
+  const rs = ((await bkMonth(b.date.slice(0, 7)))[b.date] || []).filter(r => r.st !== 2 && r.st !== 5)
+  const pk = phoneKey(b.phone || c.phone || ''), toks = [b.name, c.alias, c.name, c.company].flatMap(x => String(x || '').split(/[\s、,，/()（）<>]+/)).map(x => x.replace(/(小姐|先生|女士|老師)$/, '').trim()).filter(x => x.length >= 2)
+  let rec = null, st = 'none'
+  for (const r of rs) {
+    const rn = String(r.name || '')
+    if ((pk.length === 9 && phoneKey(r.phone) === pk) || toks.some(t => rn.includes(t) || (rn.length >= 2 && t.includes(rn)))) { rec = r; st = 'ok'; break }
+  }
+  if (!rec && b.n >= 15) { const m = rs.find(r => (r.n || 0) >= 15 && Math.abs((r.n || 0) - b.n) <= Math.max(5, b.n * 0.25)); if (m) { rec = m; st = 'maybe' } }
+  if (b.ok) st = 'ok'
+  const em = (await bkEm()).find(p => p.date === b.date && !/取消|流失|作廢/.test(p.status || '') && toks.some(t => String(p.cust || '').includes(t) || String(p.title || '').includes(t)))
+  const dayN = rs.reduce((t, r) => t + (r.n || 0), 0), ref = await bkRef(b.date)
+  return { st, rec: rec ? { t: rec.t || '', name: rec.name || '', n: rec.n || 0 } : null, dayG: rs.length, dayN, ref, pct: ref ? Math.round(dayN / ref * 100) : null, em: em ? (em.title || em.code) : '', manual: !!b.ok, at: nowIso() }
+}
+export async function bkWatch({ test, dry } = {}) { // dry：只回要發的內容，不發不存（驗證用）
+  if (dry) test = true // 每小時：重算所有未來訂位的 inline 狀態＋到點發提醒
+  const cfg = await loadCfg(); const warn = +cfg.bkWarnPct || 50
+  const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc'); const today = twToday(); const hTw = new Date(Date.now() + 8 * 3600e3).getUTCHours()
+  const due = []; let n = 0
+  for (const c of all) {
+    if (!c || !c.bk || !BK_ACCTS.includes(c.acct) || !c.bk.date || c.bk.date < today) continue
+    const st = await bkCheckOne(c); const left = bkDays(c.bk.date)
+    const cur = await kvGet(convKey(c.acct, c.uid)); if (!cur || !cur.bk || cur.bk.date !== c.bk.date) continue
+    cur.bkSt = st; n++
+    const risky = st && st.st === 'none' && (left <= 14 || (st.pct != null && st.pct >= warn))
+    if (risky) {
+      const r = cur.bkRem && cur.bkRem.d === today ? cur.bkRem : { d: today, h: 12 + Math.floor(Math.random() * 9), sent: false } // 每天換一個時間（張良：時間不要固定，免得習慣性忽略）
+      if (test || (!r.sent && hTw >= r.h)) { due.push({ c: cur, st, left }); if (!test) r.sent = true }
+      cur.bkRem = r
+    }
+    if (!test) await kvSet(convKey(c.acct, c.uid), cur, '收件匣訂位檢查')
+  }
+  if (due.length) {
+    due.sort((x, y) => x.left - y.left)
+    const wd = (d) => '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+    const txt = `📅 ${test ? '【測試】' : ''}inline 還沒訂位 ${due.length} 位\n` + due.map(({ c, st, left }) => `・${c.alias || c.bk.name || c.name} ${c.bk.date.slice(5).replace('-', '/')}(${wd(c.bk.date)})${c.bk.n ? ' ' + c.bk.n + '人' : ''}｜${left === 0 ? '就是今天' : '還有 ' + left + ' 天'}${st.pct != null ? `｜那天已訂 ${st.dayN} 人（平常最滿 ${st.ref}，${st.pct}%）` : ''}${st.pct != null && st.pct >= warn ? ' ⚠️ 快滿了' : ''}`).join('\n') + '\n→ https://ground-pm.vercel.app/prep#inbox'
+    if (dry) return { ok: true, dry: true, text: txt, n: due.length }
+    const { names } = test ? { names: ['張良瑋'] } : await permRids('ab', true)
+    try { const ros = await kvGet('sp_crew_kb_roster'); for (const nm of names) { const p = ((ros || {}).people || []).find(x => x.name === nm && x.lineUserId); if (p) await linePush(p.lineUserId, txt) } } catch (_) {}
+  }
+  return { ok: true, checked: n, reminded: due.length }
 }
 // ── v4.71.12 客戶資料側欄：會員（LINE 帳號直接對）＋ inline 訂位（電話後 9 碼）＋ EM 包場案件（名字）──
 export async function inboxCust({ who, mgr, cfg, id }) {

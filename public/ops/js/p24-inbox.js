@@ -139,11 +139,11 @@ function ibRenderList() {
       <div style="flex:1;min-width:0">
         <div class="l1"><b>${c.star ? `<span style="color:#f59e0b;vertical-align:-2px;margin-right:3px" title="特別注意">${IB_ICON.star.replace('fill="none"', 'fill="currentColor"')}</span>` : ''}${ibEsc(c.alias || c.name || '客人')}</b><span class="hint" style="font-size:11px;flex:none">${c.lastT ? ibT(c.lastT) : ''}</span></div>
         <div class="l2"><span class="t">${c.last ? ibEsc((c.last.dir === 'out' ? '↩ ' : '') + c.last.text) : ''}</span>${c.unread ? `<span class="un">${c.unread}</span>` : ''}</div>
-        <div class="l3">${c.unread && _ibCur !== c.id ? `<span style="background:#dc2626;color:#fff;border-radius:6px;padding:0 7px;font-weight:800;font-size:12px">新訊息 ${c.unread}</span>` : ''}${ibStBadge(c.status)}${ibCatTag(c.cat, c.catBy || 'man')}${c.status === 'wait' && c.waitUntil ? `<span class="who" style="color:#a78bfa;font-weight:700">${c.waitUntil.slice(5).replace('-', '/')} 再回</span>` : ''}${c.memoN ? `<span class="who">備忘 ${c.memoN}</span>` : ''}<span class="acct"><i style="background:${a.color}"></i>${ibEsc(a.name)}</span>${c.assignee ? `<span class="who">${ibEsc(c.assignee)}</span>` : ''}${c.follow === false ? '<span class="who">已封鎖</span>' : ''}</div>
+        <div class="l3">${c.unread && _ibCur !== c.id ? `<span style="background:#dc2626;color:#fff;border-radius:6px;padding:0 7px;font-weight:800;font-size:12px">新訊息 ${c.unread}</span>` : ''}${ibStBadge(c.status)}${ibCatTag(c.cat, c.catBy || 'man')}${ibBkTag(c)}${c.status === 'wait' && c.waitUntil ? `<span class="who" style="color:#a78bfa;font-weight:700">${c.waitUntil.slice(5).replace('-', '/')} 再回</span>` : ''}${c.memoN ? `<span class="who">備忘 ${c.memoN}</span>` : ''}<span class="acct"><i style="background:${a.color}"></i>${ibEsc(a.name)}</span>${c.assignee ? `<span class="who">${ibEsc(c.assignee)}</span>` : ''}${c.follow === false ? '<span class="who">已封鎖</span>' : ''}</div>
       </div></div>` }
   const notCfg = (d.accounts || []).filter(a => !a.configured)
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)"><b style="font-size:16px;flex:1">收件匣</b>${d.me && d.me.mgr ? `<button class="mini" style="padding:6px 8px" title="收件匣設定：帳號連線／權限／範本" onclick="ibSettings()">${IB_ICON.gear}</button>` : ''}</div>
-    <div style="display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)">${acctSeg}${stSeg}${catSeg}</div>
+    ${ibBkBanner(d.convs || [])}<div style="display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)">${acctSeg}${stSeg}${catSeg}</div>
     ${convs.length ? convs.map(row).join('') : `<div class="hint" style="padding:22px 14px;text-align:center;font-size:13.5px">${(d.accounts || []).length === 0 ? '你沒有任何官方帳號的收件匣權限，請主管在設定裡加你。' : notCfg.length === (d.accounts || []).length ? '官方帳號還沒接上。主管按右上齒輪看要怎麼接。' : _ibFilter === 'todo' ? '沒有待處理的對話' : _ibFilter === 'done' ? '沒有已完成的對話' : '還沒有對話'}</div>`}`
   const tb = document.getElementById('tab-inbox'); if (tb) { const n = ibUnreadTotal(); let bd = tb.querySelector('.chBadge'); if (n) { if (!bd) { bd = document.createElement('span'); bd.className = 'chBadge'; bd.style.cssText = 'background:#2563eb;color:#fff;border-radius:999px;font-size:11px;padding:0 6px;margin-left:6px;line-height:16px;display:inline-block'; tb.appendChild(bd) } bd.textContent = n } else if (bd) bd.remove() }
 }
@@ -160,7 +160,7 @@ function ibRenderPane() {
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       ${mobile ? `<button class="mini" style="padding:6px 8px" onclick="ibBack()">${IB_ICON.back}</button>` : ''}
       <div style="flex:1;min-width:140px"><b style="font-size:16px">${ibEsc(cv.alias || cv.name || '客人')}</b> ${ibTag(cv.acct)}<div class="hint" style="font-size:12px">${cv.alias && cv.name ? 'LINE 名稱：' + ibEsc(cv.name) + ' · ' : ''}${cv.follow === false ? '已封鎖官方帳號 · ' : ''}<span id="ibQuota"></span><span id="ibMember"></span></div></div>
-      <span id="ibStBtns" style="display:flex;gap:4px">${ibStBtns(cv.status)}</span>
+      ${ibAcct(cv.acct) && cv.acct === 'ab' ? ibBkChip(cv) : ''}<span id="ibStBtns" style="display:flex;gap:4px">${ibStBtns(cv.status)}</span>
       <select id="ibAssign" class="mini" style="padding:5px 8px;font-size:12.5px;max-width:120px" onchange="ibOp('assign',this.value)" title="負責人"><option value="">未指派</option>${people.map(p => `<option${cv.assignee === p ? ' selected' : ''}>${ibEsc(p)}</option>`).join('')}</select>
       <select class="mini" style="padding:5px 6px;font-size:12.5px;max-width:110px;${cv.cat ? `border-color:${ibCatCol(cv.cat)};color:${ibCatCol(cv.cat)};font-weight:700` : ''}" onchange="ibOp('cat',this.value)" title="對話分類${cv.catBy === 'ai' ? '（AI 猜的，可以改）' : cv.catBy === 'kw' ? '（關鍵字猜的，可以改）' : ''}"><option value="">分類…</option>${((_ibD && _ibD.cats) || []).map(c => `<option${cv.cat === c ? ' selected' : ''}>${ibEsc(c)}</option>`).join('')}</select>
       <button class="mini" style="padding:5px 8px;font-size:12.5px;display:flex;gap:4px;align-items:center;${_ibSideTab === 'cust' ? 'background:#16a34a;border-color:#16a34a;color:#fff' : ''}" onclick="ibSide('cust')" title="客戶資料：會員、inline 訂位紀錄、包場案件、聯絡方式">${IB_ICON.user} 客戶</button>
@@ -273,7 +273,7 @@ function ibApplyConv(c) { // 回覆後對話狀態變了→表頭的下拉與清
   if (!c) return
   if (_ibConv) { _ibConv.status = c.status; _ibConv.assignee = c.assignee; for (const k of ['star', 'waitUntil', 'memos', 'cat', 'catBy', 'phone', 'email', 'company', 'tags']) if (k in c) _ibConv[k] = c[k] }
   const sb = document.getElementById('ibStBtns'); if (sb) sb.innerHTML = ibStBtns(c.status || 'new'); const as = document.getElementById('ibAssign'); if (as) as.value = c.assignee || ''
-  const r = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (r) { r.status = c.status; r.assignee = c.assignee; if ('star' in c) r.star = c.star; if ('waitUntil' in c) r.waitUntil = c.waitUntil; if ('cat' in c) { r.cat = c.cat; r.catBy = c.catBy }; if ('memos' in c) r.memoN = (c.memos || []).length + (c.note ? 1 : 0) }
+  const r = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (r) { r.status = c.status; r.assignee = c.assignee; if ('star' in c) r.star = c.star; if ('waitUntil' in c) r.waitUntil = c.waitUntil; if ('cat' in c) { r.cat = c.cat; r.catBy = c.catBy }; if ('memos' in c) r.memoN = (c.memos || []).length + (c.note ? 1 : 0); if ('bk' in c) { r.bk = c.bk; r.bkSt = c.bkSt } }
 }
 function ibPaste(ev) {
   const files = [...((ev.clipboardData || {}).files || [])]
@@ -532,4 +532,58 @@ async function ibCustSave() {
   const d = await ibPost({ op: 'custset', id: _ibCur, value })
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   if (_ibConv) Object.assign(_ibConv, d.conv); libToast('已儲存'); ibCustLoad()
+}
+
+// ── v4.71.23 確定訂位日期 × inline 有沒有訂（張良 2026-10-14「常態顯示在一個地方讓我不會漏掉忘記訂位」）──
+const ibToday = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+const ibLeft = (d) => Math.round((Date.parse(d + 'T00:00:00') - Date.parse(ibToday() + 'T00:00:00')) / 864e5)
+const ibWd = (d) => '日一二三四五六'[new Date(d + 'T00:00:00').getDay()]
+const ibBkMiss = (c) => c.bk && c.bk.date && c.bk.date >= ibToday() && (!c.bkSt || c.bkSt.st === 'none')
+function ibBkTag(c) {
+  if (!c.bk || !c.bk.date || c.bk.date < ibToday()) return ''
+  const st = (c.bkSt || {}).st, md = c.bk.date.slice(5).replace('-', '/')
+  if (st === 'ok') return `<span class="who" style="color:#16a34a;font-weight:700" title="inline 已有這筆訂位">inline ✓ ${md}</span>`
+  if (st === 'maybe') return `<span class="who" style="color:#d97706;font-weight:700" title="inline 那天有人數相近的訂位，可能就是他，請點開確認">可能已訂 ${md}</span>`
+  return `<span class="who" style="color:#fff;background:#dc2626;border-radius:6px;padding:0 6px;font-weight:700" title="日期已確定，inline 還沒訂位">未訂位 ${md}</span>`
+}
+function ibBkBanner(convs) {
+  const miss = convs.filter(ibBkMiss); if (!miss.length) return ''
+  const soon = miss.filter(c => ibLeft(c.bk.date) <= 14 || ((c.bkSt || {}).pct || 0) >= 50).length
+  return `<div onclick="ibBkList()" style="cursor:pointer;margin:8px 10px 0;padding:9px 12px;border-radius:10px;background:#dc262622;border:1.5px solid #dc2626;color:#fca5a5;font-weight:700;font-size:14px;display:flex;gap:8px;align-items:center">⚠ ${miss.length} 位客人日期已確定、inline 還沒訂位${soon ? `<span style="background:#dc2626;color:#fff;border-radius:999px;padding:0 8px;font-size:12px">${soon} 位要快訂</span>` : ''}<span style="flex:1"></span><span style="font-size:12.5px;font-weight:400">看名單 ›</span></div>`
+}
+function ibBkList() {
+  const all = ((_ibD && _ibD.convs) || []).filter(c => c.bk && c.bk.date && c.bk.date >= ibToday()).sort((x, y) => (ibBkMiss(y) - ibBkMiss(x)) || x.bk.date.localeCompare(y.bk.date))
+  const line = (c) => { const s = c.bkSt || {}, miss = ibBkMiss(c), left = ibLeft(c.bk.date)
+    return `<div style="display:flex;gap:10px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0"><b>${ibEsc(c.alias || c.bk.name || c.name || '客人')}</b> ${ibBkTag(c)}<div class="hint" style="font-size:12.5px;margin-top:2px">${c.bk.date.slice(5).replace('-', '/')}（${ibWd(c.bk.date)}）${c.bk.time ? ' ' + ibEsc(c.bk.time) : ''}${c.bk.n ? ' · ' + c.bk.n + ' 人' : ''} · ${left === 0 ? '今天' : '還有 ' + left + ' 天'}${s.pct != null ? ` · 那天已訂 ${s.dayN} 人（平常最滿 ${s.ref}，<b style="color:${s.pct >= 50 ? '#f87171' : 'inherit'}">${s.pct}%</b>）` : ''}${s.em ? ' · 包場案件：' + ibEsc(s.em) : ''}${s.rec ? ` · inline：${ibEsc(s.rec.name)} ${s.rec.n} 人 ${ibEsc(s.rec.t)}` : ''}</div></div>
+      <button class="mini" style="padding:6px 10px;flex:none" onclick="document.getElementById('ibOv').remove();ibOpen('${ibEsc(c.id)}')">開對話</button></div>` }
+  ibModal(`<b style="font-size:16px">確定日期 × inline 訂位</b><div class="hint" style="font-size:12.5px;margin:4px 0 8px">AI 每小時讀對話找「雙方講定」的日期，再去 inline 對同一天有沒有這位客人（電話／名字／人數）。inline 一訂好，下一輪就自動變綠。活動前兩週起、或那天快訂滿時，每天私訊提醒你（時間不固定）。</div>
+    <div style="max-height:60vh;overflow:auto">${all.length ? all.map(line).join('') : '<div class="hint" style="padding:16px;text-align:center">目前沒有偵測到確定日期的客人</div>'}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="mini" onclick="document.getElementById('ibOv').remove()">關閉</button></div>`)
+}
+function ibBkChip(cv) {
+  const b = cv.bk && cv.bk.date ? cv.bk : null
+  if (!b) return `<button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="ibBkEdit()" title="客人確定的訂位日期（AI 每小時自動偵測，也可以自己填）">訂位日期</button>`
+  const st = (cv.bkSt || {}).st, col = st === 'ok' ? '#16a34a' : st === 'maybe' ? '#d97706' : '#dc2626'
+  return `<button class="mini" style="padding:5px 8px;font-size:12.5px;border-color:${col};color:${col};font-weight:700" onclick="ibBkEdit()" title="${b.by === 'ai' ? 'AI 判斷的確定日期（可改）' + (b.why ? '：' + ibEsc(b.why) : '') : '人工設定的確定日期'}">${b.date.slice(5).replace('-', '/')}${b.n ? ' ' + b.n + '人' : ''} · ${st === 'ok' ? 'inline ✓' : st === 'maybe' ? '可能已訂' : '未訂位'}${b.by === 'ai' ? ' <span style="font-weight:400;opacity:.8">AI</span>' : ''}</button>`
+}
+function ibBkEdit() {
+  const cv = _ibConv || {}, b = (cv.bk && cv.bk.date) ? cv.bk : {}, s = cv.bkSt || {}
+  ibModal(`<b style="font-size:16px">確定的訂位日期</b><div class="hint" style="font-size:12.5px;margin-top:4px">${b.by === 'ai' ? 'AI 從對話判斷的' + (b.why ? '：' + ibEsc(b.why) : '') + '。改了之後 AI 就不會再動它。' : b.date ? '你設定的。' : 'AI 每小時會自動找；也可以自己填。'}</div>
+    ${b.date ? `<div style="margin-top:10px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);font-size:13.5px;line-height:1.6">inline：${s.st === 'ok' ? `<b style="color:#16a34a">已訂</b>${s.rec ? `（${ibEsc(s.rec.name)} ${s.rec.n} 人 ${ibEsc(s.rec.t)}）` : s.manual ? '（你標的）' : ''}` : s.st === 'maybe' ? `<b style="color:#d97706">可能已訂</b>（${ibEsc((s.rec || {}).name || '')} ${(s.rec || {}).n || ''} 人，人數相近）` : '<b style="color:#dc2626">還沒訂位</b>'}${s.pct != null ? `<br>那天 inline 已訂 ${s.dayN} 人，平常最滿約 ${s.ref} 人（${s.pct}%）` : ''}${s.em ? '<br>包場案件：' + ibEsc(s.em) : ''}</div>` : ''}
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;margin-top:12px;font-size:14px">
+      日期<input id="ibBkD" type="date" value="${b.date || ''}" style="border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--card);color:inherit">
+      時間<input id="ibBkT" type="time" value="${b.time || ''}" style="border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--card);color:inherit">
+      人數<input id="ibBkN" type="number" min="0" value="${b.n || ''}" style="border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--card);color:inherit">
+      名稱<input id="ibBkNm" value="${ibEsc(b.name || '')}" placeholder="inline 訂位上的名字／公司" style="border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--card);color:inherit">
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:10px;font-size:13.5px"><input id="ibBkOk" type="checkbox" ${b.ok ? 'checked' : ''}> inline 已經訂好了（用別的名字訂，系統對不到）</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">${b.date ? '<button class="mini" onclick="ibBkSave(1)">清除（不是確定日期）</button><span style="flex:1"></span>' : ''}<button class="mini" onclick="document.getElementById('ibOv').remove()">取消</button><button class="mini on" onclick="ibBkSave()">存</button></div>`)
+}
+async function ibBkSave(clear) {
+  const g = (id) => ((document.getElementById(id) || {}).value || '').trim()
+  const v = clear ? null : { date: g('ibBkD'), time: g('ibBkT'), n: +g('ibBkN') || 0, name: g('ibBkNm'), ok: !!(document.getElementById('ibBkOk') || {}).checked }
+  if (!clear && !v.date) { libToast('請選日期', true); return }
+  document.getElementById('ibOv').remove()
+  await ibOp('bkset', v)
 }

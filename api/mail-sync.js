@@ -522,11 +522,14 @@ export default async function handler(req, res) {
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const IB = await import('./_inbox.js'); const cfg = await IB.loadCfg(); const who = { name: 'CC（AI 整理）' }
     res.setHeader('Cache-Control', 'private, no-store')
-    if (b.op === 'find') { const q = String(b.q || ''); return res.status(200).json({ ok: true, list: (await IB.listConvs({ who, mgr: true, cfg })).filter(c => !q || String(c.name || '').includes(q)).slice(0, 10).map(c => ({ id: c.id, name: c.name, acct: c.acct, lastT: c.lastT, memoN: c.memoN })) }) }
+    if (b.op === 'find') { const q = String(b.q || ''); return res.status(200).json({ ok: true, list: (await IB.listConvs({ who, mgr: true, cfg })).filter(c => !q || String(c.name || '').includes(q)).filter(c => !b.acct || c.acct === b.acct).slice(0, +b.n || 10).map(c => ({ id: c.id, name: c.name, acct: c.acct, lastT: c.lastT, memoN: c.memoN, cat: c.cat, bk: c.bk, bkSt: c.bkSt })) }) }
     if (b.op === 'import') return res.status(200).json(await IB.importChat({ who, mgr: true, cfg, id: String(b.id || ''), csv: b.csv, dry: !!b.dry }))
     if (b.op === 'count') { const r = await IB.getConv({ who, mgr: true, cfg, id: String(b.id || ''), markRead: false }); const L = (r.list || []); return res.status(200).json({ ok: !!r.ok, n: L.length, imp: L.filter(m => m.imp).length, memos: ((r.conv || {}).memos || []).length, first: (L[0] || {}).t, msgs: b.full ? L.map(m => ({ t: m.t, dir: m.dir, by: m.by, text: m.text, imp: !!m.imp })) : undefined }) }
     if (b.op === 'ai') return res.status(200).json(await IB.inboxAi({ who, mgr: true, cfg, id: String(b.id || ''), q: b.q, hist: [] })) // v4.71.22 驗證問 AI 讀訂位檔期
     if (b.op === 'resv') { const tdy = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); const pk = IB.pickDates(String(b.q || ''), tdy); return res.status(200).json({ ok: true, pk, text: await IB.resvBrief(pk) }) }
+    if (b.op === 'bkdetect') return res.status(200).json(await IB.bkDetect({ limit: Math.min(60, +b.limit || 15), force: !!b.force })) // v4.71.23 驗證訂位偵測
+    if (b.op === 'bkwatch') return res.status(200).json(await IB.bkWatch({ dry: true }))
+    if (b.op === 'bkset') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'bkset', id: String(b.id || ''), value: b.value }))
     if (b.op === 'memo') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'memo', id: String(b.id || ''), value: b.value }))
     return res.status(400).json({ ok: false })
   }
@@ -4765,7 +4768,7 @@ export default async function handler(req, res) {
       if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
       if (opI === 'import') return res.status(200).json(await IB.importChat({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), csv: bodyI.csv, dry: !!bodyI.dry })) // v4.71.20 匯入舊帳號聊天記錄 CSV
       if (opI === 'cust') return res.status(200).json(await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
-      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
+      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset', 'bkset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
       if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })
