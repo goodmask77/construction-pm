@@ -45,6 +45,26 @@ function mobilePreview(){
 }
 // 🔄 通用「更新」（v4.70.0 張良 2026-10-08「熱力圖/營收 GD AB 都要有更新按鈕＋固定時間即時更新」）：
 // GD 先叫喬亞抓一次盤中、AB 直接重載最新 KV；營收表＋熱力圖共用同一包資料，一按全部一起刷新
+// v4.71.7 畫面上的「更新時間」＝資料真正抓取的時刻：盤中＝後端 liveAt（喬亞/Eats365 抓的 HH:MM）；打烊後沒有盤中筆＝回應時間（當天已是正式值）
+function dataTime(d){
+  if (d && d.liveAt) return String(d.liveAt)
+  try { return new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){ return '' }
+}
+// 喬亞盤中「漏更新」保險：GD 營業時段（11:00-19:30）若 liveAt 超過 12 分鐘沒動（排程每 15 分該有新值）→ 自動叫一次 manual 補抓再重載；10 分鐘內只補一次、伺服器另有 3 分鐘冷卻
+async function liveKick(d, store){
+  try {
+    if (store !== 'ground' || !d || !d.liveAt) return false
+    const tp = new Date(Date.now() + 8*3600e3)
+    const nowM = tp.getUTCHours()*60 + tp.getUTCMinutes()
+    if (nowM < 11*60 || nowM > 19*60+30) return false
+    const [hh, mm] = String(d.liveAt).split(':').map(Number)
+    if (isNaN(hh) || nowM - (hh*60+mm) < 12) return false
+    if (window._liveKickAt && Date.now() - window._liveKickAt < 600000) return false
+    window._liveKickAt = Date.now()
+    await fetch('/api/joya-intraday?manual=1&r=' + Date.now())
+    return true
+  } catch(e){ return false }
+}
 async function boardFresh(store){
   store = store || curStore || lastStore
   document.querySelectorAll('.boardFreshBtn').forEach(b => { b.disabled = true; b.dataset.bak = b.innerHTML; b.textContent = '抓取中…' })
@@ -144,7 +164,12 @@ async function load(store, fresh){
   curStore = store
   setTabs(store)
   // ⏱ 固定時間即時更新（v4.70.0 張良「熱力圖也要跟著即時更新」）：停在 GD/AB 首頁、分頁可見時每 5 分鐘背景重載＝營收表＋熱力圖一起換最新；自動刷不打喬亞 POS（省叫貨），要現抓按更新鈕
-  if (!window._boardTimer) window._boardTimer = setInterval(() => { if ((curStore === 'ground' || curStore === 'abeach') && !document.hidden) load(curStore, true) }, 300000)
+  // v4.71.7（張良 2026-10-13「營業數據/銷售數據/熱力圖確保即時更新」）：①銷售數據分頁（品項明細）也每 5 分自動重載 ②GD 盤中若喬亞資料超過 12 分鐘沒更新（排程漏跑）→自動補抓一次（伺服器 3 分鐘冷卻護著）
+  if (!window._boardTimer) window._boardTimer = setInterval(() => {
+    if (document.hidden) return
+    if (curStore === 'ground' || curStore === 'abeach') load(curStore, true)
+    else if (curStore === 'prep') prepPage(true)
+  }, 300000)
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
   // ⚡ 快取先上（打開秒出畫面）、背景抓最新無感刷新（張良 2026-09-21：讀取太慢）
   const ck = 'obc_' + store
@@ -159,6 +184,8 @@ async function load(store, fresh){
   try { localStorage.setItem(ck, JSON.stringify(d)) } catch(e){}
   if (curStore !== store) return // 使用者已切到別店，別把畫面蓋回來
   renderBoard(d, store)
+  // v4.71.7 喬亞盤中漏更新保險：資料太舊就自動補抓一次再重載（見 liveKick）
+  if (await liveKick(d, store)) { if (curStore === store) load(store, true) }
 }
 function dayPer(k){ window._dayPeriod = k; if (window._bd) renderBoard(window._bd, window._bd.store || lastStore) } // 每日數據期間切換（v4.30.0）
 function histYrs(){ dayPer('hist') } // v4.37.8 歷史資料＝自己是一個檢視（歷年年度總表＋舊年份鈕；今年鈕取消選取）
@@ -299,7 +326,7 @@ function renderBoard(d, store, view){
                  : `<button class="mini" style="padding:6px 0;text-align:center;opacity:.3;cursor:default">${i2+1}月</button>`
     }).join('') + `</div>`
   }
-  h += `<section><h2 style="display:flex;align-items:baseline;gap:8px">每日數據 ${(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}const anc9=d.anchor?String(d.anchor).slice(5).replace('-','/'):'—';return isGD?`<button class="boardFreshBtn mini" id="pfBtn" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="最新日結・按一下現抓最新" onclick="boardFresh('ground')">日結 ${anc9}・🔄 ${t9}</button>`:`<button class="boardFreshBtn mini" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="按一下抓最新（每5分鐘也會自動更新）" onclick="boardFresh('abeach')">日結 ${anc9}${t9?`・${t9}`:''}・🔄 更新</button>`})()}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  h += `<section><h2 style="display:flex;align-items:baseline;gap:8px">每日數據 ${(()=>{let t9=dataTime(d);const anc9=d.anchor?String(d.anchor).slice(5).replace('-','/'):'—';return isGD?`<button class="boardFreshBtn mini" id="pfBtn" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="最新日結・按一下現抓最新" onclick="boardFresh('ground')">日結 ${anc9}・🔄 ${t9}</button>`:`<button class="boardFreshBtn mini" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="按一下抓最新（每5分鐘也會自動更新）" onclick="boardFresh('abeach')">日結 ${anc9}${t9?`・${t9}`:''}・🔄 更新</button>`})()}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
   const avBg = 'background:var(--psoft);font-weight:800;color:var(--pdark)'
   // 總計列（張良：平均上面放總數+總天數）
   const sm = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0) : null }
@@ -374,7 +401,7 @@ function renderBoard(d, store, view){
       const canEd = (typeof canTab === 'function') ? canTab('board') : true
       const hrsVis = hrs.filter(hr => (heatEditOn && canEd) || !hid.has(hr)) // 編輯模式才連隱藏的時段一起列出（可恢復）；一般檢視只看沒被藏的
       const hidArr = [...hid].sort((a,b)=>a-b)
-      let heatT = ''; try { heatT = new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){}
+      const heatT = dataTime(d) // v4.71.7 顯示真正抓資料的時刻（盤中＝喬亞/Eats365 抓取時間），不是回應產生時間
       let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖`
       hh += canEd ? `<button class="mini${heatEditOn?' on':''}" style="margin-left:auto;font-weight:600;font-size:11px;padding:3px 9px" onclick="heatEdit()">${heatEditOn?'✓ 完成':'編輯時段'}</button>` : ''
       hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
@@ -488,7 +515,8 @@ async function prepPage(fresh){ // 備料分頁入口：跟首頁同一包 opsbo
   try { const c = localStorage.getItem(ck); if (c) { renderBoard(JSON.parse(c), store, 'prep'); had = true } } catch(_){}
   if (!had) app.innerHTML = '<section>載入中…</section>'
   let d
-  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + (fresh ? '&r=' + Date.now() : '')); d = await r.json() } catch(_){}
+  // v4.71.7 銷售數據（品項明細）一律繞過邊緣快取拿最新（本機快取已秒開畫面，不差這一趟）
+  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + '&r=' + Date.now()); d = await r.json() } catch(_){}
   if (d && d.prepAct) window._prepAct = d.prepAct
   if (d && d.prepS86) window._prepS86 = d.prepS86
   if (!d || !d.ok) { if (!had) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題）</div>'; return }

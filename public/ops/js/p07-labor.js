@@ -386,7 +386,9 @@ async function posHide(kEnc, hide){
 function itemsRender(){
   const d = window._bd, el = document.getElementById('itemsec')
   if (!d || !el || !d.cats) return
-  const dts = d.dates.map(s=>s.slice(5))
+  // v4.71.7（張良 2026-10-13 品項明細要即時）：最右（最新）一欄若是今天盤中＝表頭標「盤中 HH:MM」、整欄淡紅底；30日均/累計照舊只算打烊後正式值
+  const liveIdx = d.liveDate ? d.dates.indexOf(d.liveDate) : -1
+  const dts = d.dates.map(s=>s.slice(5)) // 張良 2026-10-13「不要再顯示盤中，顯示最新更新時間即可」→ 今天欄跟其他天一樣，只在標題列寫更新時間
   const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
   const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
   d.cats.forEach(c=>c.items.forEach(o=>{ o.cat = c.name }))
@@ -398,7 +400,7 @@ function itemsRender(){
   const chip = (lb,v) => `<button class="mini${itmView===v?' on':''}" style="padding:5px 12px" onclick="itmSetView('${v}')">${lb}</button>`
   // 依品類分組／全部＝相連切換膠囊（張良 2026-09-22 指定「兩個匡一起做切換的感覺」）
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${itmView===v?'background:var(--primary);color:#fff':'background:var(--card);color:var(--primary)'}" onclick="itmSetView('${v}')">${lb}</button>`
-  let s = `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數；名字旁 $＝售價（老闆手填優先）；%＝30天金額佔比；點欄頭排序</span></h2>
+  let s = `<section><h2>品項明細 <span class="hint" style="margin-right:6px">最新更新 ${(typeof dataTime==='function'?dataTime(d):'')||'—'}</span><span class="hint">30日均＝近30天每營業日平均份數；名字旁 $＝售價（老闆手填優先）；%＝30天金額佔比；點欄頭排序</span></h2>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('依品類分組','group')}${seg('全部','all')}</span>${catNames.map(cn=>chip(cn,cn)).join('')}
     <button class="mini${itmMng?' on':''}" style="padding:5px 12px;margin-left:auto" onclick="itmMngTog()">🙈 隱藏管理${hid.length?`（${hid.length}）`:''}</button>
@@ -407,7 +409,7 @@ function itemsRender(){
   const flat = itmView !== 'group'
   const th3 = `<th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('avg30')">30日均${arrow('avg30')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('grow')">vs近60${arrow('grow')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('cum30')">30天累計${arrow('cum30')}</th>`
   const nCols = 2 + (flat?1:0) + 3 + dts.length // 品項+(品類)+%+三欄+日
-  s += `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:var(--soft);z-index:2;text-align:left">品項</th>${flat?'<th>品類</th>':''}<th>%</th>${th3}${dts.map(t2=>'<th>'+t2+'</th>').reverse().join('')}</tr></thead><tbody>`
+  s += `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:var(--soft);z-index:2;text-align:left">品項</th>${flat?'<th>品類</th>':''}<th>%</th>${th3}${dts.map(t2=>'<th style="white-space:nowrap">'+t2+'</th>').reverse().join('')}</tr></thead><tbody>`
   const nameCell = (o,bg) => `<td class="iname" style="position:sticky;left:0;background:${bg};z-index:1${o.hid?';opacity:.5':''}" title="${o.n}">${o.n}${o.price?` <span style="font-size:11.5px;color:var(--muted);font-weight:600">$${o.price}</span>`:''}${itmMng?` <button class="mini" style="padding:1px 7px" onclick="posHide('${encodeURIComponent(o.k)}',${o.hid?0:1})">${o.hid?'恢復':'隱藏'}</button>`:''}</td>`
   const itemRow = o => `<tr style="${o.hid?'opacity:.6':''}">${nameCell(o,o.hid?'#1E242D':'var(--card)')}${flat?`<td><span style="font-size:11.5px;border:1px solid var(--line);border-radius:8px;padding:1px 7px;white-space:nowrap">${o.cat||''}</span></td>`:''}<td class="mut">${o.pct!=null?o.pct+'%':'—'}</td><td class="avg">${o.avg30!=null?o.avg30:'—'}</td><td>${growCell(o.grow)}</td><td>${o.cum30!=null?o.cum30:'—'}</td>${o.q?qCells(o.q):`<td colspan="${dts.length}"></td>`}</tr>`
   const hidRow = o => itemRow({ ...o, hid:1, pct:null, avg30:null, grow:null, q:null })
