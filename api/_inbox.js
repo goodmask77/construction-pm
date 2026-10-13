@@ -742,7 +742,8 @@ export async function bkCheckOne(c) {
   const dayN = rs.reduce((t, r) => t + (r.n || 0), 0), ref = await bkRef(b.date)
   return { st, rec: rec ? { t: rec.t || '', name: rec.name || '', n: rec.n || 0 } : null, dayG: rs.length, dayN, ref, pct: ref ? Math.round(dayN / ref * 100) : null, em: em ? (em.title || em.code) : '', manual: !!b.ok, at: nowIso() }
 }
-export async function bkWatch({ test } = {}) { // 每小時：重算所有未來訂位的 inline 狀態＋到點發提醒
+export async function bkWatch({ test, dry } = {}) { // dry：只回要發的內容，不發不存（驗證用）
+  if (dry) test = true // 每小時：重算所有未來訂位的 inline 狀態＋到點發提醒
   const cfg = await loadCfg(); const warn = +cfg.bkWarnPct || 50
   const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc'); const today = twToday(); const hTw = new Date(Date.now() + 8 * 3600e3).getUTCHours()
   const due = []; let n = 0
@@ -763,6 +764,7 @@ export async function bkWatch({ test } = {}) { // 每小時：重算所有未來
     due.sort((x, y) => x.left - y.left)
     const wd = (d) => '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
     const txt = `📅 ${test ? '【測試】' : ''}inline 還沒訂位 ${due.length} 位\n` + due.map(({ c, st, left }) => `・${c.alias || c.bk.name || c.name} ${c.bk.date.slice(5).replace('-', '/')}(${wd(c.bk.date)})${c.bk.n ? ' ' + c.bk.n + '人' : ''}｜${left === 0 ? '就是今天' : '還有 ' + left + ' 天'}${st.pct != null ? `｜那天已訂 ${st.dayN} 人（平常最滿 ${st.ref}，${st.pct}%）` : ''}${st.pct != null && st.pct >= warn ? ' ⚠️ 快滿了' : ''}`).join('\n') + '\n→ https://ground-pm.vercel.app/prep#inbox'
+    if (dry) return { ok: true, dry: true, text: txt, n: due.length }
     const { names } = test ? { names: ['張良瑋'] } : await permRids('ab', true)
     try { const ros = await kvGet('sp_crew_kb_roster'); for (const nm of names) { const p = ((ros || {}).people || []).find(x => x.name === nm && x.lineUserId); if (p) await linePush(p.lineUserId, txt) } } catch (_) {}
   }
