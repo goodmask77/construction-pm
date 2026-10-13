@@ -261,8 +261,8 @@ export async function listConvs({ who, mgr, cfg, acct }) {
   const prefix = acct ? `pm_inbox_c_${acct}_` : 'pm_inbox_c_'
   const all = await kvLike(prefix, 600, 'updated_at.desc')
   const vis = all.filter(c => c && c.acct && canSeeAcct(cfg, who, mgr, c.acct))
-  const rank = (c) => (c.unread ? 0 : 1) * 100 + (c.star && c.status !== 'done' ? 0 : 1) * 10 + ({ new: 0, open: 1, wait: 2, done: 3 }[c.status] ?? 1) // v4.71.11 未讀→特別注意→新→處理中→等待中→已完成
-  vis.sort((x, y) => rank(x) - rank(y) || String(y.lastT || '').localeCompare(String(x.lastT || '')))
+  // v4.71.18 一律照最後訊息時間新→舊（張良 2026-10-14「沒有按照時間排序，summer 剛回完還在最下面」；原本先排未讀／狀態，回完變處理中就沉底）
+  vis.sort((x, y) => String(y.lastT || '').localeCompare(String(x.lastT || '')))
   return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', cat: c.cat || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
 }
 async function signMany(paths, expiresIn) { // Supabase 批次簽名：一個請求簽多張；失敗退回一張一張
