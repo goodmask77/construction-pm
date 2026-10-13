@@ -14,7 +14,7 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4822' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4823' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_CATC = ['#0ea5e9', '#f97316', '#e11d48', '#db2777', '#16a34a', '#64748b', '#8b5cf6', '#ca8a04', '#14b8a6', '#4f46e5']
 const ibCatCol = (c) => { const cs = (_ibD && _ibD.cats) || []; const i = cs.indexOf(c); return IB_CATC[(i < 0 ? cs.length : i) % IB_CATC.length] }
@@ -147,6 +147,9 @@ function ibRenderList() {
 }
 function ibRenderPane() {
   const el = document.getElementById('ibPane'); if (!el) return
+  // v4.71.17 治本（張良 2026-10-14「用分類結果一直讀取中」）：重畫表頭會連訊息區、回覆框一起重建 → 這裡統一記下捲動位置與打到一半的字，畫完放回去；訊息已載入就直接畫，任何按鈕都不會再卡「讀取中」
+  const oldBox = document.getElementById('ibMsgs'), oldIn = document.getElementById('ibInput')
+  const keep = { id: _ibCur, st: oldBox ? oldBox.scrollTop : 0, bottom: oldBox ? oldBox.scrollHeight - oldBox.scrollTop - oldBox.clientHeight < 40 : true, txt: oldIn ? oldIn.value : '' }
   const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur) || _ibConv
   if (!c) { el.innerHTML = '<div class="hint" style="margin:auto;text-align:center;padding:30px">選一個對話</div>'; return }
   const mobile = window.innerWidth < 760
@@ -171,6 +174,10 @@ function ibRenderPane() {
       <textarea id="ibInput" rows="1" placeholder="回覆客人…" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}" onpaste="ibPaste(event)"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="ibSend()">${IB_ICON.send}</button>
     </div>`}`
+  if (_ibConv && _ibConv.id === _ibCur) {
+    ibRenderMsgs(false); const nb = document.getElementById('ibMsgs'); if (nb) nb.scrollTop = keep.bottom ? nb.scrollHeight : keep.st
+    const ni = document.getElementById('ibInput'); if (ni && keep.txt && keep.id === _ibCur) { ni.value = keep.txt; ni.style.height = 'auto'; ni.style.height = Math.min(140, ni.scrollHeight) + 'px' }
+  }
   ibModeLine(); ibSideRender()
   try { if (cv.acct === 'gd' && typeof mbInboxBadge === 'function') mbInboxBadge(cv) } catch (_) {} // v4.70.86 會員徽章（點數／入點）
 }
@@ -293,7 +300,7 @@ async function ibOp(op, value) {
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   if (_ibConv) Object.assign(_ibConv, d.conv)
   ibApplyConv(d.conv)
-  ibRenderList(); if (op !== 'status' && op !== 'assign') { ibRenderPane(); if (op === 'wait') ibRenderMsgs(false) }
+  ibRenderList(); if (op !== 'status' && op !== 'assign') ibRenderPane() // 訊息與打到一半的字由 ibRenderPane 自己放回
   if (op !== 'memo' && op !== 'memodel') libToast(op === 'star' ? (value ? '已標「特別注意」' : '已取消特別注意') : op === 'wait' ? (value ? '已收進「等待中」' : '已取消等待') : op === 'cat' ? (value ? '分類：' + value : '已清除分類') : '已更新')
 }
 function ibModal(inner) {
