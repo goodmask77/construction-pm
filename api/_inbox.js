@@ -454,9 +454,11 @@ export function pickDates(text, today) {
   const ok = (m, d) => m >= 1 && m <= 12 && d >= 1 && d <= 31
   const s = String(text || '')
   for (const m of s.matchAll(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/g)) if (ok(+m[2], +m[3])) out.add(`${m[1]}-${pad(m[2])}-${pad(m[3])}`)
-  let yHint = 0
+  let yHint = 0, lastEnd = -9
   for (const m of s.matchAll(/(明年|後年|今年)?\s*(?<!\d)(\d{1,2})\s*(?:\/|月)\s*(\d{1,2})(?![\d:])/g)) {
     if (m[1]) yHint = { 今年: 0, 明年: 1, 後年: 2 }[m[1]]
+    else if (m.index - lastEnd > 3) yHint = 0 // 「明年1/7、1/8」才延用年份；隔開的句子不延用
+    lastEnd = m.index + m[0].length
     const mo = +m[2], d = +m[3]; if (!ok(mo, d)) continue
     let y = ty + yHint; let iso = `${y}-${pad(mo)}-${pad(d)}`
     if (!m[1] && !yHint && iso < today) iso = `${y + 1}-${pad(mo)}-${pad(d)}`
