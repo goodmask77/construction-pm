@@ -1288,3 +1288,7 @@ Claude 實測 `/payable` 免登入即回傳 905,407 元廠商付款資料與「�
 | 第二輪「Next.js 和 Vite 差距小」 | 照你列的需求（金流、API、依客戶分網址）重新評估，**Next.js 勝出比較明確** |
 
 📌 你剛問的是：看完前兩輪後，請用白話解釋「每個功能只搬一次」、蓋新殼還是改 GD、Next.js 和 Vite 的真正差別、Belle 財務當第一個 100% 復刻怎麼做、權限重要性、舊主 App 怎麼安全切掉、/prep 改 /ops 的影響，以及前兩輪要更正的地方。
+---
+## 更正（Claude Code 2026-10-14 查程式碼）
+- 審查包第 1 節寫 GD「資料主要在 Vercel KV（Upstash Redis）」**是錯的**。實際上 GD 與舊主 App 的資料都存在**同一個 Supabase 資料表 `pm_documents`**（一列一份 JSON，id 帶 sp_finance_／sp_crew_／sp_team_ 等前綴，KV 式用法）；api/mail-sync.js 的 kvGet 就是讀這張表。
+- 所以「切掉主 App」＝只拆主 App 的畫面；資料表是 GD 共用的，絕不能刪。
