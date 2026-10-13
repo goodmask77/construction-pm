@@ -508,6 +508,45 @@ export default async function handler(req, res) {
     if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
     return res.status(200).json({ ok: true, ...out })
   }
+  // 💬 CC 透過 DD 私訊內部夥伴（v4.71.14 張良 2026-10-14）：只認已綁定的內部人（名冊 sp_crew_kb_roster 的 lineUserId／GD 綁定 sp_finance_pm_prep_bind），不給隨便發陌生人
+  //   GET  ?dmfind=<MENU_PROBE_KEY>&q=名字或暱稱 → 只查不發：候選（姓名／暱稱／來源／有無 userId（只回前 6 碼）／DD 好友與否）；&full=1 才回完整 userId 給 dmsend 用（仍要金鑰）
+  //   POST ?dmsend=<MENU_PROBE_KEY> body { userId, text } → userId 必須在上述綁定資料內才發，否則 403；記 logPush 來源 'cc-dm'
+  if (req.query?.dmfind || req.query?.dmsend) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.dmfind || req.query.dmsend) !== mk) return res.status(403).json({ ok: false })
+    const tkDM = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    const [rosDM, bdDM] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+    const known = new Map() // uid → { name, nick, src:Set }
+    const addK = (uid, name, nick, src) => { if (!/^U[0-9a-f]{32}$/.test(String(uid || ''))) return; const k = known.get(uid) || { name: '', nick: '', src: new Set() }; if (!k.name && name) k.name = name; if (!k.nick && nick) k.nick = nick; k.src.add(src); known.set(uid, k) }
+    const pplDM = ((rosDM || {}).people) || []
+    for (const p of pplDM) addK(p.lineUserId, p.name, p.nick, '名冊')
+    for (const t of Object.values((bdDM || {}).tokens || {})) { const p = t.rid ? pplDM.find(x => x.id === t.rid) : null; addK(t.uid, (p && p.name) || t.name, p && p.nick, 'GD綁定') }
+    const mask = (u) => String(u).slice(0, 6) + '…'
+    if (req.query.dmfind) {
+      const q = String(req.query.q || '').trim().toLowerCase().slice(0, 20)
+      if (!q) return res.status(400).json({ ok: false, error: '要給 q' })
+      const hit = (s) => String(s || '').toLowerCase().includes(q)
+      const out = []
+      for (const p of pplDM) if (hit(p.name) || hit(p.nick)) out.push({ name: p.name, nick: p.nick || '', src: '名冊', status: p.status || '', uid: p.lineUserId || '' })
+      for (const [uid, k] of known) if ((hit(k.name) || hit(k.nick)) && !out.some(o => o.uid === uid)) out.push({ name: k.name, nick: k.nick, src: [...k.src].join('＋'), uid })
+      const rows = await Promise.all(out.slice(0, 10).map(async (o) => {
+        let friend = null
+        if (o.uid && tkDM) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + o.uid, { headers: { authorization: 'Bearer ' + tkDM } }); friend = r.ok ? true : (r.status === 404 ? false : null) } catch (_) {} } // 唯讀：DD 好友才拿得到 profile
+        return { name: o.name, nick: o.nick, src: (known.get(o.uid) ? [...known.get(o.uid).src].join('＋') : o.src), status: o.status || '', hasUid: !!o.uid, uid: o.uid ? (req.query.full ? o.uid : mask(o.uid)) : '', ddFriend: friend }
+      }))
+      return res.status(200).json({ ok: true, q, n: rows.length, rows, hasToken: !!tkDM })
+    }
+    if (req.method !== 'POST') return res.status(405).json({ ok: false, error: '要 POST' })
+    const bodyDM = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body) } catch (_) { return {} } })() : (req.body || {})
+    const uidDM = String(bodyDM.userId || '').trim(), txDM = String(bodyDM.text || '').trim().slice(0, 4900)
+    if (!txDM) return res.status(400).json({ ok: false, error: '要給 text' })
+    if (!known.has(uidDM)) return res.status(403).json({ ok: false, error: '這個 userId 不在綁定資料內' })
+    if (!tkDM) return res.status(200).json({ ok: false, error: '缺 LINE_CHANNEL_ACCESS_TOKEN' })
+    const rDM = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkDM }, body: JSON.stringify({ to: uidDM, messages: [{ type: 'text', text: txDM }] }) })
+    const errDM = rDM.ok ? '' : (await rDM.text().catch(() => '')).slice(0, 300)
+    if (rDM.ok) { const { logPush } = await import('./push.js'); await logPush(uidDM, 1, 'cc-dm') }
+    return res.status(200).json({ ok: rDM.ok, status: rDM.status, to: known.get(uidDM).name, uid: mask(uidDM), err: errDM })
+  }
   // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
   if (req.query?.inboxremindtest) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
