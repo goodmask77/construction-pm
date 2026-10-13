@@ -472,9 +472,17 @@ function ibAiUse(i) { const m = (_ibAiHist[_ibCur] || [])[i]; const ta = documen
 
 // ── v4.71.12 對話分類（設定頁可增刪改排序）＋客戶資料側欄（張良 2026-10-14「merge＋A」參考小夏 EM 客戶回覆頁）──
 function ibCatRow(c) { return `<div class="ibCatR" style="display:flex;gap:6px;margin-top:5px;align-items:center"><input class="ibCatIn" value="${ibEsc(c)}" placeholder="分類名稱" style="flex:1;max-width:220px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13.5px;background:var(--card);color:inherit"><button class="mini" style="padding:3px 8px" title="往上" onclick="const r=this.closest('.ibCatR');if(r.previousElementSibling)r.parentNode.insertBefore(r,r.previousElementSibling)">↑</button><button class="mini" style="padding:3px 8px" title="往下" onclick="const r=this.closest('.ibCatR');if(r.nextElementSibling)r.parentNode.insertBefore(r.nextElementSibling,r)">↓</button><button class="mini" style="padding:3px 8px;color:#ef4444" title="刪除" onclick="this.closest('.ibCatR').remove()">×</button></div>` }
+const _ibCustC = {} // 速度鐵則：同一位客人第二次打開先畫上次的，背景再更新
 async function ibCustLoad() {
-  const id = _ibCur; const d = await ibPost({ op: 'cust', id })
-  const box = document.getElementById('ibCustBox'); if (!box || _ibCur !== id) return
+  const id = _ibCur
+  if (_ibCustC[id]) ibCustPaint(_ibCustC[id])
+  const d = await ibPost({ op: 'cust', id })
+  if (d && d.ok) _ibCustC[id] = d
+  if (_ibCur !== id) return
+  ibCustPaint(d)
+}
+function ibCustPaint(d) {
+  const box = document.getElementById('ibCustBox'); if (!box) return
   if (!d || !d.ok) { box.innerHTML = `<div class="err">${ibEsc((d && d.error) || '讀不到客戶資料')}</div>`; return }
   const card = (t, col, body) => `<div style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden"><div style="padding:6px 10px;background:${col}22;border-bottom:1px solid ${col}55;font-size:13px;font-weight:800;color:${col}">${t}</div><div style="padding:8px 10px;font-size:13.5px;line-height:1.6">${body}</div></div>`
   const inp = (id2, v, ph) => `<input id="${id2}" value="${ibEsc(v || '')}" placeholder="${ph}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13.5px;background:var(--card);color:inherit;margin-top:4px">`

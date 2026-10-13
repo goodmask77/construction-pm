@@ -317,6 +317,12 @@ export async function earnFromOrder (o) {
   if (t.shared > 0 && o.uid) { const mid = await identityOf(o.uid); const cap = Math.round(t.total * (cfg.grpShareCap || 50) / 100); await put(mid, Math.min(t.shared, cap), `grp:${o.id}:shared`, `團體訂餐共用品項 ${o.company || ''}`) }
   return { n, pts }
 }
+export async function memberCard (uid) { // v4.71.12 收件匣客戶資料（速度鐵則）：身分→（會員＋手機、點數、最近消費）同時查＝2 趟
+  const mid = await identityOf(String(uid || '')); if (!mid) return null
+  const [mm, bal, last] = await Promise.all([sel('members', `id=eq.${mid}&select=id,mno,name,status,created_at,phone`), sel('member_balance', `member_id=eq.${mid}`), sel('member_visits', `member_id=eq.${mid}&order=created_at.desc&limit=1&select=created_at,amount`)])
+  const m = mm[0]; if (!m) return null
+  const { phone, ...pubM } = m; return { member: { ...pubM, balance: (bal[0] || {}).balance || 0, lastVisit: last[0] || null }, phone: phone || '' }
+}
 export async function phoneOfMember (mid) { const m = (await sel('members', `id=eq.${encodeURIComponent(mid)}&select=phone`))[0]; return (m && m.phone) || '' } // v4.71.12 收件匣客戶資料：用會員手機對 inline 訂位（只給收件匣伺服器端用）
 export async function byUid (uid) { const mid = await identityOf(String(uid || '')); if (!mid) return { ok: true, member: null }; const m = (await sel('members', `id=eq.${mid}&select=id,mno,name,status,created_at`))[0]; if (!m) return { ok: true, member: null }; const bal = (await sel('member_balance', `member_id=eq.${mid}`))[0] || {}; const last = (await sel('member_visits', `member_id=eq.${mid}&order=created_at.desc&limit=1&select=created_at,amount`))[0] || null; return { ok: true, member: { ...m, balance: bal.balance || 0, lastVisit: last } } }
 // 電子發票左 QR：發票號碼10＋民國日期7＋隨機碼4＋銷售額8(hex)＋總計8(hex)＋買方統編8＋賣方統編8＋加密24＋...；賣方＝自家才算、48 小時內、發票號碼唯一

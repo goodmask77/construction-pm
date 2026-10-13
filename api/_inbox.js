@@ -553,18 +553,15 @@ export async function inboxCust({ who, mgr, cfg, id }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
-  const conv = await kvGet(convKey(acct, uid)); if (!conv) return { ok: false, error: '找不到這個對話' }
   const MB = await import('./_member.js')
-  const [mem, em] = await Promise.all([
-    MB.byUid(uid).catch(() => null),
-    kvGet('sp_finance_pm_em').catch(() => null),
-  ])
-  const member = mem && mem.member ? mem.member : null
-  let mphone = ''; if (member && member.id) { try { mphone = await MB.phoneOfMember(member.id) } catch (_) {} }
+  const shard = (pk) => kvGet('sp_finance_pm_inline_ph_' + pk.slice(-2)).then(sh => (sh && sh.rows && sh.rows[pk]) || null).catch(() => null)
+  const [conv, mc, em] = await Promise.all([kvGet(convKey(acct, uid)), (acct === 'gd' ? MB.memberCard(uid).catch(() => null) : null) /* 會員制只在 GROUN:D 帳號 */, kvGet('sp_finance_pm_em').catch(() => null)]) // 速度鐵則：同時查
+  if (!conv) return { ok: false, error: '找不到這個對話' }
+  const member = mc ? mc.member : null, mphone = mc ? mc.phone : ''
   const phone = conv.phone || mphone || ''
-  let inline = null
   const pk = phoneKey(phone)
-  if (pk.length === 9) { try { const sh = await kvGet('sp_finance_pm_inline_ph_' + pk.slice(-2)); const r = sh && sh.rows && sh.rows[pk]; if (r) inline = { name: r[0], visits: r[1], cancels: r[2], first: r[3], last: r[4], maxParty: r[5], bookings: r[6] } } catch (_) {} }
+  let inline = null
+  if (pk.length === 9) { const r = await shard(pk); if (r) inline = { name: r[0], visits: r[1], cancels: r[2], first: r[3], last: r[4], maxParty: r[5], bookings: r[6] } }
   const names = [conv.alias, conv.name, member && member.name].map(x => String(x || '').trim()).filter(x => x.length >= 2)
   const projects = ((em && em.projects) || []).filter(p => p.cust && names.some(n => p.cust.includes(n) || n.includes(p.cust))).sort((x, y) => String(y.date || '').localeCompare(String(x.date || ''))).slice(0, 8).map(p => ({ code: p.code, title: p.title, date: p.date, n: p.n, status: p.status, owner: p.owner, venue: p.venue, cust: p.cust }))
   return { ok: true, phone, phoneBy: conv.phone ? (conv.phoneBy || 'man') : (mphone ? 'member' : ''), email: conv.email || '', company: conv.company || '', tags: conv.tags || [], assignee: conv.assignee || '', member, inline, inlineReady: !!(pk.length === 9), projects }
