@@ -560,7 +560,7 @@ export async function inboxCust({ who, mgr, cfg, id }) {
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
   const MB = await import('./_member.js')
-  const shard = (pk) => kvGet('sp_finance_pm_inline_ph_' + pk.slice(-2)).then(sh => (sh && sh.rows && sh.rows[pk]) || null).catch(() => null)
+  const shard = (pk) => kvGet('sp_finance_pm_inline_ph3_' + pk.slice(-3)).then(sh => (sh && sh.rows && sh.rows[pk]) || null).catch(() => null)
   const [conv, mc, em] = await Promise.all([kvGet(convKey(acct, uid)), (acct === 'gd' ? MB.memberCard(uid).catch(() => null) : null) /* 會員制只在 GROUN:D 帳號 */, kvGet('sp_finance_pm_em').catch(() => null)]) // 速度鐵則：同時查
   if (!conv) return { ok: false, error: '找不到這個對話' }
   const member = mc ? mc.member : null, mphone = mc ? mc.phone : ''
