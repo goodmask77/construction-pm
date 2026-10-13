@@ -119,9 +119,9 @@
     .tabs button{text-align:left;border:none;background:transparent;border-radius:10px;padding:8px 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
     .tabs button:hover{background:#232B36}
     .tabs button.on{background:var(--grad);color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.32)}
-    .tbrand.hasBtns{display:flex;align-items:center;gap:6px;padding-right:0;font-size:20px} /* v4.71.20 打卡／手機預覽／更新三顆搬到側欄 GROUN:D 右邊（張良 2026-10-14） */
-    .tbrand #topBtns{margin-left:auto;gap:3px!important}
-    .tabs .tbrand #topBtns button{padding:4px 6px!important;font-size:13px!important;gap:3px!important;border:1px solid var(--line);background:#1A2029;border-radius:9px;letter-spacing:0;font-weight:700;display:inline-flex;align-items:center}
+    .tbrand.hasBtns{display:flex;align-items:center;flex-wrap:wrap;row-gap:6px;gap:6px;padding:2px 0 10px 6px;font-size:19px} /* v4.71.20 打卡／手機預覽／更新三顆搬到側欄 GROUN:D 右邊（張良 2026-10-14） */
+    .tbrand #topBtns{margin-left:auto;gap:3px!important;flex-wrap:nowrap}
+    .tabs .tbrand #topBtns button{margin:0!important;padding:4px 5px!important;font-size:12.5px!important;gap:2px!important;border:1px solid var(--line);background:#1A2029;border-radius:9px;letter-spacing:0;font-weight:700;display:inline-flex;align-items:center}
     .tabs .tbrand #topBtns button:hover{background:#232B36}
     .tabs .tbrand #topBtns svg{width:14px;height:14px}
   }
@@ -161,7 +161,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
   <!-- v4.41.3 張良「營運看板四個字電腦版也拿掉」：h1 整個退役（手機版 v4.40.3 先藏、這次連桌機一起） -->
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
-    <div class="tbrand">GROUN<b>:D</b></div>
+    <div class="tbrand"><span>GROUN<b>:D</b></span></div>
     <button id="tab-home" onclick="load(lastStore)" title="回營運看板" style="padding:7px 13px;font-size:16px">🏠</button>
     <button id="tab-prep" onclick="prepPage()">📊 銷售數據</button> <!-- v4.42.1 銷售數據分頁（備料量+節奏表+品項明細） -->
     <button id="tab-sop" onclick="sopPage()">✅ SOP</button>
