@@ -89,6 +89,10 @@
     {
       "path": "/api/lineoa-sync",
       "schedule": "50 * * * *"
+    },
+    {
+      "path": "/api/pinterest-sync",
+      "schedule": "35 * * * *"
     }
   ]
 }
