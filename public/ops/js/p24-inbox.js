@@ -251,7 +251,7 @@ async function ibSend() {
   const i = _ibMsgs.findIndex(m => m.id === tmp.id); if (i >= 0) _ibMsgs[i] = d.msg
   _ibReplyLeft = 0; ibApplyConv(d.conv)
   ibRenderMsgs(); ibModeLine()
-  libToast(d.mode === 'reply' ? '已回覆（免費）' : '已推播（扣 1 則）')
+  // v4.71.19 送出成功不再跳「已回覆／已推播（扣 1 則）」提示（張良 2026-10-14「不要出現，取消」）；失敗照樣提示
   const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: text.slice(0, 60), dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; c.status = d.conv.status; c.assignee = d.conv.assignee; ibRenderList() }
   ta.focus()
 }
@@ -289,7 +289,6 @@ async function ibUploadFiles(files) {
     _ibMsgs = _ibMsgs.filter(m => m.id !== tmp.id)
     if (!d || !d.ok) { ibRenderMsgs(); libToast((d && d.error) || '上傳失敗', true); continue }
     _ibMsgs.push(d.msg); _ibReplyLeft = 0; ibApplyConv(d.conv); ibRenderMsgs(); ibModeLine()
-    libToast(d.mode === 'reply' ? '已傳送（免費）' : '已傳送（推播，扣 1 則）')
     const c = ((_ibD && _ibD.convs) || []).find(x => x.id === _ibCur); if (c) { c.last = { text: isImg ? '（圖片）' : '（檔案）' + f.name, dir: 'out', t: d.msg.t }; c.lastT = d.msg.t; ibRenderList() }
   }
   // 剛送出的圖要簽名網址才看得到：重撈一次對話
