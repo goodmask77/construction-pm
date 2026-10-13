@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4819' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4820' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -86,7 +86,12 @@ export async function botInfo(a) { return lineApi(a, '/v2/bot/info') }
 export async function webhookInfo(a) { return lineApi(a, '/v2/bot/channel/webhook/endpoint') }
 export async function webhookSet(a, endpoint) { return lineApi(a, '/v2/bot/channel/webhook/endpoint', { method: 'PUT', body: JSON.stringify({ endpoint }) }) }
 export async function webhookTest(a, endpoint) { return lineApi(a, '/v2/bot/channel/webhook/test', { method: 'POST', body: JSON.stringify(endpoint ? { endpoint } : {}) }) }
+const _quotaC = {} // v4.71.11 速度鐵則：額度 60 秒快取（每開一個對話都打兩次 LINE API → 0.3 秒）
 export async function quotaOf(a) {
+  const hit = _quotaC[a.key]; if (hit && Date.now() - hit.t < 60e3) return hit.v
+  const v = await quotaOfRaw(a); _quotaC[a.key] = { t: Date.now(), v }; return v
+}
+export async function quotaOfRaw(a) {
   const [q, c] = await Promise.all([lineApi(a, '/v2/bot/message/quota'), lineApi(a, '/v2/bot/message/quota/consumption')])
   return { limit: q.data?.value ?? null, type: q.data?.type || '', used: c.data?.totalUsage ?? null }
 }
@@ -157,7 +162,7 @@ export async function ingestEvent(a, ev, destination) {
     } else { text = '（' + (m.type || '訊息') + '）' }
     conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso(); conv.replyUsed = false // 每則新訊息都有新的 replyToken（v4.70.49 修：之前回過一次後永遠走 push）
     conv.unread = (conv.unread || 0) + 1
-    if (conv.status === 'done') conv.status = 'new'
+    if (conv.status === 'done' || conv.status === 'wait') { conv.status = 'new'; conv.waitUntil = '' } // v4.71.11 等待中的客人又傳訊息＝要處理，回到待處理
     conv.lastInT = msg.t
   } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
   else if (ev.type === 'unfollow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '封鎖／刪除好友' }; text = msg.text; conv.follow = false }
@@ -240,22 +245,34 @@ export async function listConvs({ who, mgr, cfg, acct }) {
   const prefix = acct ? `pm_inbox_c_${acct}_` : 'pm_inbox_c_'
   const all = await kvLike(prefix, 600, 'updated_at.desc')
   const vis = all.filter(c => c && c.acct && canSeeAcct(cfg, who, mgr, c.acct))
-  const rank = (c) => (c.unread ? 0 : 1) * 10 + ({ new: 0, open: 1, done: 2 }[c.status] ?? 1)
+  const rank = (c) => (c.unread ? 0 : 1) * 100 + (c.star && c.status !== 'done' ? 0 : 1) * 10 + ({ new: 0, open: 1, wait: 2, done: 3 }[c.status] ?? 1) // v4.71.11 未讀→特別注意→新→處理中→等待中→已完成
   vis.sort((x, y) => rank(x) - rank(y) || String(y.lastT || '').localeCompare(String(x.lastT || '')))
-  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false }))
+  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
+}
+async function signMany(paths, expiresIn) { // Supabase 批次簽名：一個請求簽多張；失敗退回一張一張
+  const out = {}; if (!paths.length) return out
+  try {
+    const r = await fetch(`${SB_URL}/storage/v1/object/sign/ground-private`, { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn, paths }) })
+    const d = r.ok ? await r.json() : null
+    if (Array.isArray(d)) for (const x of d) if (x && x.path && x.signedURL) out[x.path] = SB_URL + '/storage/v1' + x.signedURL
+  } catch (_) {}
+  const miss = paths.filter(p => !out[p]); if (miss.length) await Promise.all(miss.map(async p => { try { const u = await signedUrl(p, expiresIn); if (u) out[p] = u } catch (_) {} }))
+  return out
 }
 export async function getConv({ who, mgr, cfg, id, markRead }) {
   const [acct, uid] = splitId(id); const a = acctOf(acct)
   if (!a || !uid) return { ok: false, error: '找不到這個對話' }
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
   const ck = convKey(acct, uid)
-  const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
-  const rows = await kvLike(`pm_inbox_m_${acct}_${uid}_`, 300, 'id.desc')
+  // v4.71.11 速度鐵則：對話／訊息／額度同時抓；圖片網址一次批次簽（原本一張一個請求、全部排隊 → 0.7~1 秒）
+  const [conv, rows, quotaP] = await Promise.all([kvGet(ck), kvLike(`pm_inbox_m_${acct}_${uid}_`, 300, 'id.desc'), quotaOf(a).catch(() => ({}))])
+  if (!conv) return { ok: false, error: '找不到這個對話' }
   rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
-  const list = await Promise.all(rows.map(async m => { const o = { ...m }; if (m.media) { try { o.url = await signedUrl(m.media, 1800) } catch (_) {} } return o }))
+  const urls = await signMany(rows.filter(m => m.media).map(m => m.media), 1800)
+  const list = rows.map(m => { const o = { ...m }; if (m.media && urls[m.media]) o.url = urls[m.media]; return o })
   if (markRead && conv.unread) { conv.unread = 0; conv.readBy = who.name; conv.readT = nowIso(); await kvSet(ck, conv) }
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
-  const quota = await quotaOf(a)
+  const quota = quotaP
   return { ok: true, conv: { ...conv, replyToken: undefined }, list, replyFree: !!fresh, replyLeft: fresh ? Math.max(0, 50 - Math.round((Date.now() - new Date(conv.replyT).getTime()) / 1000)) : 0, quota, acctName: a.name }
 }
 
@@ -335,13 +352,56 @@ export async function convOp({ who, mgr, cfg, op, id, value }) {
   if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
   const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
   const t = Date.now()
-  if (op === 'status') { if (!['new', 'open', 'done'].includes(value)) return { ok: false, error: '狀態不對' }; conv.status = value; if (value === 'done') conv.unread = 0; await kvInsert(msgKey(acct, uid, t), { id: 'x', convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: `${who.name} 標為「${{ new: '新', open: '處理中', done: '已完成' }[value]}」` }) }
+  if (op === 'status') { conv.waitUntil = ''; if (!['new', 'open', 'done'].includes(value)) return { ok: false, error: '狀態不對' }; conv.status = value; if (value === 'done') conv.unread = 0; await kvInsert(msgKey(acct, uid, t), { id: 'x', convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: `${who.name} 標為「${{ new: '新', open: '處理中', done: '已完成' }[value]}」` }) }
   else if (op === 'assign') { conv.assignee = String(value || '').slice(0, 30); await kvInsert(msgKey(acct, uid, t), { id: 'x', convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: conv.assignee ? `${who.name} 指派給 ${conv.assignee}` : `${who.name} 取消指派` }); if (conv.assignee && conv.assignee !== who.name) notifyAssign(a, conv, who).catch(() => {}) }
   else if (op === 'note') conv.note = String(value || '').slice(0, 2000)
+  // v4.71.11 張良 2026-10-14「有些客戶要特別注意、沒辦法即時完成 → 收進資料夾等待未來回覆避免忘記＋備忘錄」
+  else if (op === 'star') { conv.star = !!value; conv.starBy = who.name; conv.starT = nowIso() }
+  else if (op === 'wait') {
+    const d = String(value || '')
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: '日期格式不對' }
+    if (d) { conv.status = 'wait'; conv.waitUntil = d; conv.waitBy = who.name } else { conv.status = 'open'; conv.waitUntil = '' }
+    await kvInsert(msgKey(acct, uid, t), { id: 'x', convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: d ? `${who.name} 設為「等待中」，${d.slice(5).replace('-', '/')} 提醒再回覆` : `${who.name} 取消等待` }, '收件匣')
+  }
+  else if (op === 'memo') { const tx = String(value || '').trim().slice(0, 1000); if (!tx) return { ok: false, error: '備忘錄是空的' }; conv.memos = [...(conv.memos || []), { id: t.toString(36), t: new Date(t).toISOString(), by: who.name, text: tx }].slice(-100) }
+  else if (op === 'memodel') conv.memos = (conv.memos || []).filter(m => m.id !== String(value))
   else if (op === 'rename') conv.alias = String(value || '').slice(0, 40)
   else return { ok: false, error: '不認識的操作' }
   await kvSet(ck, conv)
-  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias } }
+  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [] } }
+}
+// ── v4.71.11 問 AI（張良 2026-10-14「要有 AI 對話框，讓我即時詢問一些內容回覆給客戶」）：看這段對話＋備忘錄回答；要擬回覆就放在【回覆草稿】區塊，前端一鍵放進回覆框（不會自動發出）──
+export async function inboxAi({ who, mgr, cfg, id, q, hist }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  const question = String(q || '').trim().slice(0, 2000); if (!question) return { ok: false, error: '請輸入問題' }
+  const conv = await kvGet(convKey(acct, uid)); if (!conv) return { ok: false, error: '找不到這個對話' }
+  const rows = await kvLike(`pm_inbox_m_${acct}_${uid}_`, 60, 'id.desc')
+  rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
+  const tw = (t) => new Date(new Date(t).getTime() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+  const lines = rows.map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : m.dir === 'out' ? '我們（' + (m.by || '') + '）' : '系統'}：${String(m.text || (m.media ? '（圖片／檔案）' : '')).slice(0, 500)}`)
+  const memos = [...(conv.note ? [{ by: '', text: conv.note }] : []), ...(conv.memos || [])].map(m => `・${m.by ? m.by + '：' : ''}${m.text}`)
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  const SYS = `你是「${a.name}」餐廳 LINE 官方帳號的客服助手，幫店內同事（${who.name}）處理這位客人的對話。今天是 ${today}（台灣）。
+規則：
+- 一律繁體中文、口語、簡短。
+- 不知道的事實（價格、營業時間、能不能包場、發票規定、活動內容）不要編，直接說「這要跟店裡確認」，並列出要確認什麼。
+- 同事要你「擬回覆／幫我回」時，把要傳給客人的話放在【回覆草稿】和【/回覆草稿】中間；語氣親切、像店家本人，不要提到 AI。
+- 沒被要求擬回覆時就直接回答同事的問題，不要硬塞草稿。
+
+【客人】${conv.alias || conv.name || '客人'}${conv.alias && conv.name ? '（LINE 名稱 ' + conv.name + '）' : ''}；狀態：${({ new: '新', open: '處理中', wait: '等待中', done: '已完成' })[conv.status] || conv.status}${conv.waitUntil ? '（' + conv.waitUntil + ' 要再回覆）' : ''}
+【內部備忘錄】${memos.length ? '\n' + memos.join('\n') : '（無）'}
+【最近對話】
+${lines.join('\n') || '（沒有訊息）'}`
+  const messages = [...(Array.isArray(hist) ? hist : []).slice(-8).map(h => ({ role: h.role === 'ai' ? 'assistant' : 'user', content: String(h.text || '').slice(0, 2000) })).filter(m => m.content), { role: 'user', content: question }]
+  try {
+    const { aiCall } = await import('./_ai.js')
+    const r = await aiCall('inbox', { system: SYS, messages, maxTokens: 1500, timeoutMs: 60000 })
+    const text = String(r.text || '').trim()
+    const m = text.match(/【回覆草稿】([\s\S]*?)(【\/回覆草稿】|$)/)
+    return { ok: true, text: text.replace(/【回覆草稿】[\s\S]*?(【\/回覆草稿】|$)/, '').trim(), draft: m ? m[1].trim() : '', model: r.model }
+  } catch (e) { return { ok: false, error: 'AI 沒回應：' + String(e?.message || e).slice(0, 80) } }
 }
 async function notifyAssign(a, conv, who) {
   const bind = await kvGet('sp_finance_pm_prep_bind'); const rids = new Set()
@@ -410,30 +470,47 @@ export async function inboxRemind({ test } = {}) { // test=true：只私訊張�
   const cfg = await remindDefaults(await loadCfg())
   const escH = +cfg.escalateH || 24
   const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
-  const ago = (m) => m >= 1440 ? Math.floor(m / 1440) + ' 天' + (Math.floor(m % 1440 / 60) ? ' ' + Math.floor(m % 1440 / 60) + ' 小時' : '') : m >= 60 ? Math.floor(m / 60) + ' 小時' : m + ' 分鐘'
-  const byRid = {}, byName = {}, byGroup = {}, touched = []
-  const out = []
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  // v4.71.11 張良 2026-10-14「不需要給那麼多資訊，簡單整理名稱、不同官方幾則即可」：每位收件人／群各一則＝帳號分組「A Beach 3：甲、乙、丙」
+  const P = {}, G = {}, touched = [], out = [] // P[姓名]={rids,acct:{key:[名字]},due:[名字]}；G[gid]={acct:{}}
+  const add = (bk, k, a, nm, due) => { const b = bk[k] = bk[k] || { acct: {}, due: [], rids: new Set() }; if (due) b.due.push(`${a.name}・${nm}`); else (b.acct[a.key] = b.acct[a.key] || { a, n: [] }).n.push(nm); return b }
   for (const c of all) {
-    if (!c || !c.lastInT || c.status === 'done') continue
+    if (!c || c.status === 'done') continue
+    const a = acctOf(c.acct); if (!a || a.relay) continue // relay（DD）不提醒：DD 自己會答，沒答的留在待處理給人看就好
+    const nm = c.alias || c.name || '客人'
+    // 等待中：到了約定日期才提醒（一次），並自動放回「處理中」；還沒到就不吵
+    if (c.status === 'wait') {
+      if (!c.waitUntil || c.waitUntil > today) continue
+      const { rids, names } = test ? { rids: [], names: ['張良瑋'] } : await permRids(c.acct, true)
+      for (const n of names) { const b = add(P, n, a, nm, true); rids.forEach(r => b.rids.add(r)) }
+      if (!test) { c.status = 'open'; c.waitUntil = ''; c.remindT = nowIso(); touched.push(c) }
+      out.push(c.id); continue
+    }
+    if (!c.lastInT) continue
     if (c.lastOutT && c.lastOutT > c.lastInT) continue // 已回
     const age = Date.now() - new Date(c.lastInT).getTime()
     if (age < cfg.remindMin * 60e3) continue
-    const a = acctOf(c.acct); if (!a || a.relay) continue // relay（DD）不提醒：DD 自己會答，沒答的留在待處理給人看就好
-    const dueP = !(c.remindT && Date.now() - new Date(c.remindT).getTime() < 55 * 60e3)
-    const dueG = age >= escH * 3600e3 && !(c.escT && Date.now() - new Date(c.escT).getTime() < 23.5 * 3600e3)
-    if (!dueP && !dueG && !test) continue
+    const dueP = test || !(c.remindT && Date.now() - new Date(c.remindT).getTime() < 55 * 60e3)
+    const dueG = !test && age >= escH * 3600e3 && !(c.escT && Date.now() - new Date(c.escT).getTime() < 23.5 * 3600e3)
+    if (!dueP && !dueG) continue
     const { rids, names, group } = test ? { rids: [], names: ['張良瑋'], group: '' } : await permRids(c.acct, true)
-    const line = `・${a.name}「${c.name}」${ago(Math.round(age / 60e3))}沒回：${String((c.last && c.last.text) || '').replace(/\s+/g, ' ').slice(0, 40)}`
-    if (dueP || test) { for (const r of rids) (byRid[r] = byRid[r] || []).push(line); for (const n of names) (byName[n] = byName[n] || []).push(line); c.remindT = nowIso(); c.remindN = (c.remindN || 0) + 1 }
-    if (dueG && group) { (byGroup[group] = byGroup[group] || []).push(line); c.escT = nowIso() }
-    touched.push(c); out.push(c.id)
+    if (dueP) { for (const n of names) { const b = add(P, n, a, nm); rids.forEach(r => b.rids.add(r)) } c.remindT = nowIso(); c.remindN = (c.remindN || 0) + 1 }
+    if (dueG && group) { add(G, group, a, nm); c.escT = nowIso() }
+    if (!test) touched.push(c); out.push(c.id)
   }
   const link = 'https://ground-pm.vercel.app/prep#inbox'
-  const msg = (lines, head) => `📥 ${head}（${lines.length} 位）\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…另外 ${lines.length - 15} 位` : ''}\n→ ${link}`
-  try { const { wpPush } = await import('./_webpush.js'); for (const [r, ls] of Object.entries(byRid)) await wpPush([r], { title: `收件匣：${ls.length} 位客人還沒回`, body: ls.join('\n').slice(0, 160), url: '/prep#inbox', cat: 'inbox' }) } catch (_) {}
-  try { const ros = await kvGet('sp_crew_kb_roster'); for (const [an, ls] of Object.entries(byName)) { const p = ((ros || {}).people || []).find(x => x.name === an && x.lineUserId); if (p) await linePush(p.lineUserId, msg(ls, test ? '【測試】收件匣還沒回覆' : '收件匣還沒回覆')) } } catch (_) {}
-  for (const [g, ls] of Object.entries(byGroup)) { try { await linePush(g, msg(ls, `收件匣超過 ${escH} 小時沒人回`)) } catch (_) {} } // 群組推播按群內人數計費（LINE 規則）：合併成一則
-  if (!test) for (const c of touched) await kvSet(convKey(c.acct, c.uid), c, '收件匣提醒')
-  return { ok: true, reminded: out, private: Object.keys(byName).length, groups: Object.keys(byGroup).length }
+  const short = (n) => n.slice(0, 6).join('、') + (n.length > 6 ? ` 等 ${n.length} 位` : '')
+  const body = (b) => { const ac = Object.values(b.acct); return [...ac.map(x => `${x.a.name} ${x.n.length}：${short(x.n)}`), ...(b.due.length ? [`等待到期 ${b.due.length}：${short(b.due)}`] : [])].join('\n') + `\n→ ${link}` }
+  const head = (b, h) => { const tot = Object.values(b.acct).reduce((t, x) => t + x.n.length, 0); return `📥 ${h}${tot ? ` ${tot} 位沒回` : ''}${b.due.length ? `${tot ? '・' : ' '}${b.due.length} 位等待到期` : ''}` }
+  let wpPush = null; try { wpPush = (await import('./_webpush.js')).wpPush } catch (_) {} // 推播模組壞了也不能擋 LINE 私訊
+  try { const ros = await kvGet('sp_crew_kb_roster')
+    for (const [an, b] of Object.entries(P)) {
+      const txt = head(b, test ? '【測試】收件匣' : '收件匣') + '\n' + body(b)
+      if (b.rids.size && wpPush) { try { await wpPush([...b.rids], { title: head(b, '收件匣').replace('📥 ', ''), body: txt.split('\n').slice(1, 4).join('\n').slice(0, 160), url: '/prep#inbox', cat: 'inbox' }) } catch (_) {} }
+      const p = ((ros || {}).people || []).find(x => x.name === an && x.lineUserId); if (p) await linePush(p.lineUserId, txt)
+    } } catch (_) {}
+  for (const [g, b] of Object.entries(G)) { try { await linePush(g, head(b, `收件匣超過 ${escH} 小時`) + '\n' + body(b)) } catch (_) {} } // 群組推播按群內人數計費（LINE 規則）：合併成一則
+  for (const c of touched) await kvSet(convKey(c.acct, c.uid), c, '收件匣提醒')
+  return { ok: true, reminded: out, private: Object.keys(P).length, groups: Object.keys(G).length }
 }
 export const unreadTotal = async ({ who, mgr, cfg }) => (await listConvs({ who, mgr, cfg })).reduce((t, c) => t + (c.unread || 0), 0)
