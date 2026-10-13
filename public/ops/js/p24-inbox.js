@@ -9,7 +9,7 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4786' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4819' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 const IB_STC = { new: '#2563eb', open: '#d97706', done: '#16a34a' } // 狀態色：新＝藍、處理中＝橘、已完成＝綠（張良 10-11「底色標籤直覺辨識」）
@@ -307,6 +307,8 @@ async function ibSettings() {
   const d = await ibGet('op=settings'); if (!d || !d.ok) { ov.querySelector('.hint').textContent = (d && d.error) || '讀不到設定'; return }
   _ibSet = d; ibSetRender()
 }
+const ibSec = (t, col, mt) => `<div style="margin:${mt || 16}px 0 0;padding:8px 12px;border-radius:10px;background:${col}22;border-left:5px solid ${col};font-size:15px;font-weight:800;color:${col}">${t}</div>` // v4.71.9 區段標題整條色塊（張良 2026-10-13）
+const ibAcctHead = (a) => `<div style="margin:-10px -12px 6px;padding:7px 12px;border-radius:11px 11px 0 0;background:${a.color};color:#fff;font-size:14px;font-weight:800">${ibEsc(a.name)}</div>` // 每個帳號框的標題列＝帳號色底白字
 function ibSetRender() {
   const d = _ibSet; const ov = document.getElementById('ibOv'); if (!ov || !d) return
   const box = ov.firstElementChild
@@ -315,7 +317,7 @@ function ibSetRender() {
     const info = a.info && !a.info.error ? `${ibEsc(a.info.displayName || '')} ${a.info.basicId ? '(' + ibEsc(a.info.basicId) + ')' : ''} · 模式 ${a.info.chatMode === 'bot' ? '機器人' : '聊天'}` : (a.configured ? '金鑰無效或讀不到帳號資訊' : '')
     const q = a.quota && a.quota.used != null ? `本月 ${a.quota.used}${a.quota.limit != null ? ' / ' + a.quota.limit : ''} 則` : ''
     return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:${a.color}">${ibEsc(a.name)}</b>${st}<span style="flex:1"></span>${a.configured && !a.hookOk && !a.relay ? `<button class="mini on" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">接到收件匣</button>` : ''}${a.configured && a.hookOk && !a.relay ? `<button class="mini" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">重測</button>` : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-10px -12px 6px;padding:7px 12px;border-radius:11px 11px 0 0;background:${a.color}22;border-bottom:1px solid ${a.color}55"><b style="background:${a.color};color:#fff;padding:2px 10px;border-radius:999px">${ibEsc(a.name)}</b>${st}<span style="flex:1"></span>${a.configured && !a.hookOk && !a.relay ? `<button class="mini on" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">接到收件匣</button>` : ''}${a.configured && a.hookOk && !a.relay ? `<button class="mini" style="padding:5px 10px;font-size:12.5px" onclick="ibConnect('${a.key}',false)">重測</button>` : ''}</div>
       ${a.relay ? '<div class="hint" style="font-size:12px">只收 DD 的一對一私訊（群組不收）。DD 自己答過的對話直接算「已完成」、不推播不提醒；你要插手就在那個對話直接回，會用 DD 的名義發出。</div>' : ''}
       <div class="hint" style="font-size:12.5px;margin-top:4px">${info}${q ? ' · ' + q : ''}${a.lastEventT ? ' · 最近收到 ' + ibT(a.lastEventT) : ''}</div>
       ${a.hook && a.hook.endpoint && !a.hookOk ? `<div class="hint" style="font-size:12px;word-break:break-all">目前 webhook：${ibEsc(a.hook.endpoint)}${a.hook.active === false ? '（未啟用）' : ''}</div>` : ''}
@@ -336,7 +338,7 @@ function ibSetRender() {
     return `<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px"><span class="hint" style="font-size:12px;font-weight:700">${label}</span><label class="hint" style="font-size:11.5px;display:flex;gap:3px;align-items:center;cursor:pointer"><input type="checkbox" onchange="document.querySelectorAll('.${gid}').forEach(x=>x.checked=this.checked)">全選</label></div>
       <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:2px">${ps.map(p => `<label style="display:flex;gap:4px;align-items:center;font-size:13.5px"><input type="checkbox" class="${cls} ${gid}" data-acct="${a.key}" value="${ibEsc(p.name)}"${(sel || []).includes(p.name) ? ' checked' : ''}>${ibEsc(p.name)}</label>`).join('')}</div></div>`
   }).join('')
-  const permHtml = (d.accounts || []).map(a => `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px"><b style="font-size:14px;color:${a.color}">${ibEsc(a.name)}</b>
+  const permHtml = (d.accounts || []).map(a => `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px">${ibAcctHead(a)}
       <div style="margin-top:6px"><b style="font-size:13px">看得到</b><span class="hint" style="font-size:11.5px">　主管永遠看得到；勾的人看得到並收到通知</span>${grid('ibPerm', a, perm[a.key])}</div>
       <div style="margin-top:10px"><b style="font-size:13px">可回覆</b><span class="hint" style="font-size:11.5px">　主管永遠可回；勾的人才能回覆、傳圖（要同時有「看得到」）</span>${grid('ibReply', a, reply[a.key])}</div>
     </div>`).join('')
@@ -344,13 +346,13 @@ function ibSetRender() {
   const tplHtml = `<div id="ibTplList">${tpl.map((t, i) => ibTplRow(t, i)).join('')}</div><button class="mini" style="margin-top:6px;padding:5px 10px;font-size:12.5px" onclick="ibTplAdd()">＋ 新增範本</button>`
   box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">收件匣設定</b><button class="mini" onclick="document.getElementById('ibOv').remove()">關閉</button></div>
     <div class="hint" style="font-size:12px;margin-top:6px">驗簽失敗 ${(d.sigfail || {}).n || 0} 次${(d.sigfail || {}).lastT ? '（最近 ' + ibT(d.sigfail.lastT) + '）' : ''} · 官方帳號（A Beach／GROUN:D／104招募）webhook 都填同一個網址：<span style="word-break:break-all">${ibEsc(((d.accounts || [])[0] || {}).wantHook || '')}</span></div>
-    <h3 style="font-size:14px;margin:14px 0 0">帳號連線</h3>${acc}
-    <h3 style="font-size:14px;margin:16px 0 0">誰看得到哪個帳號</h3>${permHtml}
-    <h3 style="font-size:14px;margin:16px 0 0">常用回覆範本</h3>${tplHtml}
-    <h3 style="font-size:14px;margin:16px 0 0">沒人回覆提醒</h3><div style="display:flex;gap:8px;align-items:center;font-size:14px;flex-wrap:wrap">超過 <input id="ibRemind" type="number" min="5" max="1440" value="${(d.cfg && d.cfg.remindMin) || 30}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 分鐘沒回 → 推播＋LINE 私訊下面勾的人（每小時檢查）</div>
-    ${(d.accounts || []).map(a => { const rc = ((d.cfg && d.cfg.remind) || {})[a.key] || {}; return `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px"><b style="font-size:14px;color:${a.color}">${ibEsc(a.name)}</b>
-      <div style="margin-top:6px"><b style="font-size:13px">通知誰</b><span class="hint" style="font-size:11.5px">　沒勾＝可回覆的人＋審核人</span>${grid('ibRemind', a, rc.people || [])}</div>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13px">LINE 群組</b><select class="ibRemindGrp" data-acct="${a.key}" style="border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit;font-size:13px;max-width:260px"><option value="">不發群組</option>${(d.groups || []).map(g => `<option value="${ibEsc(g.gid)}"${rc.group === g.gid ? ' selected' : ''}>${ibEsc(g.name)}</option>`).join('')}</select><span class="hint" style="font-size:11.5px">由 DD 發到群；群組推播按群內人數扣 DD 額度</span></div>
+    ${ibSec('帳號連線', '#2563eb', 14)}${acc}
+    ${ibSec('誰看得到哪個帳號', '#7c3aed')}${permHtml}
+    ${ibSec('常用回覆範本', '#0d9488')}${tplHtml}
+    ${ibSec('沒人回覆提醒', '#d97706')}<div style="display:flex;gap:8px;align-items:center;font-size:14px;flex-wrap:wrap;margin-top:8px">① 超過 <input id="ibRemind" type="number" min="5" max="1440" value="${(d.cfg && d.cfg.remindMin) || 30}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 分鐘沒回 → 私訊「通知誰」勾的人</div><div style="display:flex;gap:8px;align-items:center;font-size:14px;flex-wrap:wrap;margin-top:6px">② 超過 <input id="ibEscH" type="number" min="1" max="168" value="${(d.cfg && d.cfg.escalateH) || 24}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 小時還沒回 → 才發到下面選的 LINE 群</div><div class="hint" style="font-size:12px;margin-top:4px">每小時檢查一次；同一輪所有沒回的客人<b>合併成一則</b>（群組照群內人數扣額度，所以只發一則）</div>
+    ${(d.accounts || []).map(a => { const rc = ((d.cfg && d.cfg.remind) || {})[a.key] || {}; return `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px">${ibAcctHead(a)}
+      <div style="margin-top:6px"><b style="font-size:13px">通知誰</b><span class="hint" style="font-size:11.5px">　①私訊誰；沒勾＝可回覆的人＋審核人</span>${grid('ibRemind', a, rc.people || [])}</div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13px">②超過時數發群</b><select class="ibRemindGrp" data-acct="${a.key}" style="border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit;font-size:13px;max-width:260px"><option value="">不發群組</option>${(d.groups || []).map(g => `<option value="${ibEsc(g.gid)}"${rc.group === g.gid ? ' selected' : ''}>${ibEsc(g.name)}</option>`).join('')}</select><span class="hint" style="font-size:11.5px">由 DD 發；一輪一則，按群內人數扣 DD 額度</span></div>
     </div>` }).join('')}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="mini on" onclick="ibSetSave()">儲存設定</button></div>`
 }
@@ -363,7 +365,8 @@ async function ibSetSave() {
   const templates = [...document.querySelectorAll('#ibOv .ibTpl')].map(r => ({ title: r.querySelector('.ibTplTitle').value, text: r.querySelector('.ibTplText').value })).filter(t => t.text.trim())
   const remindMin = +((document.getElementById('ibRemind') || {}).value || 30)
   const remind = {}; for (const a of (_ibSet.accounts || [])) { remind[a.key] = { people: [...document.querySelectorAll(`#ibOv .ibRemind[data-acct="${a.key}"]:checked`)].map(x => x.value), group: ((document.querySelector(`#ibOv .ibRemindGrp[data-acct="${a.key}"]`) || {}).value) || '' } }
-  const d = await ibPost({ op: 'cfg', cfg: { perm, reply, remind, templates, remindMin } })
+  const escalateH = +((document.getElementById('ibEscH') || {}).value || 24)
+  const d = await ibPost({ op: 'cfg', cfg: { perm, reply, remind, templates, remindMin, escalateH } })
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   libToast('設定已儲存'); document.getElementById('ibOv').remove()
   const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() }
