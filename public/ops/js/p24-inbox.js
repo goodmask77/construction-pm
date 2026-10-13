@@ -81,13 +81,15 @@ async function inboxLoad(convId) {
   _ibD = d
   if (convId) _ibCur = convId
   if (had) ibRenderList(); else ibRender() // 已經用快取畫好了→只更新清單，不重畫對話區（不洗掉正在打的字）
-  _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000)
+  _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) ibListNew(d2) }, 20000)
   if (_ibCur) ibOpen(_ibCur, true)
 }
 function ibUnreadTotal() { return ((_ibD && _ibD.convs) || []).reduce((t, c) => t + (c.unread || 0), 0) }
 // 🔴 v4.70.59 側欄數字徽章（張良 10-11「如果有訊息這邊能顯示 123 這種通知在旁邊嗎」）：
 // 數字＝「待處理」對話數（跟頁內待處理分頁同一套算法：未完成 或 有未讀）；側欄按鈕＋手機常用列都掛；不在收件匣頁時每 60 秒背景問一次
-function ibTodoCount(d) { return (((d || _ibD) && (d || _ibD).convs) || []).filter(c => c.status !== 'done' && c.status !== 'wait' || c.unread).length }
+function ibTodoCount(d) { return (((d || _ibD) && (d || _ibD).convs) || []).filter(ibNeedReply).length }
+// v4.71.24 張良 2026-10-14「我都已經回覆完了，收件匣那邊不該出現 9」：側欄數字＝真的要回的（有未讀，或最後一則是客人傳的且不是已完成／等待中）；回完了沒按已完成也不算
+function ibNeedReply(c) { return !!(c && (c.unread || (c.status !== 'done' && c.status !== 'wait' && c.last && c.last.dir === 'in'))) }
 function navBadgePaint(key, n) { // 共用：聊天室也用（key=分頁代號）
   try {
     const els = [document.getElementById('tab-' + key), document.querySelector('#favbar [data-fk="' + key + '"]')].filter(Boolean)
@@ -132,12 +134,12 @@ function ibRenderList() {
   const catSeg = ((d.cats || []).length ? `<div class="ibSeg" style="font-size:12.5px"><button class="${!_ibCat ? 'on' : ''}" onclick="_ibCat='';ibRenderList()">全部分類</button>${(d.cats || []).filter(c => catN[c] || _ibCat === c).map(c => `<button class="${_ibCat === c ? 'on' : ''}" data-c="1" style="--c:${ibCatCol(c)}" onclick="_ibCat=${JSON.stringify(c).replace(/"/g, '&quot;')};ibRenderList()"><i class="dot"></i>${ibEsc(c)} <span class="hint" style="font-size:11px">${catN[c] || 0}</span></button>`).join('')}${catN.__none ? `<button class="${_ibCat === '__none' ? 'on' : ''}" onclick="_ibCat='__none';ibRenderList()">未分類 <span class="hint" style="font-size:11px">${catN.__none}</span></button>` : ''}</div>` : '')
   const acctSeg = `<div class="ibSeg"><button class="${!_ibAcct ? 'on' : ''}" onclick="_ibAcct='';ibRenderList()">全部</button>${(d.accounts || []).map(a => `<button class="${_ibAcct === a.key ? 'on' : ''}" data-c="1" style="--c:${a.color};${a.configured ? '' : 'opacity:.55'}" onclick="_ibAcct='${a.key}';ibRenderList()"><i class="dot"></i>${ibEsc(a.name)}${a.configured ? '' : ' <span class="nc" style="font-size:10px;font-weight:400">未接</span>'}</button>`).join('')}</div>`
   const stSeg = `<div class="ibSeg"><button class="${_ibFilter === 'todo' ? 'on' : ''}" onclick="_ibFilter='todo';ibRenderList()">待處理${nTodo ? ` <span class="n">${nTodo}</span>` : ''}</button><button class="${_ibFilter === 'star' ? 'on' : ''}" onclick="_ibFilter='star';ibRenderList()">特別注意${nStar ? ` <span class="n" style="background:#f59e0b">${nStar}</span>` : ''}</button><button class="${_ibFilter === 'wait' ? 'on' : ''}" onclick="_ibFilter='wait';ibRenderList()">等待中${nWait ? ` <span class="n" style="background:#7c3aed">${nWait}</span>` : ''}</button><button class="${_ibFilter === 'done' ? 'on' : ''}" onclick="_ibFilter='done';ibRenderList()">已完成${nDone ? ` <span class="n" style="background:rgba(255,255,255,.12);color:#C3CEDC">${nDone}</span>` : ''}</button><button class="${_ibFilter === 'all' ? 'on' : ''}" onclick="_ibFilter='all';ibRenderList()">全部</button></div>`
-  const row = c => { const a = ibAcct(c.acct); return `<div class="ibRow${_ibCur === c.id ? ' cur' : ''}${c.status === 'done' && !c.unread ? ' done' : ''}" onclick="ibOpen('${ibEsc(c.id)}')">
+  const row = c => { const a = ibAcct(c.acct); return `<div class="ibRow${_ibCur === c.id ? ' cur' : ''}${c.status === 'done' && !c.unread ? ' done' : ''}"${c.unread && _ibCur !== c.id ? ' style="background:#2563eb1f;box-shadow:inset 3px 0 0 #2563eb"' : ''} onclick="ibOpen('${ibEsc(c.id)}')">
       <div class="av" style="${c.pic ? `background-image:url('${ibEsc(c.pic)}')` : ''}">${c.pic ? '' : ibEsc((c.name || '?').slice(0, 1))}</div>
       <div style="flex:1;min-width:0">
         <div class="l1"><b>${c.star ? `<span style="color:#f59e0b;vertical-align:-2px;margin-right:3px" title="特別注意">${IB_ICON.star.replace('fill="none"', 'fill="currentColor"')}</span>` : ''}${ibEsc(c.alias || c.name || '客人')}</b><span class="hint" style="font-size:11px;flex:none">${c.lastT ? ibT(c.lastT) : ''}</span></div>
         <div class="l2"><span class="t">${c.last ? ibEsc((c.last.dir === 'out' ? '↩ ' : '') + c.last.text) : ''}</span>${c.unread ? `<span class="un">${c.unread}</span>` : ''}</div>
-        <div class="l3">${ibStBadge(c.status)}${ibCatTag(c.cat, c.catBy || 'man')}${ibBkTag(c)}${c.status === 'wait' && c.waitUntil ? `<span class="who" style="color:#a78bfa;font-weight:700">${c.waitUntil.slice(5).replace('-', '/')} 再回</span>` : ''}${c.memoN ? `<span class="who">備忘 ${c.memoN}</span>` : ''}<span class="acct"><i style="background:${a.color}"></i>${ibEsc(a.name)}</span>${c.assignee ? `<span class="who">${ibEsc(c.assignee)}</span>` : ''}${c.follow === false ? '<span class="who">已封鎖</span>' : ''}</div>
+        <div class="l3">${c.unread && _ibCur !== c.id ? `<span style="background:#dc2626;color:#fff;border-radius:6px;padding:0 7px;font-weight:800;font-size:12px">新訊息 ${c.unread}</span>` : ''}${ibStBadge(c.status)}${ibCatTag(c.cat, c.catBy || 'man')}${ibBkTag(c)}${c.status === 'wait' && c.waitUntil ? `<span class="who" style="color:#a78bfa;font-weight:700">${c.waitUntil.slice(5).replace('-', '/')} 再回</span>` : ''}${c.memoN ? `<span class="who">備忘 ${c.memoN}</span>` : ''}<span class="acct"><i style="background:${a.color}"></i>${ibEsc(a.name)}</span>${c.assignee ? `<span class="who">${ibEsc(c.assignee)}</span>` : ''}${c.follow === false ? '<span class="who">已封鎖</span>' : ''}</div>
       </div></div>` }
   const notCfg = (d.accounts || []).filter(a => !a.configured)
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)"><b style="font-size:16px;flex:1">收件匣</b>${d.me && d.me.mgr ? `<button class="mini" style="padding:6px 8px" title="收件匣設定：帳號連線／權限／範本" onclick="ibSettings()">${IB_ICON.gear}</button>` : ''}</div>
@@ -201,7 +203,7 @@ function ibRenderMsgs(scroll) {
     const out = m.dir === 'out'
     let body = ''
     if (m.type === 'sticker' && m.sticker) body = `<img src="https://stickershop.line-scdn.net/stickershop/v1/sticker/${ibEsc(m.sticker.id)}/android/sticker.png" style="width:110px;height:110px;object-fit:contain" alt="貼圖" onerror="this.outerHTML='（貼圖）'">`
-    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:block;line-height:0"><img src="${ibEsc(m.url || m.ext)}" style="max-width:260px;max-height:340px;width:auto;height:auto;border-radius:10px;display:block" alt="圖片"></a>`
+    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:block;line-height:0"><img src="${ibEsc(m.url || m.ext)}" style="max-width:260px;max-height:340px;width:auto;height:auto;border-radius:10px;display:block" alt="圖片" onload="ibStick()"></a>`
     else if (m.type === 'video' && (m.url || m.ext)) body = `<video src="${ibEsc(m.url || m.ext)}" controls style="max-width:260px;border-radius:10px;display:block"></video>`
     else if (m.type === 'audio' && (m.url || m.ext)) body = `<audio src="${ibEsc(m.url || m.ext)}" controls style="max-width:240px"></audio>`
     else if (m.type === 'file') body = (m.url || m.ext) ? `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}${m.size ? ` <span class="hint" style="font-size:11px">${Math.round(m.size / 1024)} KB</span>` : ''}</a>` : `${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}（沒抓到內容）`
@@ -213,8 +215,17 @@ function ibRenderMsgs(scroll) {
       <div style="max-width:78%;${(['image', 'video'].includes(m.type) && (m.url || m.ext)) ? `width:fit-content;padding:3px;background:transparent;border:2px solid ${out ? '#2563eb' : 'var(--line)'}` : `background:${out ? '#2563eb' : 'var(--card)'};color:${out ? '#fff' : 'inherit'};border:1px solid ${out ? '#2563eb' : 'var(--line)'};padding:8px 12px`};border-radius:${out ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:15px;white-space:pre-wrap;word-break:break-word">${body}</div>
       <div class="hint" style="font-size:10.5px;margin:2px 6px 0">${ibT(m.t)}${m.imp ? ` · <span style="color:#a78bfa">舊帳號紀錄</span>` : ''}</div></div>`
   }).join('')
-  if (scroll !== false) box.scrollTop = box.scrollHeight
+  if (scroll !== false) { box._stick = true; box.scrollTop = box.scrollHeight }
+  // v4.71.24 張良 2026-10-14「切到對話框要出現最下面最新的對話」：圖片晚一點才載入會把內容撐長→還黏在底部就跟著捲到底；自己往上滑就不打擾
+  box.onscroll = () => { box._stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80 }
 }
+function ibListNew(d2) { // v4.71.24 張良「有傳新對話來、我還沒點開，這邊要出現新訊息通知」：別的對話多了未讀→清單那列變藍底＋「新訊息」紅標，並跳一下提示
+  const old = {}; ((_ibD && _ibD.convs) || []).forEach(c => { old[c.id] = c.unread || 0 })
+  const fresh = (d2.convs || []).filter(c => c.id !== _ibCur && (c.unread || 0) > (old[c.id] || 0))
+  _ibD = d2; ibRenderList()
+  if (fresh.length) libToast(fresh.length === 1 ? `${fresh[0].alias || fresh[0].name || '客人'} 傳來新訊息` : `${fresh.length} 位客人傳來新訊息`)
+}
+function ibStick() { const b = document.getElementById('ibMsgs'); if (b && b._stick) b.scrollTop = b.scrollHeight }
 async function ibOpen(id, keep) {
   _ibCur = id; _ibMsgs = []; _ibConv = null
   if (!keep) { const c = ((_ibD && _ibD.convs) || []).find(x => x.id === id); if (c) c.unread = 0 }
@@ -223,7 +234,7 @@ async function ibOpen(id, keep) {
   const d = await ibGet('op=conv&id=' + encodeURIComponent(id) + '&read=1')
   if (!d || !d.ok) { const box = document.getElementById('ibMsgs'); if (box) box.innerHTML = '<div class="err">' + ibEsc((d && d.error) || '讀不到對話') + '</div>'; return }
   _ibConv = d.conv; _ibConv.quota = d.quota; _ibMsgs = d.list || []; _ibReplyLeft = d.replyLeft || 0
-  ibRenderPane(); ibRenderMsgs(); ibRenderList()
+  ibRenderPane(); ibRenderMsgs(); ibRenderList(); requestAnimationFrame(ibStick); setTimeout(ibStick, 400)
   if (_ibTimer) clearInterval(_ibTimer); if (_ibTick) clearInterval(_ibTick)
   _ibTimer = setInterval(ibPoll, 6000)
   _ibTick = setInterval(() => { if (_ibReplyLeft > 0) { _ibReplyLeft--; ibModeLine() } }, 1000)
@@ -239,7 +250,7 @@ async function ibPoll() {
   if (_ibConv) { _ibConv.quota = d.quota; _ibConv.status = d.conv.status; _ibConv.assignee = d.conv.assignee }
   ibModeLine()
 }
-function ibBack() { _ibCur = null; _ibConv = null; ibStop(); _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000); ibRender(); try { history.replaceState(null, '', '#inbox') } catch (_) {} }
+function ibBack() { _ibCur = null; _ibConv = null; ibStop(); _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) ibListNew(d2) }, 20000); ibRender(); try { history.replaceState(null, '', '#inbox') } catch (_) {} }
 async function ibSend() {
   const ta = document.getElementById('ibInput'); if (!ta || _ibBusy) return
   const text = ta.value.trim(); if (!text) return
