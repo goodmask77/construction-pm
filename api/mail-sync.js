@@ -527,7 +527,7 @@ export default async function handler(req, res) {
     if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
     return res.status(200).json({ ok: true, ...out })
   }
-  // 💬 CC 透過 DD 私訊內部夥伴（v4.71.15 張良 2026-10-14）：只認已綁定的內部人（名冊 sp_crew_kb_roster 的 lineUserId／GD 綁定 sp_finance_pm_prep_bind），不給隨便發陌生人
+  // 💬 CC 透過 DD 私訊內部夥伴（v4.71.16 張良 2026-10-14）：只認已綁定的內部人（名冊 sp_crew_kb_roster 的 lineUserId／GD 綁定 sp_finance_pm_prep_bind），不給隨便發陌生人
   //   GET  ?dmfind=<MENU_PROBE_KEY>&q=名字或暱稱 → 只查不發：候選（姓名／暱稱／來源／有無 userId（只回前 6 碼）／DD 好友與否）；&full=1 才回完整 userId 給 dmsend 用（仍要金鑰）
   //   POST ?dmsend=<MENU_PROBE_KEY> body { userId, text } → userId 必須在上述綁定資料內才發，否則 403；記 logPush 來源 'cc-dm'
   if (req.query?.dmfind || req.query?.dmsend) {
