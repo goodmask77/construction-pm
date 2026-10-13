@@ -489,7 +489,8 @@ export async function resvBrief({ dates, months }) {
     const rs = dayRecs(d), lu = rs.filter(r => r.t && r.t < '17:00'), di = rs.filter(r => !r.t || r.t >= '17:00')
     const sum = (a) => a.reduce((t, r) => t + (r.n || 0), 0)
     L.push(`${d}（${wd(d)}）：${rs.length ? `inline 已有 ${rs.length} 組 ${sum(rs)} 人（午 ${lu.length} 組 ${sum(lu)} 人／晚 ${di.length} 組 ${sum(di)} 人）` : 'inline 目前沒有訂位'}`)
-    rs.filter(r => (r.n || 0) >= 10 || r.note || r.inote).sort((a, b) => String(a.t).localeCompare(String(b.t))).slice(0, 15).forEach(r => L.push(`  - ${r.t || '未填時間'} ${r.name || ''} ${r.n || 0} 人｜${ST[r.st] || r.st}${r.note ? '｜客註：' + String(r.note).replace(/\s+/g, ' ').slice(0, 60) : ''}${r.inote ? '｜店註：' + String(r.inote).replace(/\s+/g, ' ').slice(0, 60) : ''}`))
+    const cn = (x) => String(x || '').replace(/Purpose:\s*✅一般用餐無特殊需求✅/g, '').replace(/\s+/g, ' ').trim() // 訂位表單預設勾選＝不是真備註
+    rs.filter(r => (r.n || 0) >= 10 || cn(r.note) || cn(r.inote)).sort((a, b) => String(a.t).localeCompare(String(b.t))).slice(0, 15).forEach(r => L.push(`  - ${r.t || '未填時間'} ${r.name || ''} ${r.n || 0} 人｜${ST[r.st] || r.st}${cn(r.note) ? '｜客註：' + cn(r.note).slice(0, 60) : ''}${cn(r.inote) ? '｜店註：' + cn(r.inote).slice(0, 60) : ''}`))
     ;(notes[d] || []).forEach(n => n && n.note && L.push(`  - 當日備註：${String(n.note).replace(/\s+/g, ' ').slice(0, 100)}`))
     emOn(d).forEach(p => L.push('  - ' + emLine(p)))
   }
