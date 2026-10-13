@@ -221,6 +221,9 @@ async function custBuild() {
     idx.segments[seg] = { label, total: list.length, pages }
   }
   for (const [ym9, g9] of Object.entries(nrd)) await kvPut(`sp_finance_pm_inline_nr_${ym9}`, { ...g9, builtAt: new Date().toISOString() }, 'inline新回名單')
+  // v4.71.12 電話索引（收件匣客戶資料用）：手機後 9 碼 → [名字,來店,取消,第一次,最近,最大人數,訂位數]，依後 2 碼分 100 檔，查一個人只讀一小檔
+  { const sh = {}; for (const c of idd) { const k = c.ph.replace(/\D/g, '').slice(-9); if (k.length !== 9) continue; const b = sh[k.slice(-2)] = sh[k.slice(-2)] || {}; const o = b[k]; if (!o || (c.l || '') > (o[4] || '')) b[k] = [c.n, c.v, c.cx, c.f, c.l, c.mx, c.b] }
+    for (let i = 0; i < 100; i++) { const d2 = String(i).padStart(2, '0'); await kvPut('sp_finance_pm_inline_ph_' + d2, { rows: sh[d2] || {}, builtAt: new Date().toISOString() }, 'inline電話索引') } }
   await kvPut('sp_finance_pm_inline_insights', ins, 'inline洞察')
   await kvPut('sp_finance_pm_inline_custidx', idx, 'inline顧客庫索引')
   await announceChanged()

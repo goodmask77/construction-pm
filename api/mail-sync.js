@@ -505,6 +505,7 @@ export default async function handler(req, res) {
     const list = await IB.listConvs({ who, mgr: true, cfg })
     const out = { list: { ...(await tm(() => IB.listConvs({ who, mgr: true, cfg }))), n: list.length } }
     for (const c of list.slice(0, 3)) out['conv_' + c.acct] = await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))
+    if (list[0]) out.cust = await tm(() => IB.inboxCust({ who, mgr: true, cfg, id: (list.find(c => c.acct === 'gd') || list[0]).id }))
     if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
     return res.status(200).json({ ok: true, ...out })
   }
@@ -4649,7 +4650,7 @@ export default async function handler(req, res) {
     try {
       const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a), canReply: IB.canReplyAcct(cfgI, whoI, mgrI, a.key) }))
       if (req.method !== 'POST') {
-        if (opI === 'list') return res.status(200).json({ ok: true, ver: IB.INBOX_VER, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
+        if (opI === 'list') return res.status(200).json({ ok: true, ver: IB.INBOX_VER, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, cats: cfgI.cats, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
         if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
         if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: peopleI.map(p => p.name), peopleInfo: peopleI }) }
         return res.status(400).json({ ok: false, error: '不認識的操作' })
@@ -4657,7 +4658,8 @@ export default async function handler(req, res) {
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
       if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
       if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
-      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
+      if (opI === 'cust') return res.status(200).json(await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
+      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
       if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })

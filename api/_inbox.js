@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4820' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4822' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -51,12 +51,26 @@ async function kvLike(prefix, limit, order) {
 }
 
 const CFG_KEY = 'pm_inbox_cfg'
+// v4.71.12 對話分類（張良 2026-10-14 參考小夏 EM「一般訂位／大型訂位／包場／婚禮」）：設定頁可增刪改；新訊息先用關鍵字猜，猜不到每小時 AI 補；人改過（catBy=man）就不再自動改
+export const DEF_CATS = ['一般訂位', '大型訂位', '包場', '婚禮', '會員／點數', '其他']
+export function kwCat(text, cats) {
+  const t = String(text || ''); const has = (c) => (cats || DEF_CATS).includes(c)
+  const n = Math.max(0, ...[...t.matchAll(/(\d{2,3})\s*(?:人|位|個人)/g)].map(m => +m[1]))
+  if (has('婚禮') && /婚禮|婚宴|求婚|訂婚|wedding/i.test(t)) return '婚禮'
+  if (has('包場') && /包場|尾牙|春酒|包下|場地租|整場|活動場地|企業活動|發表會/.test(t)) return '包場'
+  if (has('大型訂位') && n >= 15) return '大型訂位'
+  if (has('會員／點數') && /會員|點數|集點|補登|會員卡/.test(t)) return '會員／點數'
+  if (has('一般訂位') && /訂位|預約|位子|座位|幾位|候位|訂桌/.test(t)) return '一般訂位'
+  return ''
+}
+const PHONE_RE = /(?:\+?886[-\s]?|0)9\d{2}[-\s]?\d{3}[-\s]?\d{3}/
+export const phoneKey = (p) => String(p || '').replace(/\D/g, '').slice(-9) // 台灣手機後 9 碼（+886／0 開頭都對得上）
 const convKey = (acct, uid) => `pm_inbox_c_${acct}_${uid}`
 const convId = (acct, uid) => `${acct}:${uid}`
 const splitId = (id) => { const i = String(id).indexOf(':'); return i > 0 ? [id.slice(0, i), id.slice(i + 1)] : [null, null] }
 const msgKey = (acct, uid, t) => `pm_inbox_m_${acct}_${uid}_${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`
 const statKey = (acct) => `pm_inbox_acct_${acct}`
-export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {}, reply: c.reply || {}, remind: c.remind || {} } } // remind[acct]={people:[姓名], group:LINE群gid}：沒人回提醒通知誰（v4.70.54 張良：可設個人或直接通知群組） // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
+export async function loadCfg() { const c = (await kvGet(CFG_KEY)) || {}; return { ...c, perm: c.perm || {}, templates: c.templates || [], remindMin: +c.remindMin || 30, forward: c.forward || {}, reply: c.reply || {}, remind: c.remind || {}, cats: (Array.isArray(c.cats) && c.cats.length) ? c.cats : DEF_CATS } } // remind[acct]={people:[姓名], group:LINE群gid}：沒人回提醒通知誰（v4.70.54 張良：可設個人或直接通知群組） // forward[acct]=原本接著的系統網址（接到收件匣後我們每則原封轉發過去，原系統不斷）
 export const maskUrl = (u) => String(u || '').replace(/([?&][^=&]+=)[^&]{4,}/g, (m, k) => k + '••••')
 export const isMgr = (who, apr, pm) => !!who && (apr.includes(who.name) || who.name === '張良瑋' || who.role === '主管' || (((pm || {}).users || {})[who.rid || who.uid] || {}).admin)
 export const canSeeAcct = (cfg, who, mgr, acct) => mgr || ((cfg.perm || {})[acct] || []).includes(who.name)
@@ -162,6 +176,8 @@ export async function ingestEvent(a, ev, destination) {
     } else { text = '（' + (m.type || '訊息') + '）' }
     conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso(); conv.replyUsed = false // 每則新訊息都有新的 replyToken（v4.70.49 修：之前回過一次後永遠走 push）
     conv.unread = (conv.unread || 0) + 1
+    if (msg.text && !conv.cat) { try { const cfgK = await loadCfg(); const g = kwCat(msg.text, cfgK.cats); if (g) { conv.cat = g; conv.catBy = 'kw' } } catch (_) {} }
+    if (msg.text && !conv.phone) { const pm = String(msg.text).match(PHONE_RE); if (pm) { conv.phone = pm[0].replace(/[\s-]/g, ''); conv.phoneBy = 'auto' } }
     if (conv.status === 'done' || conv.status === 'wait') { conv.status = 'new'; conv.waitUntil = '' } // v4.71.11 等待中的客人又傳訊息＝要處理，回到待處理
     conv.lastInT = msg.t
   } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
@@ -247,7 +263,7 @@ export async function listConvs({ who, mgr, cfg, acct }) {
   const vis = all.filter(c => c && c.acct && canSeeAcct(cfg, who, mgr, c.acct))
   const rank = (c) => (c.unread ? 0 : 1) * 100 + (c.star && c.status !== 'done' ? 0 : 1) * 10 + ({ new: 0, open: 1, wait: 2, done: 3 }[c.status] ?? 1) // v4.71.11 未讀→特別注意→新→處理中→等待中→已完成
   vis.sort((x, y) => rank(x) - rank(y) || String(y.lastT || '').localeCompare(String(x.lastT || '')))
-  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
+  return vis.map(c => ({ id: c.id, acct: c.acct, kind: c.kind, name: c.name, pic: c.pic, last: c.last, lastT: c.lastT, unread: c.unread || 0, status: c.status || 'new', assignee: c.assignee || '', follow: c.follow !== false, star: !!c.star, waitUntil: c.waitUntil || '', cat: c.cat || '', memoN: (c.memos || []).length + (c.note ? 1 : 0) }))
 }
 async function signMany(paths, expiresIn) { // Supabase 批次簽名：一個請求簽多張；失敗退回一張一張
   const out = {}; if (!paths.length) return out
@@ -364,11 +380,13 @@ export async function convOp({ who, mgr, cfg, op, id, value }) {
     await kvInsert(msgKey(acct, uid, t), { id: 'x', convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: d ? `${who.name} 設為「等待中」，${d.slice(5).replace('-', '/')} 提醒再回覆` : `${who.name} 取消等待` }, '收件匣')
   }
   else if (op === 'memo') { const tx = String(value || '').trim().slice(0, 1000); if (!tx) return { ok: false, error: '備忘錄是空的' }; conv.memos = [...(conv.memos || []), { id: t.toString(36), t: new Date(t).toISOString(), by: who.name, text: tx }].slice(-100) }
+  else if (op === 'cat') { const v = String(value || '').slice(0, 20); conv.cat = v; conv.catBy = v ? 'man' : '' }
+  else if (op === 'custset') { const v = value && typeof value === 'object' ? value : {}; conv.phone = String(v.phone || '').replace(/[^\d+]/g, '').slice(0, 15); conv.phoneBy = 'man'; conv.email = String(v.email || '').trim().slice(0, 80); conv.company = String(v.company || '').trim().slice(0, 60); conv.tags = (Array.isArray(v.tags) ? v.tags : []).map(x => String(x).trim().slice(0, 16)).filter(Boolean).slice(0, 12) }
   else if (op === 'memodel') conv.memos = (conv.memos || []).filter(m => m.id !== String(value))
   else if (op === 'rename') conv.alias = String(value || '').slice(0, 40)
   else return { ok: false, error: '不認識的操作' }
   await kvSet(ck, conv)
-  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [] } }
+  return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [], cat: conv.cat || '', catBy: conv.catBy || '', phone: conv.phone || '', email: conv.email || '', company: conv.company || '', tags: conv.tags || [] } }
 }
 // ── v4.71.11 問 AI（張良 2026-10-14「要有 AI 對話框，讓我即時詢問一些內容回覆給客戶」）：看這段對話＋備忘錄回答；要擬回覆就放在【回覆草稿】區塊，前端一鍵放進回覆框（不會自動發出）──
 export async function inboxAi({ who, mgr, cfg, id, q, hist }) {
@@ -423,7 +441,7 @@ export async function settings({ origin }) {
     const want = origin + (a.relay ? '/api/line-webhook' : '/api/inbox-webhook') // relay（DD）＝webhook 應該指在 DD 自己的接收端
     return { key: a.key, name: a.name, color: a.color, relay: !!a.relay, configured: ok, forward: maskUrl(cfg.forward[a.key] || ''), forwardSet: !!cfg.forward[a.key], lastFwd: st.lastFwd || null, envSecret: a.env + '_SECRET', envToken: a.env + '_TOKEN', info, hook, hookOk: !!(hook && hook.endpoint === want && hook.active), wantHook: want, quota, lastEventT: st.lastEventT || '', lastEventType: st.lastEventType || '' }
   }))
-  return { ok: true, accounts, cfg: { perm: cfg.perm, reply: cfg.reply, remind: cfg.remind, templates: cfg.templates, remindMin: cfg.remindMin, escalateH: +cfg.escalateH || 24 }, sigfail: sig, groups }
+  return { ok: true, accounts, cfg: { perm: cfg.perm, reply: cfg.reply, remind: cfg.remind, templates: cfg.templates, remindMin: cfg.remindMin, escalateH: +cfg.escalateH || 24, cats: cfg.cats, quiet: cfg.quiet || null }, sigfail: sig, groups }
 }
 export async function saveCfg(patch, who) {
   const cfg = await loadCfg()
@@ -431,6 +449,8 @@ export async function saveCfg(patch, who) {
   if (patch.reply && typeof patch.reply === 'object') { cfg.reply = {}; for (const a of ACCOUNTS) cfg.reply[a.key] = Array.isArray(patch.reply[a.key]) ? patch.reply[a.key].map(String).slice(0, 50) : [] }
   if (Array.isArray(patch.templates)) cfg.templates = patch.templates.filter(x => x && (x.text || '').trim()).map((x, i) => ({ id: x.id || ('t' + Date.now().toString(36) + i), title: String(x.title || '').slice(0, 30), text: String(x.text || '').slice(0, 1000) })).slice(0, 60)
   if (patch.remindMin != null) cfg.remindMin = Math.max(5, Math.min(1440, +patch.remindMin || 30))
+  if (Array.isArray(patch.cats)) { const cs = [...new Set(patch.cats.map(x => String(x || '').trim().slice(0, 20)).filter(Boolean))].slice(0, 20); cfg.cats = cs.length ? cs : DEF_CATS }
+  if (patch.quiet !== undefined) { const qq = patch.quiet; cfg.quiet = qq && qq.on !== false && qq.from !== '' && qq.to !== '' ? { from: Math.max(0, Math.min(23, +qq.from || 0)), to: Math.max(0, Math.min(23, +qq.to || 0)) } : null }
   if (patch.escalateH != null) cfg.escalateH = Math.max(1, Math.min(168, +patch.escalateH || 24))
   if (patch.remind && typeof patch.remind === 'object') { cfg.remind = cfg.remind || {}; for (const [k, v] of Object.entries(patch.remind)) { if (!acctOf(k) || !v || typeof v !== 'object') continue; cfg.remind[k] = { people: Array.isArray(v.people) ? v.people.map(String).slice(0, 50) : [], group: /^[CR][0-9a-f]{32}$/.test(String(v.group || '')) ? String(v.group) : '' } } }
   if (patch.forward && typeof patch.forward === 'object') { for (const [k, v] of Object.entries(patch.forward)) { if (!acctOf(k)) continue; const u = String(v || '').trim(); if (!u) delete cfg.forward[k]; else if (/^https:\/\//.test(u)) cfg.forward[k] = u.slice(0, 500) } }
@@ -458,17 +478,22 @@ export async function connectAcct({ key, origin, force }) {
 // ── 未回覆提醒（每小時 cron 呼叫）v4.71.9 張良 2026-10-13：①同一輪合併成一則（原本一個客人一則、群組按人數扣額度）②超過 remindMin 分鐘 → 只通知「通知誰」③超過 escalateH 小時（預設 24）還沒回 → 才發 LINE 群（每個對話每 24 小時最多進群一次）──
 // 一次性預設（remindV<2）：三個官方帳號「通知誰」=張良瑋、群組=HAPPY337；之後在收件匣設定可改
 async function remindDefaults(cfg) {
-  if ((+cfg.remindV || 0) >= 2) return cfg
+  if ((+cfg.remindV || 0) >= 3) return cfg
+  if ((+cfg.remindV || 0) === 2) { cfg.quiet = cfg.quiet || { from: 21, to: 12 }; cfg.remindV = 3; await kvSet(CFG_KEY, cfg, '收件匣提醒安靜時段'); return cfg }
   let g337 = ''; try { const { ddGroupGid } = await import('./_ddmsg.js'); g337 = await ddGroupGid('internal') } catch (_) {}
   cfg.remind = cfg.remind || {}
   for (const a of ACCOUNTS) { if (a.relay) continue; cfg.remind[a.key] = { people: ['張良瑋'], group: /^[CR][0-9a-f]{32}$/.test(g337) ? g337 : ((cfg.remind[a.key] || {}).group || '') } }
-  cfg.escalateH = 24; cfg.remindV = 2
+  cfg.escalateH = 24; cfg.remindV = 3
+  if (!cfg.quiet) cfg.quiet = { from: 21, to: 12 } // v4.71.13 張良 2026-10-14「晚上 21:00～隔日 12:00 不用提醒」
   await kvSet(CFG_KEY, cfg, '收件匣提醒預設')
   return cfg
 }
 export async function inboxRemind({ test } = {}) { // test=true：只私訊張良瑋、不發群、不存提醒時間（測試口 ?inboxremindtest=）
   const cfg = await remindDefaults(await loadCfg())
   const escH = +cfg.escalateH || 24
+  // 安靜時段（台灣時間，from 點起到隔天 to 點前不發）：整輪跳過；時段結束後第一輪把累積的合併成一則（測試口不受限）
+  const q = cfg.quiet || {}; const hTw = new Date(Date.now() + 8 * 3600e3).getUTCHours()
+  if (!test && q.from != null && q.to != null && q.from !== q.to && (q.from > q.to ? (hTw >= q.from || hTw < q.to) : (hTw >= q.from && hTw < q.to))) return { ok: true, quiet: true, hour: hTw }
   const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // v4.71.11 張良 2026-10-14「不需要給那麼多資訊，簡單整理名稱、不同官方幾則即可」：每位收件人／群各一則＝帳號分組「A Beach 3：甲、乙、丙」
@@ -514,3 +539,36 @@ export async function inboxRemind({ test } = {}) { // test=true：只私訊張�
   return { ok: true, reminded: out, private: Object.keys(P).length, groups: Object.keys(G).length }
 }
 export const unreadTotal = async ({ who, mgr, cfg }) => (await listConvs({ who, mgr, cfg })).reduce((t, c) => t + (c.unread || 0), 0)
+
+// ── v4.71.12 AI 補分類（每小時跟提醒一起跑）：還沒分類、近 7 天有動的對話，一次丟一批給便宜模型 ──
+export async function inboxClassify() {
+  const cfg = await loadCfg(); const cats = cfg.cats
+  const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
+  const todo = all.filter(c => c && !c.cat && c.catBy !== 'man' && !(acctOf(c.acct) || {}).relay && c.lastInT && Date.now() - new Date(c.lastInT).getTime() < 7 * 864e5 && (c.aiCatN || 0) < 2).slice(0, 25)
+  if (!todo.length) return { ok: true, n: 0 }
+  const items = await Promise.all(todo.map(async c => { const rows = await kvLike(`pm_inbox_m_${c.acct}_${c.uid}_`, 12, 'id.desc'); return { id: c.id, acct: (acctOf(c.acct) || {}).name, text: rows.filter(m => m.dir === 'in' && m.text).map(m => String(m.text).slice(0, 200)).reverse().join(' / ').slice(0, 600) } }))
+  const { aiCall } = await import('./_ai.js')
+  const r = await aiCall('summary', { system: `把餐廳 LINE 客服對話分類。只能用這些分類：${cats.join('、')}。判斷不出來就用「其他」。只回 JSON：{"對話id":"分類",...}，不要其他文字。`, messages: [{ role: 'user', content: JSON.stringify(items) }], maxTokens: 1200, effort: 'low', timeoutMs: 60000 })
+  let map = {}; try { map = JSON.parse(String(r.text || '').replace(/^[^{]*/, '').replace(/[^}]*$/, '')) } catch (_) {}
+  let n = 0
+  for (const c of todo) { const v = map[c.id]; c.aiCatN = (c.aiCatN || 0) + 1; if (v && cats.includes(v)) { c.cat = v; c.catBy = 'ai'; n++ } await kvSet(convKey(c.acct, c.uid), c, '收件匣AI分類') }
+  return { ok: true, n, tried: todo.length }
+}
+// ── v4.71.12 客戶資料側欄：會員（LINE 帳號直接對）＋ inline 訂位（電話後 9 碼）＋ EM 包場案件（名字）──
+export async function inboxCust({ who, mgr, cfg, id }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  const MB = await import('./_member.js')
+  const shard = (pk) => kvGet('sp_finance_pm_inline_ph_' + pk.slice(-2)).then(sh => (sh && sh.rows && sh.rows[pk]) || null).catch(() => null)
+  const [conv, mc, em] = await Promise.all([kvGet(convKey(acct, uid)), (acct === 'gd' ? MB.memberCard(uid).catch(() => null) : null) /* 會員制只在 GROUN:D 帳號 */, kvGet('sp_finance_pm_em').catch(() => null)]) // 速度鐵則：同時查
+  if (!conv) return { ok: false, error: '找不到這個對話' }
+  const member = mc ? mc.member : null, mphone = mc ? mc.phone : ''
+  const phone = conv.phone || mphone || ''
+  const pk = phoneKey(phone)
+  let inline = null
+  if (pk.length === 9) { const r = await shard(pk); if (r) inline = { name: r[0], visits: r[1], cancels: r[2], first: r[3], last: r[4], maxParty: r[5], bookings: r[6] } }
+  const names = [conv.alias, conv.name, member && member.name].map(x => String(x || '').trim()).filter(x => x.length >= 2)
+  const projects = ((em && em.projects) || []).filter(p => p.cust && names.some(n => p.cust.includes(n) || n.includes(p.cust))).sort((x, y) => String(y.date || '').localeCompare(String(x.date || ''))).slice(0, 8).map(p => ({ code: p.code, title: p.title, date: p.date, n: p.n, status: p.status, owner: p.owner, venue: p.venue, cust: p.cust }))
+  return { ok: true, phone, phoneBy: conv.phone ? (conv.phoneBy || 'man') : (mphone ? 'member' : ''), email: conv.email || '', company: conv.company || '', tags: conv.tags || [], assignee: conv.assignee || '', member, inline, inlineReady: !!(pk.length === 9), projects }
+}
