@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── 任務卡「定期提醒」引擎（張良 2026-10-09；每小時整點 cron）──
 // 前端設定存 task.reminder = { on, freq:'daily'|'weekday'|'custom', days:[0..6], hours:[整點], ch:['push','dm','group'], count, lastSlot }
 // 這支每小時整點跑：挑出「今天這個星期 × 這個整點 該提醒、且本小時還沒提醒過」的任務 → 發 push/LINE私訊/群組 → count+1、記 lastSlot 防重複

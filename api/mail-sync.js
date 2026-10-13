@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：自動收信入庫（cron-daily 每天呼叫；也可手動 /api/mail-sync?days=N）
 // ① 中信 e-Cash「帳務處理結果」通知（goodmask77@gmail.com）→ sp_finance_pm_ctbc（只增不改，dedupe by 交易序號）
 // ② Eats365 POS 日結報表 xlsx 附件（money@gumgum.club）→ sp_finance_pm_pos（設好 MAIL_USER2/MAIL_PASS2 後自動啟用）
@@ -494,6 +495,12 @@ export default async function handler(req, res) {
       out2[dk] = { rows: (t.r || []).length, statuses, voidLike: (t.r || []).filter(row => row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))).length }
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
+  }
+  // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
+  if (req.query?.inboxremindtest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.inboxremindtest) !== mk) return res.status(403).json({ ok: false })
+    return res.status(200).json(await (await import('./_inbox.js')).inboxRemind({ test: true }))
   }
   // 👥 班表「非常態」名單維護口（v4.71.4 張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）：GET ?shiftoff=<MENU_PROBE_KEY> 讀；&rm=姓名 恢復常態；&add=姓名 標非常態
   if (req.query?.shiftoff) {

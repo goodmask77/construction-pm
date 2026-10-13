@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 📥 統一收件匣 v4.70.61（+DD 帳號：DD 的一對一私訊自動進收件匣、DD 自己答過算已完成、可從收件匣用 DD 名義插手回；張良 2026-10-11「增加DD」）（舊版前端自動重新整理；沒人回提醒可設通知誰／LINE 群；帳號顯示名改 A Beach／GROUN:D／104招募；溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
 // 設計：
 //  - 三個官方帳號（A Beach 客服／GROUN:D 客服／招募）共用一個接收端點 api/inbox-webhook.js；每個請求用「哪個帳號的 channel secret 驗得過」決定是哪個帳號（不用先知道 destination）
@@ -276,8 +277,8 @@ async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastTe
   let mode = fresh ? 'reply' : 'push', r
   if (fresh) {
     r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: conv.replyToken, messages }) })
-    if (!r.ok) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) }) } // reply 過期就退 push
-  } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) })
+    if (!r.ok) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) }) } // reply 過期就退 push
+  } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) })
   if (!r.ok) return { ok: false, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
   const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
@@ -405,7 +406,7 @@ async function remindDefaults(cfg) {
   await kvSet(CFG_KEY, cfg, '收件匣提醒預設')
   return cfg
 }
-export async function inboxRemind() {
+export async function inboxRemind({ test } = {}) { // test=true：只私訊張良瑋、不發群、不存提醒時間（測試口 ?inboxremindtest=）
   const cfg = await remindDefaults(await loadCfg())
   const escH = +cfg.escalateH || 24
   const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
@@ -420,19 +421,19 @@ export async function inboxRemind() {
     const a = acctOf(c.acct); if (!a || a.relay) continue // relay（DD）不提醒：DD 自己會答，沒答的留在待處理給人看就好
     const dueP = !(c.remindT && Date.now() - new Date(c.remindT).getTime() < 55 * 60e3)
     const dueG = age >= escH * 3600e3 && !(c.escT && Date.now() - new Date(c.escT).getTime() < 23.5 * 3600e3)
-    if (!dueP && !dueG) continue
-    const { rids, names, group } = await permRids(c.acct, true)
+    if (!dueP && !dueG && !test) continue
+    const { rids, names, group } = test ? { rids: [], names: ['張良瑋'], group: '' } : await permRids(c.acct, true)
     const line = `・${a.name}「${c.name}」${ago(Math.round(age / 60e3))}沒回：${String((c.last && c.last.text) || '').replace(/\s+/g, ' ').slice(0, 40)}`
-    if (dueP) { for (const r of rids) (byRid[r] = byRid[r] || []).push(line); for (const n of names) (byName[n] = byName[n] || []).push(line); c.remindT = nowIso(); c.remindN = (c.remindN || 0) + 1 }
+    if (dueP || test) { for (const r of rids) (byRid[r] = byRid[r] || []).push(line); for (const n of names) (byName[n] = byName[n] || []).push(line); c.remindT = nowIso(); c.remindN = (c.remindN || 0) + 1 }
     if (dueG && group) { (byGroup[group] = byGroup[group] || []).push(line); c.escT = nowIso() }
     touched.push(c); out.push(c.id)
   }
   const link = 'https://ground-pm.vercel.app/prep#inbox'
   const msg = (lines, head) => `📥 ${head}（${lines.length} 位）\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…另外 ${lines.length - 15} 位` : ''}\n→ ${link}`
   try { const { wpPush } = await import('./_webpush.js'); for (const [r, ls] of Object.entries(byRid)) await wpPush([r], { title: `收件匣：${ls.length} 位客人還沒回`, body: ls.join('\n').slice(0, 160), url: '/prep#inbox', cat: 'inbox' }) } catch (_) {}
-  try { const ros = await kvGet('sp_crew_kb_roster'); for (const [an, ls] of Object.entries(byName)) { const p = ((ros || {}).people || []).find(x => x.name === an && x.lineUserId); if (p) await linePush(p.lineUserId, msg(ls, '收件匣還沒回覆')) } } catch (_) {}
+  try { const ros = await kvGet('sp_crew_kb_roster'); for (const [an, ls] of Object.entries(byName)) { const p = ((ros || {}).people || []).find(x => x.name === an && x.lineUserId); if (p) await linePush(p.lineUserId, msg(ls, test ? '【測試】收件匣還沒回覆' : '收件匣還沒回覆')) } } catch (_) {}
   for (const [g, ls] of Object.entries(byGroup)) { try { await linePush(g, msg(ls, `收件匣超過 ${escH} 小時沒人回`)) } catch (_) {} } // 群組推播按群內人數計費（LINE 規則）：合併成一則
-  for (const c of touched) await kvSet(convKey(c.acct, c.uid), c, '收件匣提醒')
+  if (!test) for (const c of touched) await kvSet(convKey(c.acct, c.uid), c, '收件匣提醒')
   return { ok: true, reminded: out, private: Object.keys(byName).length, groups: Object.keys(byGroup).length }
 }
 export const unreadTotal = async ({ who, mgr, cfg }) => (await listConvs({ who, mgr, cfg })).reduce((t, c) => t + (c.unread || 0), 0)

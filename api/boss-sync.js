@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── boss-api 同步（張良 2026-09-21：「先進我們的資料庫就對了，要開頁面要資料都可以再做」）──
 // A Beach 營運資料唯讀 API → 我們自己的 KV（pm_documents）。照 ~/.claude/skills/boss-api/SKILL.md 的規則實作：
 //   ・主鍵 upsert、各端點不同增量窗（出勤/加班31天、交接45天、營收14天…）、班表往後35天

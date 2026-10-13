@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── EM 包場系統同步（小夏做的 em-abeach.vercel.app/api/v1；張良 2026-10-04「小夏的來了 幫我接上」）──
 // 唯讀 API（x-api-key＝EM_API_KEY，scopes: projects/quotes/tasks read）；案件/任務量小（77案/218任務）
 // → 每小時全量覆蓋單檔 sp_finance_pm_em = { projects:[瘦身列…], tasks:[…], lastSync }（冪等、刪除自然反映）
