@@ -388,9 +388,9 @@ function itemsRender(){
   if (!d || !el || !d.cats) return
   // v4.71.7（張良 2026-10-13 品項明細要即時）：最右（最新）一欄若是今天盤中＝表頭標「盤中 HH:MM」、整欄淡紅底；30日均/累計照舊只算打烊後正式值
   const liveIdx = d.liveDate ? d.dates.indexOf(d.liveDate) : -1
-  const dts = d.dates.map((s,i)=> i===liveIdx ? `<span style="color:#F87171">${s.slice(5)}<br><span style="font-size:10.5px;font-weight:600">盤中${d.liveAt?' '+d.liveAt:''}</span></span>` : s.slice(5))
+  const dts = d.dates.map(s=>s.slice(5)) // 張良 2026-10-13「不要再顯示盤中，顯示最新更新時間即可」→ 今天欄跟其他天一樣，只在標題列寫更新時間
   const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
-  const qCells = q => [...q].map((v,i)=>'<td'+(i===liveIdx?' style="background:rgba(248,113,113,.08);color:#F87171;font-weight:700"':'')+'>'+(v||0)+'</td>').reverse().join('')
+  const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
   d.cats.forEach(c=>c.items.forEach(o=>{ o.cat = c.name }))
   const sv = o => itmSort.c==='grow' ? (o.grow==='新'?9e9:(o.grow==null||typeof o.grow!=='number'?-9e9:o.grow)) : (o[itmSort.c]!=null?o[itmSort.c]:-9e9)
   const srt = list => [...list].sort((a,b)=>(sv(a)-sv(b))*itmSort.d)
@@ -400,7 +400,7 @@ function itemsRender(){
   const chip = (lb,v) => `<button class="mini${itmView===v?' on':''}" style="padding:5px 12px" onclick="itmSetView('${v}')">${lb}</button>`
   // 依品類分組／全部＝相連切換膠囊（張良 2026-09-22 指定「兩個匡一起做切換的感覺」）
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${itmView===v?'background:var(--primary);color:#fff':'background:var(--card);color:var(--primary)'}" onclick="itmSetView('${v}')">${lb}</button>`
-  let s = `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數；名字旁 $＝售價（老闆手填優先）；%＝30天金額佔比；點欄頭排序</span></h2>
+  let s = `<section><h2>品項明細 <span class="hint" style="margin-right:6px">最新更新 ${(typeof dataTime==='function'?dataTime(d):'')||'—'}</span><span class="hint">30日均＝近30天每營業日平均份數；名字旁 $＝售價（老闆手填優先）；%＝30天金額佔比；點欄頭排序</span></h2>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('依品類分組','group')}${seg('全部','all')}</span>${catNames.map(cn=>chip(cn,cn)).join('')}
     <button class="mini${itmMng?' on':''}" style="padding:5px 12px;margin-left:auto" onclick="itmMngTog()">🙈 隱藏管理${hid.length?`（${hid.length}）`:''}</button>
