@@ -74,3 +74,24 @@ merge queue、canary 百分比上線、拆微服務／多 repo、自建大型 CI
 | Gemini | 完全不要自動合併（AI 寫 AI 審有同一盲點；所引「Stanford HAI 2026」「arXiv AI-to-AI review」**未查證**） |
 | 證據 | GitHub Copilot 2026-09 起 AI 核准可算合併門檻（公開預覽、預設關、可限路徑）；CodeRabbit 統計 AI 寫的 PR 問題約人寫的 1.7 倍；無人審就合併的 PR 事故率顯著較高（廠商數據） |
 | CC 建議 | 前一個月全部人工按合併、AI 只給審查意見；穩定後只對「純畫面／文字＋只動自己區」開放三家都過就自動合併；高風險區永遠人工 |
+
+---
+
+# 第三輪：三家審查 docs/COLLAB_RULES.md v1 → 改成 v2（2026-10-14）
+## 共識（三家都抓到，已改）
+- PR 作者不能核准自己的 PR → 各區只有一位核准人會卡死。v2：每區加張良為後備核准人；CC 改用獨立機器人帳號開 PR。
+- 個人 repo 協作者一律整 repo 讀寫、push rulesets 只限組織 Team/Enterprise → v2 明寫「分區靠核准＋自動檢查，不是權限鎖」。
+- 正式庫 migration 誰套、何時套沒寫 → v2：核准後 CC 在張良電腦先套正式庫（只准新增）再合併程式；正式庫密碼不放 Actions。
+- Supabase 每日備份要 Pro（US$25/月，保留 7 天）；Branching 另計時數費 → v2：正式 Pro＋一個共用測試專案。
+- Claude Code hook 可被關掉、ABGD_ZONE 自己填 → v2 改稱「提醒」，關卡是 CI＋核准。
+- 機密掃描個人方案沒有 → v2：CI 自裝 gitleaks。
+## 單家抓到、CC 採納
+- Claude：新推送作廢舊核准＋最後推送須他人核准；Actions 只放測試金鑰；Instant Rollback 後要按 Undo Rollback 否則不再自動上線；預覽站非成員需分享連結；張良帳號 2FA。
+- GPT：service role 略過 RLS → 分區寫入靠審查要明寫；view／SECURITY DEFINER 函式要查繞權；預覽站金流／LINE／寄信要接測試或關；Next.js 16 build 不跑 lint；分區表補 app/layout、app/api、tsconfig、.claude 與預設 owner。
+- Gemini／Claude：「合併前分支須最新」4 人會互卡 → 先不開，改合併後 main 再檢查；AI 審查第一階段一般 PR 一家、高風險三家；還原演練改上線前一次＋每季。
+## 分歧
+| 題目 | 說法 | 處理 |
+|---|---|---|
+| 夥伴不加入 Vercel 會不會有預覽 | GPT：會（個人帳號 repo 不檢查）；Claude、Gemini：不會，會被擋 | Vercel /docs/git 明寫「does not apply to collaborators on personal Git accounts」，但 KB〈Why aren't commits triggering deployments〉寫推送者須是 Pro 成員且不分個人／組織 → **兩份官方說法衝突，開工第一天實測**；不行就加席位（US$20/人/月）或 CC 代發 |
+| 改用 GitHub 組織 | Gemini：建議改組織 | 不採用（張良定案全在 goodmask77 個人帳號）；之後要細分權限再搬 |
+| 功能開關 | Gemini：太早 | 採用：外框穩定後再加，之前未完成功能不合併 |
