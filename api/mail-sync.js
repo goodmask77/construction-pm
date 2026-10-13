@@ -1002,6 +1002,11 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.catprobe) !== mk) return res.status(403).json({ ok: false })
     const pfx = { team: 'sp_team_', crew: 'sp_crew_', finance: 'sp_finance_' }[String(req.query.space || '')] || ''
     const cats = (await kvGet(pfx + 'pm_data')) || []
+    // &full=1：回 pm_data 原文完整欄位（payments/議價折扣/付款日…）＋零用金 pm_petty＋比價 pm_estimates 原文，本機用 src/lib/cost.js 同一套算法對帳匯出（唯讀；張良 2026-10-14）
+    if (String(req.query.full || '') === '1') {
+      const [petty, estimates, estimatesAn] = await Promise.all([kvGet(pfx + 'pm_petty'), kvGet(pfx + 'pm_estimates'), kvGet(pfx + 'pm_estimates_an')]) // 零用金＋估價單比價（上傳的估價單與 AI 比價結果）
+      return res.status(200).json({ ok: true, space: pfx || 'construction', full: true, nCats: Array.isArray(cats) ? cats.length : 0, cats: Array.isArray(cats) ? cats : [], petty: petty || null, estimates: estimates || null, estimatesAn: estimatesAn || null })
+    }
     const out2 = (Array.isArray(cats) ? cats : []).map(c => ({
       name: c.name, budget: c.budget, status: c.status,
       items: (c.items || []).map(i => ({ name: i.name, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, taxType: i.taxType, assignee: i.assignee, status: i.status, notes: i.notes })),
