@@ -515,6 +515,19 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, from: fromV, to: todayV, daysWithEvents: out.length, out })
   }
   // ⏱ 收件匣速度量測口（v4.71.11 速度鐵則 docs/PERF_RULES.md：PR 要附 API 時間＋資料量）：GET ?inboxperf=<MENU_PROBE_KEY> → 清單／前 3 個對話各量 3 次（主管視角）
+  // v4.71.20 CC 代辦收件匣（張良 2026-10-14「先幫我搞定雅婷匯入＋重點整理進備忘錄」）：只認 CC_AGENT_KEY、只開 找對話／匯入舊紀錄／加備忘 三件事，留名「CC（AI 整理）」
+  if (req.query?.inboxcc) {
+    const ck = (process.env.CC_AGENT_KEY || '').trim()
+    if (!ck || String(req.query.inboxcc) !== ck || req.method !== 'POST') return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const IB = await import('./_inbox.js'); const cfg = await IB.loadCfg(); const who = { name: 'CC（AI 整理）' }
+    res.setHeader('Cache-Control', 'private, no-store')
+    if (b.op === 'find') { const q = String(b.q || ''); return res.status(200).json({ ok: true, list: (await IB.listConvs({ who, mgr: true, cfg })).filter(c => !q || String(c.name || '').includes(q)).slice(0, 10).map(c => ({ id: c.id, name: c.name, acct: c.acct, lastT: c.lastT, memoN: c.memoN })) }) }
+    if (b.op === 'import') return res.status(200).json(await IB.importChat({ who, mgr: true, cfg, id: String(b.id || ''), csv: b.csv, dry: !!b.dry }))
+    if (b.op === 'count') { const r = await IB.getConv({ who, mgr: true, cfg, id: String(b.id || ''), markRead: false }); const L = (r.list || []); return res.status(200).json({ ok: !!r.ok, n: L.length, imp: L.filter(m => m.imp).length, memos: ((r.conv || {}).memos || []).length, first: (L[0] || {}).t, msgs: b.full ? L.map(m => ({ t: m.t, dir: m.dir, by: m.by, text: m.text, imp: !!m.imp })) : undefined }) }
+    if (b.op === 'memo') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'memo', id: String(b.id || ''), value: b.value }))
+    return res.status(400).json({ ok: false })
+  }
   if (req.query?.inboxperf) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.inboxperf) !== mk) return res.status(403).json({ ok: false })
@@ -4748,6 +4761,7 @@ export default async function handler(req, res) {
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
       if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
       if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
+      if (opI === 'import') return res.status(200).json(await IB.importChat({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), csv: bodyI.csv, dry: !!bodyI.dry })) // v4.71.20 匯入舊帳號聊天記錄 CSV
       if (opI === 'cust') return res.status(200).json(await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
       if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }

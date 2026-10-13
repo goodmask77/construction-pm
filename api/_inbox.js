@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4823' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4826' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -387,6 +387,63 @@ export async function convOp({ who, mgr, cfg, op, id, value }) {
   else return { ok: false, error: '不認識的操作' }
   await kvSet(ck, conv)
   return { ok: true, conv: { status: conv.status, assignee: conv.assignee, note: conv.note, alias: conv.alias, star: !!conv.star, waitUntil: conv.waitUntil || '', memos: conv.memos || [], cat: conv.cat || '', catBy: conv.catBy || '', phone: conv.phone || '', email: conv.email || '', company: conv.company || '', tags: conv.tags || [] } }
+}
+// ── v4.71.20 匯入舊帳號聊天記錄（張良 2026-10-14「這個聊天記錄可以直接匯入目前 app 對話框嗎」）──
+// LINE 官方帳號後台「下載聊天記錄」的 CSV：前 3 行帳號名／時區／下載時間，第 4 行表頭（傳送者類型,傳送者名稱,傳送日期,傳送時間,內容）
+// 只寫進收件匣給同事看：不傳給客人、不扣額度、不動未讀／排序／提醒；每則用「時間＋內容」算固定鍵，重複匯入同一份不會多出來
+function parseCsv(txt) {
+  const rows = []; let row = [], f = '', q = false; const s = String(txt || '').replace(/^﻿/, '')
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (q) { if (ch === '"') { if (s[i + 1] === '"') { f += '"'; i++ } else q = false } else f += ch; continue }
+    if (ch === '"') q = true
+    else if (ch === ',') { row.push(f); f = '' }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && s[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = '' }
+    else f += ch
+  }
+  if (f || row.length) { row.push(f); rows.push(row) }
+  return rows
+}
+const djb = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0; return h.toString(36).slice(-5) }
+export function parseLineChat(csv) {
+  const rows = parseCsv(csv)
+  const meta = {}; let hi = -1
+  for (let i = 0; i < Math.min(rows.length, 8); i++) { const r = rows[i]; if (r[0] === '傳送者類型') { hi = i; break } if (r[0]) meta[r[0]] = String(r[1] || '').replace(/^'/, '') }
+  if (hi < 0) return { ok: false, error: '看不懂這個檔案：要用 LINE 官方帳號後台「下載聊天記錄」的 CSV' }
+  const tz = /^[+-]\d{2}:\d{2}$/.test(meta['時區'] || '') ? meta['時區'] : '+08:00'
+  const SHORT = { '貼圖已傳送': '（貼圖）', '照片已傳送': '（照片，舊帳號沒匯出內容）', '檔案已傳送': '（檔案，舊帳號沒匯出內容）', '影片已傳送': '（影片，舊帳號沒匯出內容）', '語音訊息已傳送': '（語音，舊帳號沒匯出內容）' }
+  const out = []; let skipAuto = 0, bad = 0
+  rows.slice(hi + 1).forEach((r) => {
+    if (!r || r.length < 5 || !r[0]) return
+    const [type, name, d, tm] = r; const text = String(r.slice(4).join(',')).trim()
+    if (type === 'Account' && /自動回應|自動回覆/.test(name)) { skipAuto++; return }
+    const ms = Date.parse(`${String(d).replace(/\//g, '-')}T${tm}${tz}`)
+    if (!Number.isFinite(ms) || !text) { bad++; return }
+    const dir = type === 'User' ? 'in' : 'out'
+    const same = out.filter(m => Math.floor(m.ms / 1000) === ms / 1000).length // 同一秒多則：依序 +1 毫秒保住先後（換另一份重疊的檔案也算得一樣）
+    const tx = text.replace(/\r\n?/g, '\n')
+    out.push({ ms: ms + same, dir, name: String(name || ''), text: SHORT[tx] || tx })
+  })
+  return { ok: true, acctName: meta['帳號名稱'] || '舊帳號', msgs: out, skipAuto, bad }
+}
+export async function importChat({ who, mgr, cfg, id, csv, dry }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canReplyAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的回覆權限，不能匯入' }
+  const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
+  if (String(csv || '').length > 3e6) return { ok: false, error: '檔案太大（上限 3MB）' }
+  const p = parseLineChat(csv); if (!p.ok) return p
+  if (!p.msgs.length) return { ok: false, error: '檔案裡沒有可匯入的訊息' }
+  const sum = { n: p.msgs.length, nIn: p.msgs.filter(m => m.dir === 'in').length, nOut: p.msgs.filter(m => m.dir === 'out').length, skipAuto: p.skipAuto, bad: p.bad, acctName: p.acctName, from: new Date(p.msgs[0].ms).toISOString(), to: new Date(p.msgs[p.msgs.length - 1].ms).toISOString() }
+  if (dry) return { ok: true, dry: true, ...sum }
+  const docs = p.msgs.map(m => ({ id: `pm_inbox_m_${acct}_${uid}_${m.ms.toString(36)}i${djb(m.dir + m.text)}`, data: { v: JSON.stringify({ id: 'imp', convId: conv.id, t: new Date(m.ms).toISOString(), dir: m.dir, type: 'text', text: m.text, ...(m.dir === 'in' ? { name: conv.name } : { by: (m.name && m.name !== 'Unknown') ? m.name : p.acctName }), imp: p.acctName }) }, editor: '收件匣匯入', updated_at: nowIso() }))
+  for (let i = 0; i < docs.length; i += 200) {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(docs.slice(i, i + 200)) })
+    if (!r.ok) return { ok: false, error: '寫入失敗：' + r.status }
+  }
+  conv.imports = [...(conv.imports || []), { t: nowIso(), by: who.name, acctName: p.acctName, n: sum.n, from: sum.from, to: sum.to }].slice(-20)
+  await kvSet(ck, conv)
+  return { ok: true, ...sum }
 }
 // ── v4.71.11 問 AI（張良 2026-10-14「要有 AI 對話框，讓我即時詢問一些內容回覆給客戶」）：看這段對話＋備忘錄回答；要擬回覆就放在【回覆草稿】區塊，前端一鍵放進回覆框（不會自動發出）──
 export async function inboxAi({ who, mgr, cfg, id, q, hist }) {

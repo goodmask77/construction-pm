@@ -55,7 +55,7 @@ function paneFit(id) {
   const top = w.getBoundingClientRect().top
   w.style.height = Math.max(320, window.innerHeight - top - fbH - 8) + 'px'
 }
-let _ibD = null, _ibCur = null, _ibConv = null, _ibMsgs = [], _ibTimer = null, _ibListTimer = null, _ibBusy = false, _ibAcct = '', _ibFilter = 'todo', _ibReplyLeft = 0, _ibTick = null, _ibSideTab = '', _ibAiHist = {}, _ibCat = ''
+let _ibD = null, _ibCur = null, _ibConv = null, _ibMsgs = [], _ibTimer = null, _ibListTimer = null, _ibBusy = false, _ibAcct = '', _ibFilter = 'todo', _ibReplyLeft = 0, _ibTick = null, _ibSideTab = '', _ibAiHist = {}, _ibCat = '', _ibSideMax = (() => { try { return localStorage.getItem('ibSideMax') !== '0' } catch (_) { return true } })() // v4.71.20 側欄（備忘錄等）預設開最大（張良 2026-10-14「畫面直接開最大」），按「縮小」記住
 const ibEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const ibT = t => { try { const d = new Date(t); const now = new Date(); const same = d.toDateString() === now.toDateString(); return (same ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') } catch (_) { return '' } }
 async function ibGet(q) { try { const r = await fetch('/api/mail-sync?inbox=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&' + q + '&r=' + Date.now()); return await r.json() } catch (e) { return null } }
@@ -167,8 +167,9 @@ function ibRenderPane() {
       <button class="mini" style="padding:5px 8px;font-size:12.5px;display:flex;gap:4px;align-items:center;${_ibSideTab === 'memo' ? 'background:#eab308;border-color:#eab308;color:#111' : ''}" onclick="ibSide('memo')" title="內部備忘錄（客人看不到）">${IB_ICON.memo} 備忘錄${((cv.memos || []).length + (cv.note ? 1 : 0)) ? ' ' + ((cv.memos || []).length + (cv.note ? 1 : 0)) : ''}</button>
       <button class="mini" style="padding:5px 8px;font-size:12.5px;display:flex;gap:4px;align-items:center;${_ibSideTab === 'ai' ? 'background:#0ea5e9;border-color:#0ea5e9;color:#fff' : ''}" onclick="ibSide('ai')" title="問 AI：看這段對話回答你、幫你擬回覆">${IB_ICON.ai} 問 AI</button>
       <button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="goFromInbox()" title="建團體訂餐單並把點餐連結傳給這個客人（v4.70.78）">點餐單</button>
+      ${ibAcct(cv.acct).canReply === false ? '' : `<button class="mini" style="padding:5px 8px;font-size:12.5px" onclick="document.getElementById('ibImpFile').click()" title="把舊官方帳號的聊天記錄（LINE 後台下載的 CSV）匯進這個對話；只給同事看，不會傳給客人">匯入舊紀錄</button><input id="ibImpFile" type="file" accept=".csv,text/csv" style="display:none" onchange="ibImport(this.files[0]);this.value=''">`}
     </div>
-    <div style="flex:1;display:flex;min-height:0"><div id="ibMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0"><div class="hint">讀取中…</div></div>${_ibSideTab ? `<div id="ibSide" style="${mobile ? 'position:fixed;inset:auto 0 0 0;height:78vh;z-index:70;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.35)' : 'width:340px;flex:none;border-left:1px solid var(--line)'};background:var(--bg);display:flex;flex-direction:column;min-height:0"></div>` : ''}</div>
+    <div style="flex:1;display:flex;min-height:0"><div id="ibMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0"><div class="hint">讀取中…</div></div>${_ibSideTab ? `<div id="ibSide" style="${mobile ? `position:fixed;inset:${_ibSideMax ? '0' : 'auto 0 0 0'};height:${_ibSideMax ? '100dvh' : '78vh'};z-index:70;border-top:1px solid var(--line);border-radius:${_ibSideMax ? '0' : '16px 16px 0 0'};box-shadow:0 -8px 30px rgba(0,0,0,.35)` : (_ibSideMax ? 'width:min(72%,760px);flex:none;border-left:1px solid var(--line)' : 'width:340px;flex:none;border-left:1px solid var(--line)')};background:var(--bg);display:flex;flex-direction:column;min-height:0"></div>` : ''}</div>
     ${(ibAcct(cv.acct).canReply === false) ? `<div class="hint" style="padding:12px;border-top:1px solid var(--line);font-size:13.5px;text-align:center">你有這個帳號的查看權限，沒有回覆權限。要回覆請主管在收件匣設定勾「可回覆」。</div>` : `<div style="padding:6px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="ibMode" class="hint" style="font-size:12px"></span><span style="flex:1"></span><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="document.getElementById('ibFile').click()" title="傳圖片或檔案（也可以直接把截圖貼到輸入框）">${IB_ICON.clip} 附件</button><input id="ibFile" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" style="display:none" onchange="ibUploadFiles(this.files);this.value=''"><button class="mini" style="padding:4px 8px;font-size:12px;display:flex;gap:4px;align-items:center" onclick="ibTplPick()">${IB_ICON.tpl} 範本</button></div>
     <div style="display:flex;gap:8px;padding:6px 12px 10px;align-items:flex-end">
       <textarea id="ibInput" rows="1" placeholder="回覆客人…" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibSend()}" onpaste="ibPaste(event)"></textarea>
@@ -210,7 +211,7 @@ function ibRenderMsgs(scroll) {
     return sep + `<div style="display:flex;flex-direction:column;align-items:${out ? 'flex-end' : 'flex-start'};max-width:100%">
       ${out ? `<div class="hint" style="font-size:11.5px;margin:0 6px 2px 0">${ibEsc(m.by || '')}${m.mode === 'push' ? ' · 推播' : ''}</div>` : ''}
       <div style="max-width:78%;${(['image', 'video'].includes(m.type) && (m.url || m.ext)) ? `width:fit-content;padding:3px;background:transparent;border:2px solid ${out ? '#2563eb' : 'var(--line)'}` : `background:${out ? '#2563eb' : 'var(--card)'};color:${out ? '#fff' : 'inherit'};border:1px solid ${out ? '#2563eb' : 'var(--line)'};padding:8px 12px`};border-radius:${out ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:15px;white-space:pre-wrap;word-break:break-word">${body}</div>
-      <div class="hint" style="font-size:10.5px;margin:2px 6px 0">${ibT(m.t)}</div></div>`
+      <div class="hint" style="font-size:10.5px;margin:2px 6px 0">${ibT(m.t)}${m.imp ? ` · <span style="color:#a78bfa">舊帳號紀錄</span>` : ''}</div></div>`
   }).join('')
   if (scroll !== false) box.scrollTop = box.scrollHeight
 }
@@ -438,11 +439,12 @@ async function ibWaitSave(cancel) {
   if (m) await ibOp('memo', '［等待］' + m)
   await ibOp('wait', d)
 }
+function ibSideMaxToggle() { _ibSideMax = !_ibSideMax; try { localStorage.setItem('ibSideMax', _ibSideMax ? '1' : '0') } catch (_) {} ibRenderPane() }
 function ibSide(tab) { _ibSideTab = _ibSideTab === tab ? '' : tab; ibRenderPane(); ibRenderMsgs(false) }
 function ibSideRender() {
   const el = document.getElementById('ibSide'); if (!el) return
   const cv = _ibConv || {}
-  const head = (t, col) => `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:${col}22;border-bottom:2px solid ${col}"><b style="flex:1;font-size:14.5px;color:${col}">${t}</b><button class="mini" style="padding:3px 9px;font-size:12px" onclick="ibSide('${_ibSideTab}')">關閉</button></div>`
+  const head = (t, col) => `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:${col}22;border-bottom:2px solid ${col}"><b style="flex:1;font-size:14.5px;color:${col}">${t}</b><button class="mini" style="padding:3px 9px;font-size:12px" onclick="ibSideMaxToggle()">${_ibSideMax ? '縮小' : '放大'}</button><button class="mini" style="padding:3px 9px;font-size:12px" onclick="ibSide('${_ibSideTab}')">關閉</button></div>`
   if (_ibSideTab === 'memo') {
     const items = [...(cv.note ? [{ id: '__note', by: '', t: '', text: cv.note }] : []), ...(cv.memos || [])].reverse()
     el.innerHTML = head('備忘錄（只有同事看得到）', '#eab308') + `
@@ -460,6 +462,19 @@ function ibSideRender() {
       <div style="display:flex;gap:6px;padding:8px 12px 12px;border-top:1px solid var(--line);align-items:flex-end"><textarea id="ibAiIn" rows="2" placeholder="問 AI…（Enter 送出）" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:14px;background:var(--card);color:inherit;font-family:inherit;resize:none" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();ibAiAsk()}"></textarea><button class="mini on" style="padding:8px 12px;background:#0ea5e9;border-color:#0ea5e9" onclick="ibAiAsk()">${IB_ICON.send}</button></div>`
     const b = document.getElementById('ibAiBox'); if (b) b.scrollTop = b.scrollHeight
   }
+}
+// v4.71.20 匯入舊帳號聊天記錄（張良 2026-10-14）：先試算給你看幾則、哪段期間，按確定才寫
+async function ibImport(f) {
+  if (!f || !_ibCur) return
+  const csv = await f.text()
+  const p = await ibPost({ op: 'import', id: _ibCur, csv, dry: true })
+  if (!p || !p.ok) { libToast((p && p.error) || '看不懂這個檔案', true); return }
+  const d10 = (x) => String(x || '').slice(0, 10).replace(/-/g, '/')
+  if (!confirm(`從「${p.acctName}」匯入 ${p.n} 則（客人 ${p.nIn}、我們 ${p.nOut}）\n期間 ${d10(p.from)} ～ ${d10(p.to)}${p.skipAuto ? `\n略過自動回應 ${p.skipAuto} 則` : ''}\n\n只給同事看，不會傳給客人、不扣額度。重複匯入同一份不會重複。確定匯入？`)) return
+  const d = await ibPost({ op: 'import', id: _ibCur, csv })
+  if (!d || !d.ok) { libToast((d && d.error) || '匯入失敗', true); return }
+  const d2 = await ibGet('op=conv&id=' + encodeURIComponent(_ibCur)); if (d2 && d2.ok) { _ibMsgs = d2.list || _ibMsgs; ibRenderMsgs(false); const b = document.getElementById('ibMsgs'); if (b) b.scrollTop = 0 }
+  libToast(`已匯入 ${d.n} 則舊紀錄`)
 }
 async function ibMemoAdd() { const ta = document.getElementById('ibMemoIn'); const v = ((ta || {}).value || '').trim(); if (!v) return; await ibOp('memo', v) }
 async function ibMemoDel(id) { if (!confirm('刪除這則備忘？')) return; if (id === '__note') { const d = await ibPost({ op: 'note', id: _ibCur, value: '' }); if (d && d.ok) { _ibConv.note = ''; ibRenderPane(); ibRenderMsgs(false) } return } await ibOp('memodel', id) }
