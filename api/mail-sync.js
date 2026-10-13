@@ -496,6 +496,18 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // ⏱ 收件匣速度量測口（v4.71.11 速度鐵則 docs/PERF_RULES.md：PR 要附 API 時間＋資料量）：GET ?inboxperf=<MENU_PROBE_KEY> → 清單／前 3 個對話各量 3 次（主管視角）
+  if (req.query?.inboxperf) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.inboxperf) !== mk) return res.status(403).json({ ok: false })
+    const IB = await import('./_inbox.js'); const cfg = await IB.loadCfg(); const who = { name: '張良瑋' }
+    const tm = async (fn) => { const ts = []; let bytes = 0; for (let i = 0; i < 3; i++) { const t0 = Date.now(); const r = await fn(); ts.push(Date.now() - t0); bytes = JSON.stringify(r).length } return { ms: ts, kb: Math.round(bytes / 1024) } }
+    const list = await IB.listConvs({ who, mgr: true, cfg })
+    const out = { list: { ...(await tm(() => IB.listConvs({ who, mgr: true, cfg }))), n: list.length } }
+    for (const c of list.slice(0, 3)) out['conv_' + c.acct] = await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))
+    if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
+    return res.status(200).json({ ok: true, ...out })
+  }
   // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
   if (req.query?.inboxremindtest) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
@@ -4644,7 +4656,8 @@ export default async function handler(req, res) {
       }
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
       if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
-      if (['status', 'assign', 'note', 'rename'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
+      if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
+      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
       if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })
