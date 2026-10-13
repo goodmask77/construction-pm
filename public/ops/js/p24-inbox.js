@@ -121,7 +121,7 @@ function ibRenderList() {
   const el = document.getElementById('ibList'); if (!el) return
   const d = _ibD || { accounts: [], convs: [] }
   if (!document.getElementById('ibCss')) document.head.insertAdjacentHTML('beforeend', IB_CSS)
-  const byAcct = (d.convs || []).filter(c => !_ibAcct || c.acct === _ibAcct)
+  const byAcct = (d.convs || []).filter(c => !_ibAcct || c.acct === _ibAcct).sort((x, y) => String(y.lastT || '').localeCompare(String(x.lastT || ''))) // v4.71.18 照時間新→舊；回覆／傳圖後本機改了 lastT 也立刻跳到最上面
   // v4.71.11 篩選：待處理（不含等待中）／特別注意／等待中／已完成／全部（張良 2026-10-14）
   const isTodo = c => (c.status !== 'done' && c.status !== 'wait') || c.unread, isDone = c => c.status === 'done' && !c.unread
   const FIL = { todo: isTodo, star: c => c.star && !isDone(c), wait: c => c.status === 'wait' && !c.unread, done: isDone, all: () => true }
