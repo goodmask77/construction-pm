@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 📥 統一收件匣 v4.70.61（+DD 帳號：DD 的一對一私訊自動進收件匣、DD 自己答過算已完成、可從收件匣用 DD 名義插手回；張良 2026-10-11「增加DD」）（舊版前端自動重新整理；沒人回提醒可設通知誰／LINE 群；帳號顯示名改 A Beach／GROUN:D／104招募；溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
 // 設計：
 //  - 三個官方帳號（A Beach 客服／GROUN:D 客服／招募）共用一個接收端點 api/inbox-webhook.js；每個請求用「哪個帳號的 channel secret 驗得過」決定是哪個帳號（不用先知道 destination）
@@ -276,8 +277,8 @@ async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastTe
   let mode = fresh ? 'reply' : 'push', r
   if (fresh) {
     r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: conv.replyToken, messages }) })
-    if (!r.ok) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) }) } // reply 過期就退 push
-  } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) })
+    if (!r.ok) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) }) } // reply 過期就退 push
+  } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) })
   if (!r.ok) return { ok: false, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
   const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }

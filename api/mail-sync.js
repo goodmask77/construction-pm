@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：自動收信入庫（cron-daily 每天呼叫；也可手動 /api/mail-sync?days=N）
 // ① 中信 e-Cash「帳務處理結果」通知（goodmask77@gmail.com）→ sp_finance_pm_ctbc（只增不改，dedupe by 交易序號）
 // ② Eats365 POS 日結報表 xlsx 附件（money@gumgum.club）→ sp_finance_pm_pos（設好 MAIL_USER2/MAIL_PASS2 後自動啟用）

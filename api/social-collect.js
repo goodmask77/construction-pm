@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── 社群成效回收＋token 健檢（張良 2026-10-08；v4.70.21 起每 3 小時一次，分 FB/IG 時序快照）──
 // 多粉專：逐一跑 acc.facebook.pages 的每個粉專（A Beach / GROUN:D 各自的 token）
 // 範圍：每個粉專近 30 天貼文。既有貼文自動匯入（source=imported）立刻有數據看

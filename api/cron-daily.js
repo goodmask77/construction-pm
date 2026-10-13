@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：每日工地速報（由 Vercel Cron 觸發，見 vercel.json）。
 // 讀 pm_bot_context 快照 → 組速報 → 推到工地群。沒設 LINE token 前＝安全 no-op。
 import { buildTaskCards } from './_ddcards.js' // 任務提醒的互動按鈕卡（完成/延1天/改日期/取消）

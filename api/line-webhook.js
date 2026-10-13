@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：LINE Webhook（D哥）。收群組訊息 → 登記群、回答問題（以 pm_bot_context 唯一真相快照為依據）。
 // 2026-08-28 DD變聰明版：純記錄免確認直接執行、prose不再被丟掉（多件事都回）、記憶30輪、讀得到自己記的工作日誌、prompt caching。
 // 需要環境變數：LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN（新）；ANTHROPIC_API_KEY、SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY（本專案已有）。

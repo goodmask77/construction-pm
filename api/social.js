@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── /prep「社群」分頁後端（張良 2026-10-08）──
 // 讀：GET  ?social=<OPS_BOARD_KEY>&me=token  → 帳號狀態＋貼文＋最新成效＋KPI＋canEdit
 // 寫：POST ?social=<OPS_BOARD_KEY> body={op,token,...}  op: save/del/submit/approve/reject/disconnect

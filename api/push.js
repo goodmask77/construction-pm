@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：發送 LINE 推播訊息（取代舊外部專案 ground-pm-webhook/api/push）。
 // 需要環境變數 LINE_CHANNEL_ACCESS_TOKEN。前端帶 X-API-Key（預設沿用舊金鑰，可用 LINE_PUSH_KEY 覆寫）。
 // 尚未設定 token 前，前端仍指向舊的外部 push，不影響現況；設好後把 App 的 LINE_PUSH_URL 改成 /api/push 即可切過來。
