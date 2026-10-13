@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── LINE 官方帳號好友成長數據 v4.70.80（張良 2026-10-12「抓得到官方 LINE 的成長數字嗎」→「做」）──
 // 來源：LINE Messaging API 官方統計（Insight）。四個帳號（A Beach／GROUN:D／104招募／DD）用收件匣同一組金鑰（api/_inbox.js ACCOUNTS），前端永遠看不到金鑰。
 // 抓什麼：

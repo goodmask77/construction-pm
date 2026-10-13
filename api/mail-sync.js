@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：自動收信入庫（cron-daily 每天呼叫；也可手動 /api/mail-sync?days=N）
 // ① 中信 e-Cash「帳務處理結果」通知（goodmask77@gmail.com）→ sp_finance_pm_ctbc（只增不改，dedupe by 交易序號）
 // ② Eats365 POS 日結報表 xlsx 附件（money@gumgum.club）→ sp_finance_pm_pos（設好 MAIL_USER2/MAIL_PASS2 後自動啟用）
@@ -512,6 +513,25 @@ export default async function handler(req, res) {
       if (r.snap.length) out.push({ date: dt, events: r.snap })
     }
     return res.status(200).json({ ok: true, from: fromV, to: todayV, daysWithEvents: out.length, out })
+  }
+  // ⏱ 收件匣速度量測口（v4.71.11 速度鐵則 docs/PERF_RULES.md：PR 要附 API 時間＋資料量）：GET ?inboxperf=<MENU_PROBE_KEY> → 清單／前 3 個對話各量 3 次（主管視角）
+  if (req.query?.inboxperf) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.inboxperf) !== mk) return res.status(403).json({ ok: false })
+    const IB = await import('./_inbox.js'); const cfg = await IB.loadCfg(); const who = { name: '張良瑋' }
+    const tm = async (fn) => { const ts = []; let bytes = 0; for (let i = 0; i < 3; i++) { const t0 = Date.now(); const r = await fn(); ts.push(Date.now() - t0); bytes = JSON.stringify(r).length } return { ms: ts, kb: Math.round(bytes / 1024) } }
+    const list = await IB.listConvs({ who, mgr: true, cfg })
+    const out = { list: { ...(await tm(() => IB.listConvs({ who, mgr: true, cfg }))), n: list.length } }
+    for (const c of list.slice(0, 3)) out['conv_' + c.acct] = await tm(() => IB.getConv({ who, mgr: true, cfg, id: c.id, markRead: false }))
+    if (list[0]) out.cust = await tm(() => IB.inboxCust({ who, mgr: true, cfg, id: (list.find(c => c.acct === 'gd') || list[0]).id }))
+    if (req.query.parts) { const A = IB.acctOf('ab'); const OB = await import('./_onboard.js'); out.parts = { quotaRaw: await tm(() => IB.quotaOfRaw(A)), kvOne: await tm(() => fetch(`${OB.SB_URL}/rest/v1/pm_documents?id=eq.pm_inbox_cfg&select=id`, { headers: { apikey: OB.SB_KEY, Authorization: 'Bearer ' + OB.SB_KEY } }).then(r => r.text())), region: process.env.VERCEL_REGION || '' } }
+    return res.status(200).json({ ok: true, ...out })
+  }
+  // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
+  if (req.query?.inboxremindtest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.inboxremindtest) !== mk) return res.status(403).json({ ok: false })
+    return res.status(200).json(await (await import('./_inbox.js')).inboxRemind({ test: true }))
   }
   // 👥 班表「非常態」名單維護口（v4.71.4 張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）：GET ?shiftoff=<MENU_PROBE_KEY> 讀；&rm=姓名 恢復常態；&add=姓名 標非常態
   if (req.query?.shiftoff) {
@@ -1288,7 +1308,9 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.opsboard) !== ok2) return res.status(403).json({ ok: false })
     const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
     const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
-    const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices')])
+    const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2, slotExDoc] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices'), kvGet('sp_finance_pm_pos_slotex')])
+    // 🚫 包場/非常態大單日（張良 2026-10-08／10-10：10/4 包場 76,500 計入總營收、但不進時段平均/熱力圖/每日列/品項平均）：v4.71.7 提早讀，品項明細也用同一份
+    const slotEx = new Set(((slotExDoc || {})[storeQ]) || [])
     const todayAct = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
     const actDoc = (await kvGet('sp_finance_pm_prep_act_'+todayAct.slice(0,7))) || { days:{} } // 實際備料（張良 2026-10-01：每天可填、留紀錄做分析）
     // 排除「盤中未完整日」（張良 2026-09-24 抓包：今天的半天資料 11:00 起混進統計，把當天星期的平均拉低
@@ -1337,8 +1359,12 @@ export default async function handler(req, res) {
     const priceMap2 = ((pricesDoc2 || {})[storeQ]) || {} // 張良手填牌價優先；0=不顯示（與 App 同口徑）
     const items2 = {}; const itemsH2 = {}; const catOrder2 = []; const setByDate = {}
     let n30 = 0, nPrev = 0
-    for (const e of entries) {
-      const inCur = e.date >= from30, inPrev = !inCur && e.date >= from60
+    // v4.71.7（張良 2026-10-13「品項明細要即時」）：今天盤中那筆也跑進來、但只填逐日欄（o.q[今天]），30日均/vs近60/累計/金額照舊只算打烊後正式日結；
+    //   包場日（slotEx）整天跳過＝不佔分母、不出欄（跟每日數據表「不拉平均、隱藏該列」同一口徑）
+    const liveDate9 = liveE9.length ? liveE9[0].date : null
+    for (const e of [...entries, ...liveE9]) {
+      if (slotEx.has(e.date)) continue
+      const inCur = !e.intraday && e.date >= from30, inPrev = !e.intraday && !inCur && e.date >= from60
       if (inCur) n30++; else if (inPrev) nPrev++
       const secs = ((dayDet2(e.date) || {}).sheets || {})['總銷售額 (以類別分類)']
       if (!Array.isArray(secs)) continue
@@ -1365,7 +1391,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    const datesAll = entries.map(e => e.date)
+    const datesAll = [...entries, ...liveE9].filter(e => !slotEx.has(e.date)).map(e => e.date) // v4.71.7 逐日欄＝正式日結＋今天盤中（最右一欄標「盤中」）、包場日不出欄
     const GD_ORDER2 = ['披薩', '漢堡', '越法三明治', '義大利麵', '小點', '湯品', '基礎飲品', '咖啡飲品', '奶香飲品', '檸檬飲品', '甜點']
     const catsAll = [...new Set(Object.values(items2).map(o => o.cat))]
     catsAll.sort((a, b) => { const ia = GD_ORDER2.indexOf(a), ib = GD_ORDER2.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) })
@@ -1374,7 +1400,7 @@ export default async function handler(req, res) {
     const cats2 = catsAll.map(cn => ({
       name: cn,
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
-      items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
+      items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0 || (liveDate9 && o.q[liveDate9] > 0))).sort((a, b) => b.q30 - a.q30) // v4.71.7 今天才第一次賣的新品也列（只有盤中欄有數）
         .map(o => { const ov = priceMap2[o.k] != null ? priceMap2[o.k] : priceMap2[o.n]
           // 售價：手填/灌檔牌價優先；GD 不用金額÷份數估（套餐拆帳會拉低＝張良 2026-09-22 抓包「菜單金額不對」），AB 才估
           const price = ov != null ? (Number(ov) || null) : (isAB2 && o.q30 > 0 && o.amt30 > 0 ? Math.round(o.amt30 / o.q30 / 5) * 5 : null)
@@ -1444,7 +1470,7 @@ export default async function handler(req, res) {
     })
     // 時段平均（近30天，分平日/週末；GD 才有）
     // 🚫 排除包場/非常態大單日（張良 2026-10-08：10/4 包場 76,500 不進時段平均/熱力圖，但仍計入總營收）：清單 sp_finance_pm_pos_slotex.dates
-    const slotEx = new Set(((await kvGet('sp_finance_pm_pos_slotex')) || {})[storeQ] || [])
+    // （slotEx 已在最上面跟 pos 一起讀，品項明細同一份）
     const hourAgg = { wk: {}, we: {} }, hourN = { wk: 0, we: 0 }
     for (const e of w30) {
       if (slotEx.has(e.date)) continue // 包場日不算進時段平均
@@ -1616,10 +1642,14 @@ export default async function handler(req, res) {
       }
       hist = Object.values(byMoH).sort((a, b) => (a.month < b.month ? 1 : -1))
     } catch (_) {}
-    // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
+    // Vercel 邊緣快取（張良 2026-09-21 嫌慢→快取；2026-10-13「確保即時更新」抓包：原本 s-maxage=300＋stale-while-revalidate=1800
+    //   ＝過期後還能再端 30 分鐘舊資料，首頁打開看到 16:53 的數字其實已 17:10）→ 改 60 秒快取＋最多再端 60 秒舊的；前端本來就有本機快取秒開，速度不受影響
+    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=60')
+    // v4.71.7 資料時間（給畫面顯示「喬亞/Eats365 幾點抓的」，不再拿回應產生時間冒充更新時間）
+    const liveAt = liveE9.length ? (liveE9[0].fetchedAt || null) : null
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor, hist,
+      liveDate: liveDate9, liveAt, // 今天盤中那筆的日期＋抓取時刻（HH:MM 台北）；打烊後正式值接手＝null
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,
@@ -4666,14 +4696,16 @@ export default async function handler(req, res) {
     try {
       const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a), canReply: IB.canReplyAcct(cfgI, whoI, mgrI, a.key) }))
       if (req.method !== 'POST') {
-        if (opI === 'list') return res.status(200).json({ ok: true, ver: IB.INBOX_VER, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
+        if (opI === 'list') return res.status(200).json({ ok: true, ver: IB.INBOX_VER, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, cats: cfgI.cats, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
         if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
         if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: peopleI.map(p => p.name), peopleInfo: peopleI }) }
         return res.status(400).json({ ok: false, error: '不認識的操作' })
       }
       if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
       if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
-      if (['status', 'assign', 'note', 'rename'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
+      if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
+      if (opI === 'cust') return res.status(200).json(await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
+      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
       if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
       if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
       return res.status(400).json({ ok: false, error: '不認識的操作' })

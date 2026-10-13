@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── 任務卡「定期提醒」引擎（張良 2026-10-09；每小時整點 cron）──
 // 前端設定存 task.reminder = { on, freq:'daily'|'weekday'|'custom', days:[0..6], hours:[整點], ch:['push','dm','group'], count, lastSlot }
 // 這支每小時整點跑：挑出「今天這個星期 × 這個整點 該提醒、且本小時還沒提醒過」的任務 → 發 push/LINE私訊/群組 → count+1、記 lastSlot 防重複
@@ -15,7 +16,8 @@ export default async function handler(req, res) {
     const isCron = !!req.headers['x-vercel-cron'] || /vercel/i.test(req.headers['user-agent'] || '')
     const keyOk = req.query && req.query.key && String(req.query.key) === clean(process.env.OPS_BOARD_KEY)
     if (!isCron && !keyOk) return res.status(403).json({ ok: false, error: 'forbidden' })
-    await (async () => { try { const r9 = await (await import('./_inbox.js')).inboxRemind(); console.log('[inbox] remind', JSON.stringify(r9)) } catch (e) { console.log('[inbox] remind err', e?.message) } })() // v4.70.47 收件匣未回覆提醒（每小時整點順便跑，fail-safe）
+    await (async () => { try { const r9 = await (await import('./_inbox.js')).inboxRemind(); console.log('[inbox] remind', JSON.stringify(r9)) } catch (e) { console.log('[inbox] remind err', e?.message) } })()
+    await (async () => { try { const r8 = await (await import('./_inbox.js')).inboxClassify(); console.log('[inbox] classify', JSON.stringify(r8)) } catch (e) { console.log('[inbox] classify err', e?.message) } })() // v4.71.12 收件匣 AI 補分類 // v4.70.47 收件匣未回覆提醒（每小時整點順便跑，fail-safe）
 
     // 台灣時間：星期與整點（+8 後用 UTC 取值）
     const tw = new Date(Date.now() + 8 * 3600e3)

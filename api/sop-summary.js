@@ -1,3 +1,4 @@
+import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 後端：GD 工作流程SOP 每日收班彙整（改版第2期，照 GROUND_SOP_CC_spec.md 第7節）
 // 取代「逐項超時提醒」→ 每天台北 20:05 由 Vercel Cron 發一則收班彙整（見 vercel.json）。
 // 冪等：report_outbox 唯一鍵(營業日)防重送；預設 dry-run 不真發（DD 設定 sopSummary.on 開了才真發，spec：當前不發真實群組訊息）。
