@@ -524,6 +524,7 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store')
     if (b.op === 'find') { const q = String(b.q || ''); return res.status(200).json({ ok: true, list: (await IB.listConvs({ who, mgr: true, cfg })).filter(c => !q || String(c.name || '').includes(q)).slice(0, 10).map(c => ({ id: c.id, name: c.name, acct: c.acct, lastT: c.lastT, memoN: c.memoN })) }) }
     if (b.op === 'import') return res.status(200).json(await IB.importChat({ who, mgr: true, cfg, id: String(b.id || ''), csv: b.csv, dry: !!b.dry }))
+    if (b.op === 'count') { const r = await IB.getConv({ who, mgr: true, cfg, id: String(b.id || ''), markRead: false }); const L = (r.list || []); return res.status(200).json({ ok: !!r.ok, n: L.length, imp: L.filter(m => m.imp).length, memos: ((r.conv || {}).memos || []).length, first: (L[0] || {}).t, msgs: b.full ? L.map(m => ({ t: m.t, dir: m.dir, by: m.by, text: m.text, imp: !!m.imp })) : undefined }) }
     if (b.op === 'memo') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'memo', id: String(b.id || ''), value: b.value }))
     return res.status(400).json({ ok: false })
   }
