@@ -94,5 +94,8 @@
       "path": "/api/pinterest-sync",
       "schedule": "35 * * * *"
     }
+  ],
+  "regions": [
+    "bom1"
   ]
 }

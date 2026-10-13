@@ -221,9 +221,14 @@ async function custBuild() {
     idx.segments[seg] = { label, total: list.length, pages }
   }
   for (const [ym9, g9] of Object.entries(nrd)) await kvPut(`sp_finance_pm_inline_nr_${ym9}`, { ...g9, builtAt: new Date().toISOString() }, 'inline新回名單')
-  // v4.71.12 電話索引（收件匣客戶資料用）：手機後 9 碼 → [名字,來店,取消,第一次,最近,最大人數,訂位數]，依後 2 碼分 100 檔，查一個人只讀一小檔
-  { const sh = {}; for (const c of idd) { const k = c.ph.replace(/\D/g, '').slice(-9); if (k.length !== 9) continue; const b = sh[k.slice(-2)] = sh[k.slice(-2)] || {}; const o = b[k]; if (!o || (c.l || '') > (o[4] || '')) b[k] = [c.n, c.v, c.cx, c.f, c.l, c.mx, c.b] }
-    for (let i = 0; i < 100; i++) { const d2 = String(i).padStart(2, '0'); await kvPut('sp_finance_pm_inline_ph_' + d2, { rows: sh[d2] || {}, builtAt: new Date().toISOString() }, 'inline電話索引') } }
+  // v4.71.14 電話索引（收件匣客戶資料用）：手機後 9 碼 → [名字,來店,取消,第一次,最近,最大人數,訂位數]
+  //   依後 3 碼分 1000 檔（每檔約 5KB，查一個人只讀一小檔；原 v4.71.12 分 100 檔每檔 50KB 太慢）；一次批次寫 100 檔
+  { const sh = {}; for (const c of idd) { const k = c.ph.replace(/\D/g, '').slice(-9); if (k.length !== 9) continue; const b = sh[k.slice(-3)] = sh[k.slice(-3)] || {}; const o = b[k]; if (!o || (c.l || '') > (o[4] || '')) b[k] = [c.n, c.v, c.cx, c.f, c.l, c.mx, c.b] }
+    const { SB_URL: U9, SB_KEY: K9 } = await import('./_onboard.js'); const now9 = new Date().toISOString()
+    const rows9 = Array.from({ length: 1000 }, (_, i) => { const d3 = String(i).padStart(3, '0'); return { id: 'sp_finance_pm_inline_ph3_' + d3, data: { v: JSON.stringify({ rows: sh[d3] || {}, builtAt: now9 }) }, editor: 'inline電話索引', updated_at: now9 } })
+    for (let i = 0; i < rows9.length; i += 100) await fetch(`${U9}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: K9, Authorization: `Bearer ${K9}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows9.slice(i, i + 100)) })
+    // 收掉 v4.71.12 的舊版 100 檔（sp_finance_pm_inline_ph_00~99，只有收件匣用過的衍生索引）
+    await fetch(`${U9}/rest/v1/pm_documents?id=in.(${Array.from({ length: 100 }, (_, i) => 'sp_finance_pm_inline_ph_' + String(i).padStart(2, '0')).join(',')})`, { method: 'DELETE', headers: { apikey: K9, Authorization: `Bearer ${K9}` } }).catch(() => {}) }
   await kvPut('sp_finance_pm_inline_insights', ins, 'inline洞察')
   await kvPut('sp_finance_pm_inline_custidx', idx, 'inline顧客庫索引')
   await announceChanged()
