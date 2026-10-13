@@ -496,6 +496,12 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // 📥 收件匣沒人回提醒「測試發送」（v4.71.10 張良 2026-10-14）：GET ?inboxremindtest=<MENU_PROBE_KEY> → 現在所有沒回的合併成一則只私訊張良瑋；不發群、不更新提醒時間（不影響正式每小時提醒）
+  if (req.query?.inboxremindtest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.inboxremindtest) !== mk) return res.status(403).json({ ok: false })
+    return res.status(200).json(await (await import('./_inbox.js')).inboxRemind({ test: true }))
+  }
   // 👥 班表「非常態」名單維護口（v4.71.4 張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」）：GET ?shiftoff=<MENU_PROBE_KEY> 讀；&rm=姓名 恢復常態；&add=姓名 標非常態
   if (req.query?.shiftoff) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
