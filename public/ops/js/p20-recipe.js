@@ -28,7 +28,8 @@
   window.rcpRefresh = rcpFetch
   const rec = key => [...(RD.recipes || []), ...(RD.dishes || [])].find(r => r.key === key)
   const imgUrl = p => p ? '/api/mail-sync?rcpimg=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&path=' + encodeURIComponent(p) : ''
-  const can = () => RD && RD.me && RD.me.canEdit
+  window.rcpMoved = window.rcpMoved || (() => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.rcp)) // abgd 搬家（F10）：食譜切新殼後（入口 routes.rcp）舊頁只能看
+  const can = () => RD && RD.me && RD.me.canEdit && !window.rcpMoved()
 
   // v4.70.64：內容篩選條件集中一處；每顆篩選鈕直接顯示數字（張良 2026-10-12「有哪些有步驟哪些沒步驟…直接給我按鈕顯示數字」）
   const OKF = { all: () => true, ok: r => r.ok, gap: r => !r.ok, steps: r => r.content.steps, nosteps: r => !r.content.steps, photo: r => r.content.photo, nophoto: r => !r.content.photo }

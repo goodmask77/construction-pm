@@ -5552,6 +5552,7 @@ export default async function handler(req, res) {
   if (req.query?.gdfive) {
     const mkG = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mkG || String(req.query.gdfive) !== mkG) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_recipebook')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F10）：一次性種子口同時寫食譜與定價，食譜切新殼後停用
     const todayG = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosG = (() => { const out = []; const d = new Date(todayG.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const r = await seedGdFive({ kvGet, kvPut, who: { name: 'CC（批次 4 骨架）' }, applyRecipeOp: rcpApply, months: mosG })
@@ -5582,6 +5583,7 @@ export default async function handler(req, res) {
     const canEditR = !probeR && !!(await permWho(meTk, 'rcp'))
     if (req.method === 'POST') {
       if (!canEditR) return res.status(403).json({ ok: false, error: '沒有編輯食譜的權限（食譜分頁權限）' })
+      if ((await abgdOwnerOf('sp_finance_pm_recipebook')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F10）：食譜切新殼後 GD 寫入一律擋（含 AI 匯入：匯入後的建立／編輯也在新殼）
       if (bR.op === 'import') { // v4.70.66 AI 匯入：截圖／文字／連結 → 結構＋對應（只讀不寫；確認後前端再走 create／edit）
         try { const { importRecipe } = await import('./_rcpimport.js'); return res.status(200).json(await importRecipe({ kvGet, months: mosR, body: bR, who: meW })) } catch (e) { return res.status(400).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
       }
