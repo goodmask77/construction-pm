@@ -22,7 +22,7 @@
 | # | 功能（側欄名） | GD 前端 | GD 後端口（mail-sync 除非另註） | 資料鍵家族 | 外部 | 其他寫入者（DD／排程／舊主 App） | 風險 | 新殼位置（路徑／schema.table） | 狀態 |
 |---|---|---|---|---|---|---|---|---|---|
 | F01 | 首頁（今日／九大卡／回報待發布／退單紀錄） | index.html＋p09／p01 | opsboard、prepact、custoutlook、voids | pm_pos_*、pm_inline_outlook、pm_pos_void_、pm_sop_issues | — | joya-intraday（退單） | 中（聚合多功能，最後真切） | app/(shell)/page.tsx；讀 ops.* view | 待搬 |
-| F02 | SOP（每日 SOP、站別、階段、建議、評分、問題回報） | p02-sop、p03-sopedit | sop／sopdone／sopset／sopst／sopsug／sopsugset／soprate／sopissue／sopresolve／sopreport／sophist／sopfull／sopsign／sopseed | pm_sop_def、pm_sop_g_(日檔)、pm_sop_issues、pm_sop_sugs、pm_sop_outbox | 照片→Storage photos/sop | DD（sop_issues）、joya-intraday（超時推播）、sop-summary | **高（食安）** | app/ops/sop；ops.sop_stations／sop_items／sop_done／sop_issues／sop_suggestions | 待搬 |
+| F02 | SOP（每日 SOP、站別、階段、建議、評分、問題回報） | p02-sop、p03-sopedit | sop／sopdone／sopset／sopst／sopsug／sopsugset／soprate／sopissue／sopresolve／sopreport／sophist／sopfull／sopsign／sopseed | pm_sop_def、pm_sop_g_(日檔)、pm_sop_issues、pm_sop_sugs、pm_sop_outbox | 照片→Storage photos/sop | DD（sop_issues）、joya-intraday（超時推播）、sop-summary | **高（食安）** | app/ops/sop；ops.sop_stations／sop_items／sop_done／sop_issues／sop_suggestions | 🔄 **影子已上線（新殼 v0.4.42，GD v4.71.51）**；關卡 3 進行中（第六輪）；對帳 9 份差 0；API P95 0.26～0.29 秒／頁面 0.34 秒；刻意差異與已知風險見 5.2 |
 | F03 | 任務（任務中心卡片、積分特效、提醒） | tasks.js、tier-effects.js | kvproxy、tasknotify、tngroups、taskadmin、taskfill、taskmove；api/task-remind.js | sp_team_pm_task_*、sp_team_pm_task_mq、sp_team_pm_ptscfg、pm_task_* | LINE 群通知 | DD 10 個動作、inline-sync／cron-daily／task-remind 建任務、主 App TaskCenter iframe（kvproxy） | **高（寫入者最多）** | app/ops/tasks；ops.tasks／task_events | 待搬 |
 | F04 | 排行榜（積分榜、兌換商城、存摺） | p03-sopedit（lb 段） | lb、pointscfg、redeem、redeemlog、rewardset；api/_points.js | pm_points、pm_points_cfg、pm_rewards、pm_redeem | — | 積分 7 動作（打卡／回饋／SOP／簽收／回報／日誌／盤點） | **高（點數）** | app/ops/points；ops.points_ledger／points_rules／rewards／redemptions | 待搬（最後一波） |
 | F05 | 盤點 | p04-inv-meet | inv、invcount、invset | pm_inv（物料庫脊椎） | — | joya-intraday（低水位 notified） | 中 | app/ops/inventory；ops.materials／stock_counts | 待搬 |
@@ -159,6 +159,29 @@ Meta OAuth 重新授權、綠界特約商店申請、LINE Pay 回呼白名單、
 | 投影層框架＋文件庫 F21 演練（0.5 波） | ✅ 演練全過（切→擋→寫回→注錯→自動切回→對帳差 0）；GD 看門狗 v4.71.29 |
 | LINE Login／LIFF 登入 | ❌ 之後 |
 | Storage 搬新桶＋/f/ 中繼 | ❌ 之後 |
+
+## 5.2 SOP F02＋F33 刻意差異與已知風險（關卡 3 具名接受，2026-10-14）
+**刻意跟 GD 不同（新殼較嚴或修了 GD 原洞）**
+- 對範本裡不存在的動作／子項打勾＝擋（GD 會照收）。
+- 審核人名單設成空＝沒人能審（GD 同；新殼原本誤用預設已修）。
+- 單動作編輯依「正本裡原本的站」驗權限，跨站另驗新站（GD 原洞：可改別站）。標準照也依站權限（GD：有頁面編輯權即可）。
+- 編輯動作沒帶標準照＝保留原本的（GD 原洞：會清掉）；「更換」＝換第一張。
+- 刪動作會從別人的前置拿掉；前置指到已刪／回收站的動作不算（GD 原洞：永遠打不了勾）。
+- 一筆回報只發布一次（網頁、LINE、GD 首頁共用冪等鍵）；送審通知只在變成待審時發一次；已核准完成不能再按「已解決」。
+- 必拍項目後端也擋（GD 只擋前端）；有送照片但上傳失敗＝回錯，不默默完成；照片唯一檔名不覆寫。
+- 舊整站／總編輯、嚴格模式開關、舊「分類」操作停用（GD 前端早已不用）。
+- 歷史查詢用正確日檔鍵（GD 去掉連字號＝永遠查不到）。
+- DD 命令（LINE 審核、首頁發布、排行榜評星、核銷人）有命令收據：同一命令只提交一次。
+
+**已知、接受（同 GD 或極端情況）**
+- 範本與完成紀錄／問題卡是兩份文件：以「這次提交嘗試讀到的範本與審核人」為準，目標文件衝突就重讀重算（不是跨文件原子）。
+- 回報、建議、交接、checklist 新增重按會多一筆；checklist 勾選重送會反轉（同 GD）。
+- 交接任何登入者都能刪（同 GD）。
+- 沒有業務寫入的命令結果（找不到、未授權…）允許重新判斷，極端並行時回覆文字可能不同。
+- 通知中心（prep_ntf）整份寫，多寫者並行可能蓋掉一筆歷史（GD 既有；只是歷史紀錄，主通道是 LINE）。F32 搬家時改原子 append。
+- 孤兒照片（規則拒絕、並行完成、交易失敗、程序死亡）：之後補「上傳紀錄＋寬限期引用核對」清理排程。
+- 命令紀錄、收據、發布嘗試紀錄要訂清理期限（配合重播與備份）。
+- LINE 重試鍵去重 24 小時；GD 發布嘗試紀錄 accepted 的不論多久都不再發。
 
 ## 6. 三家關卡紀錄
 
