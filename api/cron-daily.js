@@ -143,7 +143,8 @@ export default async function handler(req, res) {
       const ownHit = Array.isArray(ownL) ? ownL.filter(l => 'sp_finance_pm_veg_quotes'.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0] : { owner: 'unknown' }
       if ((ownHit ? ownHit.owner : 'gd') !== 'gd') throw new Error('skip-abgd') // abgd 搬家（F13）：成本模組切新殼後由新殼排程同步，GD 不讀、不寫、不發 LINE
       const { syncFromSheets, syncSummaryText } = await import('./_vegquote.js')
-      vegR = await syncFromSheets({ kvGet, kvPut: kvSave, who: { name: '每日自動' } })
+      const { orderedKvGet } = await import('./_jsonborder.js')
+      vegR = await syncFromSheets({ kvGet: orderedKvGet(kvGet), kvPut: kvSave, who: { name: '每日自動' } }) // 鍵順序與新殼一致
       const txt = syncSummaryText(vegR)
       if (txt && TOKEN && BOSS && req.query?.dry !== '1') { const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: BOSS, messages: [{ type: 'text', text: txt.slice(0, 4900) }] }) }); vegR.pushed = pr.ok }
       console.log('vegsync', JSON.stringify((vegR.vendors || []).map(x => ({ v: x.vendor, ok: x.ok, ch: (x.changes || []).length, err: x.error }))))
