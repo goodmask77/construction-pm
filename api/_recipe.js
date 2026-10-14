@@ -174,7 +174,7 @@ export async function snapshotRecipeCosts ({ kvGet, kvPut, months }) {
     if (arr.length > 60) arr.splice(0, arr.length - 60)
     changed++
   }
-  if (changed) await kvPut(RB_SNAP_KEY, snaps, '食譜成本快照 ' + changed + ' 筆')
+  if (changed && !(await kvPut(RB_SNAP_KEY, snaps, '食譜成本快照 ' + changed + ' 筆'))) return { changed: 0, saveErr: '快照沒存進去', total: t.recipes.length + t.dishes.length } // v4.71.74 檢查存檔
   return { changed, total: t.recipes.length + t.dishes.length }
 }
 
@@ -187,7 +187,8 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
   R.versions = R.versions || []
   const at = nowIso(), op = String(body.op || '')
   const log = o => { doc.log.push({ at, by: who.name, op, key, ...o }); if (doc.log.length > 800) doc.log = doc.log.slice(-800) }
-  const save = async msg => { await kvPut(RB_KEY, doc, msg + '(' + who.name + ')'); return { ok: true } }
+  const NOSAVE = { ok: false, error: '沒存進去（可能剛有人改過，或食譜已搬到新版），請重新整理再試一次' } // v4.71.74 存檔一定檢查成功與否（abgd 食譜搬家：切換後舊版會假成功）
+  const save = async msg => (await kvPut(RB_KEY, doc, msg + '(' + who.name + ')')) ? { ok: true } : NOSAVE
   const cleanSteps = steps => (Array.isArray(steps) ? steps : []).slice(0, 60).map((s, i) => ({ seq: i + 1, title: String(s.title || '').slice(0, 80), desc: String(s.desc || '').slice(0, 1500), media: (Array.isArray(s.media) ? s.media : []).slice(0, 6).map(m => String(m).slice(0, 300)), timerSec: Math.max(0, Math.min(86400, Number(s.timerSec) || 0)), itemCodes: (Array.isArray(s.itemCodes) ? s.itemCodes : []).slice(0, 30).map(x => String(x).slice(0, 40)) }))
   const cleanItems = items => (Array.isArray(items) ? items : []).slice(0, 80).map((i, n) => ({ seq: n, code: String(i.code || '').slice(0, 40), name: String(i.name || '').slice(0, 80), qty: Number(i.qty) || 0, unit: String(i.unit || '').slice(0, 10), match: i.match || (i.code ? 'matched' : (isWhite(i.name) ? 'nonstock' : 'unmatched')) }))
   if (op === 'create') { // 自建食譜（批次 4：GD 五款代表餐點／新品）；不生成假配方，材料由人填
@@ -196,7 +197,7 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
     R.own = { name, brand: body.brand === 'A Beach' ? 'A Beach' : 'GROUN:D', type: body.type === 'dish' ? 'dish' : 'prep', station: String(body.station || '').slice(0, 30), code: String(body.code || '').slice(0, 40), by: who.name, at }
     R.station = R.own.station
     R.versions.push({ v: 1, status: 'draft', items: cleanItems(body.items), yieldQty: Number(body.yieldQty) || (R.own.type === 'dish' ? 1 : 0), yieldUnit: String(body.yieldUnit || (R.own.type === 'dish' ? '份' : '')).slice(0, 10), steps: [], by: who.name, at, note: String(body.note || '').slice(0, 300) })
-    log({ name, brand: R.own.brand, type: R.own.type }); await kvPut(RB_KEY, doc, '新增食譜(' + who.name + ')'); return { ok: true, key }
+    log({ name, brand: R.own.brand, type: R.own.type }); if (!(await kvPut(RB_KEY, doc, '新增食譜(' + who.name + ')'))) return NOSAVE; return { ok: true, key }
   }
   if (op === 'rename') { if (!R.own) return { ok: false, error: '只能改自建食譜的名稱' }; const before = R.own.name; R.own.name = String(body.name || '').trim().slice(0, 80) || R.own.name; log({ before, after: R.own.name }); return save('食譜改名') }
   if (op === 'meta') { const before = { station: R.station, type: R.type }; if (body.station != null) R.station = String(body.station).slice(0, 30); log({ before, station: R.station }); return save('食譜工作站') }
@@ -205,7 +206,7 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
     const buf = Buffer.from(m[2], 'base64'); if (buf.length > 4 * 1024 * 1024) return { ok: false, error: '圖片太大（前端會壓到 1200px）' }
     const path = `recipe/${key.replace(/[^a-z0-9_:|~-]/gi, '_')}/${Date.now().toString(36)}.jpg`
     if (!(await uploadPrivate(path, buf, m[1]))) return { ok: false, error: '上傳失敗' }
-    if (op === 'photo') { R.photo = path; log({ photo: path }); await kvPut(RB_KEY, doc, '食譜照片(' + who.name + ')'); return { ok: true, path } }
+    if (op === 'photo') { R.photo = path; log({ photo: path }); if (!(await kvPut(RB_KEY, doc, '食譜照片(' + who.name + ')'))) return NOSAVE; return { ok: true, path } }
     return { ok: true, path } // 步驟媒體：前端把 path 放進草稿 steps[].media 再存
   }
   if (op === 'draft') { // 從目前有效版本複製一份草稿（同時只允許一份草稿）
@@ -214,7 +215,7 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
     const v = (R.versions.reduce((m, x) => Math.max(m, x.v), 0) || 0) + 1
     const base = body.base || {}
     R.versions.push({ v, status: 'draft', items: cleanItems(pub && pub.items ? pub.items : base.items), yieldQty: Number(pub && pub.yieldQty ? pub.yieldQty : base.yieldQty) || 0, yieldUnit: String(pub && pub.yieldUnit ? pub.yieldUnit : base.yieldUnit || '').slice(0, 10), steps: cleanSteps(pub ? pub.steps : []), by: who.name, at, note: '' })
-    log({ v }); await kvPut(RB_KEY, doc, '食譜草稿(' + who.name + ')'); return { ok: true, v }
+    log({ v }); if (!(await kvPut(RB_KEY, doc, '食譜草稿(' + who.name + ')'))) return NOSAVE; return { ok: true, v }
   }
   const vObj = R.versions.find(x => x.v === Number(body.v))
   if (op === 'edit') { // 只能改草稿（兩人同時編輯：帶 baseAt 比對，不同就擋）
@@ -227,7 +228,7 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
     if (body.note != null) vObj.note = String(body.note).slice(0, 300)
     vObj.editedAt = at; vObj.editedBy = who.name
     log({ v: vObj.v, fields: Object.keys(body).filter(k => ['items', 'steps', 'yieldQty', 'yieldUnit', 'note'].includes(k)) })
-    await kvPut(RB_KEY, doc, '食譜草稿編輯(' + who.name + ')'); return { ok: true, editedAt: at }
+    if (!(await kvPut(RB_KEY, doc, '食譜草稿編輯(' + who.name + ')'))) return NOSAVE; return { ok: true, editedAt: at }
   }
   if (op === 'discard') { if (!vObj || vObj.status !== 'draft') return { ok: false, error: '只能捨棄草稿' }; R.versions = R.versions.filter(x => x !== vObj); log({ v: vObj.v }); return save('食譜捨棄草稿') }
   if (op === 'publish') { // 發布前檢查：材料可解析、產量 > 0、無循環引用
@@ -245,7 +246,7 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
     const seen = new Set(); const stack = (vObj.items || []).map(i => norm(i.code)).filter(Boolean)
     while (stack.length) { const c = stack.pop(); if (!c || seen.has(c)) continue; seen.add(c); if (myCode && c === myCode) return { ok: false, error: '循環引用：這份食譜的材料最後會引用回自己' }; const r = codeOf[c]; if (r) for (const it of (r.items || [])) if (it.code) stack.push(norm(it.code)) }
     vObj.status = 'published'; vObj.publishedAt = at; vObj.publishedBy = who.name
-    log({ v: vObj.v }); await kvPut(RB_KEY, doc, '食譜發布 v' + vObj.v + '(' + who.name + ')'); return { ok: true }
+    log({ v: vObj.v }); if (!(await kvPut(RB_KEY, doc, '食譜發布 v' + vObj.v + '(' + who.name + ')'))) return NOSAVE; return { ok: true }
   }
   return { ok: false, error: '不認得的操作' }
 }

@@ -12,6 +12,7 @@
   let S = null // 匯入工作狀態：{ imgs:[dataURL], text, url, busy, res, choice:{i:code|''|'__new'}, steps:[{on,title,desc,timerSec}] }
 
   async function post (body) {
+    if (window.rcpMoved && window.rcpMoved()) return { ok: false, error: '食譜已經搬到新版：這裡只能看。要新增或匯入請從側欄點「食譜」（會自動登入新版）。' } // abgd 搬家（F10）
     const r = await fetch('/api/mail-sync?recipes=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) })
     return r.json().catch(() => ({ ok: false, error: '連線問題' }))
   }
