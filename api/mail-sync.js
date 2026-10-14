@@ -2288,7 +2288,19 @@ export default async function handler(req, res) {
     const rj = rr.ok ? await rr.json() : null
     if (!rj) return res.status(500).json({ ok: false, error: '寫入失敗 HTTP ' + rr.status })
     if (rj.stale) return res.status(409).json({ ok: false, stale: true, ver: rj.ver, error: '入口版本過時被拒' })
-    return res.status(200).json({ ok: true, routes, ver })
+    // 第十一輪：回實際生效入口與隔離清單（看門狗隔離的功能不會被發布加回去）
+    return res.status(200).json({ ok: true, routes: rj.routes || routes, quarantine: rj.quarantine || [], ver })
+  }
+  // 解除入口隔離（人工，關卡 3 第十一輪）：POST { keys:[功能], by, reason(≥10 字) }
+  if (req.query?.routesunq) {
+    if (req.method !== 'POST' || String(req.query.routesunq) !== (process.env.OPS_BOARD_KEY || '').trim()) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const keys = (Array.isArray(b.keys) ? b.keys : []).map(String).filter(k => /^[a-z0-9_]{1,24}$/i.test(k))
+    if (!keys.length) return res.status(400).json({ ok: false, error: '缺 keys' })
+    const rr = await fetch(`${SB_URL}/rest/v1/rpc/pm_routes_unquarantine`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ p_keys: keys, p_by: String(b.by || '').slice(0, 40), p_reason: String(b.reason || '') }) })
+    const rj = await rr.json().catch(() => null)
+    if (!rr.ok || !rj || !rj.ok) return res.status(rr.ok ? 500 : 400).json({ ok: false, error: (rj && rj.message) || ('HTTP ' + rr.status) })
+    return res.status(200).json(rj)
   }
   // abgd 看門狗（2026-10-14，獨立 Claude 關卡 2 ④）：每 5 分鐘 cron。入口指向新殼的分頁，若新殼健康檢查連續 3 次失敗→GD 自己清掉 routes（夥伴回舊頁）＋私訊張良；不動資料庫鎖（鎖只有新殼控制器能解，資料不會雙寫）
   if (req.query?.abgdwatch) {
@@ -2303,11 +2315,11 @@ export default async function handler(req, res) {
     let bad = 0
     for (let i = 0; i < 3; i++) { try { const r = await fetch(origin + '/api/core/health', { cache: 'no-store' }); if (!r.ok) bad++ } catch (_) { bad++ } if (bad < i + 1) break; await new Promise(r => setTimeout(r, 2000)) }
     if (bad < 3) return res.status(200).json({ ok: true, routes: keys.length, healthy: true })
-    // 也走版本圍欄（版本＝現在時間）：之後晚到的舊入口快照不能再把入口指回新殼
-    const cr = await fetch(`${SB_URL}/rest/v1/rpc/pm_routes_set`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ p_routes: {}, p_ver: Date.now(), p_by: 'gd-watchdog', p_reason: '新殼健康檢查連續 3 次失敗，GD 自己切回' }) })
+    // 第十一輪：改「隔離清單」——不比版本（不受兩台機器時鐘影響），之後任何發布都不能把這些功能加回去，只有人工 ?routesunq 解除
+    const cr = await fetch(`${SB_URL}/rest/v1/rpc/pm_routes_quarantine`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ p_keys: keys, p_by: 'gd-watchdog', p_reason: '新殼健康檢查連續 3 次失敗，GD 自己切回' }) })
     const cj = cr.ok ? await cr.json().catch(() => null) : null
     if (!cj || !cj.ok) { try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼健康檢查連續失敗，但清入口沒成功（HTTP ' + cr.status + '），請人工處理：' + keys.join('、')) } catch (_) {} return res.status(500).json({ ok: false, error: '清入口失敗', status: cr.status }) }
-    try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼連續 3 次健康檢查失敗，已把入口切回舊版：' + keys.join('、') + '\n資料庫鎖未動（新殼控制器恢復後要人工確認）') } catch (_) {}
+    try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼連續 3 次健康檢查失敗，已把入口切回舊版並隔離：' + keys.join('、') + '\n資料庫鎖未動；新殼恢復後要人工確認再解除隔離（?routesunq）') } catch (_) {}
     return res.status(200).json({ ok: true, routes: 0, healthy: false, cleared: keys })
   }
   // abgd 橋接票（2026-10-14）：GD 已登入的人點到切過去的分頁 → 前端 POST 這裡拿 60 秒一次性 HMAC 票 → 貼給新殼 /api/core/auth/bridge 換 session
