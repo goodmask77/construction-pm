@@ -95,6 +95,7 @@ export async function applyPricingOp ({ kvGet, kvPut, who, body }) {
   const doc = (await kvGet(PRICING_KEY)) || { items: {}, log: [], versions: [] }
   doc.items = doc.items || {}; doc.log = doc.log || []; doc.versions = doc.versions || []
   const key = String(body.key || ''); if (!key) return { ok: false, error: '缺品項 key' }
+  if (key.length > 120 || /[\u0000-\u001f\u007f]/.test(key) || key === '__proto__' || Object.prototype.hasOwnProperty.call(Object.prototype, key)) return { ok: false, error: '品項 key 格式不對' } // v4.71.77 擋物件原型名稱與控制字元（abgd 菜單成本搬家）
   const it = doc.items[key] = doc.items[key] || {}
   const at = nowIso(), op = String(body.op || '')
   const log = o => { doc.log.push({ at, by: who.name, op, key, ...o }); if (doc.log.length > 800) doc.log = doc.log.slice(-800) }
@@ -112,7 +113,7 @@ export async function applyPricingOp ({ kvGet, kvPut, who, body }) {
     it.combo = { sides: (Array.isArray(body.sides) ? body.sides : []).slice(0, 12).map(String), drinks: (Array.isArray(body.drinks) ? body.drinks : []).slice(0, 12).map(String), extraPack: (Array.isArray(body.extraPack) ? body.extraPack : []).slice(0, 8).map(x => ({ cardId: String(x.cardId || ''), qty: Number(x.qty) || 0 })).filter(x => x.cardId && x.qty > 0), upcharge: Number(body.upcharge) || 0 }
     it.at = at; log({ before, after: it.combo })
   } else if (op === 'clear') { delete doc.items[key]; log({}) } else return { ok: false, error: '不認得的操作' }
-  await kvPut(PRICING_KEY, doc, '菜單定價(' + who.name + ')')
+  if (!(await kvPut(PRICING_KEY, doc, '菜單定價(' + who.name + ')'))) return { ok: false, error: '沒存進去（可能剛有人改過，或菜單成本已搬到新版），請重新整理再試一次' } // v4.71.77 存檔一定檢查成功與否
   return { ok: true }
 }
 

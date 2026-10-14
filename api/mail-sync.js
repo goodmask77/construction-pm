@@ -5542,17 +5542,18 @@ export default async function handler(req, res) {
     const canEditP = !probeP && !!(await permWho(meTk, 'pricing'))
     if (req.method === 'POST') {
       if (!canEditP) return res.status(403).json({ ok: false, error: '沒有編輯菜單定價的權限' })
-      const r = await prApply({ kvGet, kvPut, who: meW, body: bP })
+      if ((await abgdOwnerOf('sp_finance_pm_pricing')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F12）：菜單成本切新殼後 GD 寫入一律擋
+      const r = await prApply({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, body: bP })
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
     }
-    const t = await prBuild({ kvGet, months: mosP })
+    const t = await prBuild({ kvGet: orderedKvGet(kvGet), months: mosP }) // abgd 菜單成本 F12：鍵順序與新殼一致
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditP }, ...t })
   }
   if (req.query?.gdfive) {
     const mkG = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mkG || String(req.query.gdfive) !== mkG) return res.status(403).json({ ok: false })
-    if ((await abgdOwnerOf('sp_finance_pm_recipebook')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F10）：一次性種子口同時寫食譜與定價，食譜切新殼後停用
+    if ((await abgdOwnerOf('sp_finance_pm_recipebook')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_pricing')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F10）：一次性種子口同時寫食譜與定價，食譜或定價任一切新殼後停用
     const todayG = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosG = (() => { const out = []; const d = new Date(todayG.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const r = await seedGdFive({ kvGet, kvPut, who: { name: 'CC（批次 4 骨架）' }, applyRecipeOp: rcpApply, months: mosG })
