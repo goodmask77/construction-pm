@@ -43,7 +43,7 @@ export async function importQuotes ({ kvGet, kvPut, body, who }) {
     doc.vendors[v] = { prev: doc.vendors[v] ? { items: doc.vendors[v].items, importedAt: doc.vendors[v].importedAt } : null, items, src: String(vendors[v].src || ''), importedAt: new Date().toISOString(), by: who.name, n: Object.keys(items).length }
   }
   doc.log = [...(doc.log || []), { at: new Date().toISOString(), by: who.name, vendors: names.map(v => v + ' ' + doc.vendors[v].n + ' 項') }].slice(-50)
-  await kvPut(VQ_KEY, doc, '菜商報價匯入(' + who.name + ')')
+  if (!(await kvPut(VQ_KEY, doc, '菜商報價匯入(' + who.name + ')'))) return { ok: false, error: '沒存進去（成本模組可能正在搬到新版），請重新整理再試' } // 存檔失敗不能回成功（abgd 搬家：切換後資料庫閘門會擋）
   return { ok: true, vendors: names.map(v => ({ vendor: v, n: doc.vendors[v].n })) }
 }
 
@@ -153,11 +153,12 @@ export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOve
   }
   doc.sync = { at: out.at, by: who.name, summary: out.vendors.map(x => x.ok ? `${x.vendor} ${x.changes.length} 筆變動` : `${x.vendor} 失敗：${x.error}`) }
   doc.log = [...(doc.log || []), { at: out.at, by: who.name, sync: doc.sync.summary }].slice(-50)
-  await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')')
+  if (!(await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')'))) { out.ok = false; out.saveErr = '報價讀到了但沒存進去（成本模組可能已搬到新版）' } // 沒存進去就不能報「有變動」
   return out
 }
 // LINE 摘要文字（有變動才發）
 export function syncSummaryText (r) {
+  if (r && r.saveErr) return '❌ 菜商報價同步：' + r.saveErr
   const lines = []
   for (const x of r.vendors) {
     if (!x.ok) { lines.push(`❌ ${x.vendor}：${x.error}`); continue }
@@ -316,7 +317,7 @@ export async function togglePin ({ kvGet, kvPut, who, key, on }) {
   const set = new Set(doc.pins || []); const k = String(key || ''); if (!k) return { ok: false, error: '缺品項' }
   if (on) set.add(k); else set.delete(k)
   doc.pins = [...set].slice(0, 200)
-  await kvPut(VQ_KEY, doc, '菜商比價釘選(' + who.name + ')')
+  if (!(await kvPut(VQ_KEY, doc, '菜商比價釘選(' + who.name + ')'))) return { ok: false, error: '沒存進去（成本模組可能正在搬到新版），請重新整理再試' }
   return { ok: true, pins: doc.pins }
 }
 

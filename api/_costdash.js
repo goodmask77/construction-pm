@@ -126,7 +126,7 @@ export async function applyDashOp ({ kvGet, kvPut, who, body }) {
     const caps = body.caps || {}; const before = { ...doc.ratioCap }
     for (const [cat, v] of Object.entries(caps)) { const c = String(cat).slice(0, 60); if (v == null || v === '' || v === false) delete doc.ratioCap[c]; else { const n = Number(v); if (!(n > 0 && n <= 100)) return { ok: false, error: `「${c}」的成本率上限要在 1～100% 之間` }; doc.ratioCap[c] = n } }
     doc.updatedAt = at; doc.log.push({ at, by: who.name, op, before, after: { ...doc.ratioCap } }); if (doc.log.length > 200) doc.log = doc.log.slice(-200)
-    await kvPut(CFG_KEY, doc, '成本率上限(' + who.name + ')'); return { ok: true, ratioCap: doc.ratioCap }
+    if (!(await kvPut(CFG_KEY, doc, '成本率上限(' + who.name + ')'))) return { ok: false, error: '沒存進去（成本模組可能正在搬到新版），請重新整理再試' }; return { ok: true, ratioCap: doc.ratioCap }
   }
   if (op === 'recon') {
     const ym = String(body.ym || '').slice(0, 7); if (!/^\d{4}-\d{2}$/.test(ym)) return { ok: false, error: '月份格式要 YYYY-MM' }
@@ -138,7 +138,7 @@ export async function applyDashOp ({ kvGet, kvPut, who, body }) {
     if ((exTax != null && isNaN(exTax)) || (tax != null && isNaN(tax))) return { ok: false, error: '金額要是數字' }
     const next = { exTax, tax, note: String(body.note || '').slice(0, 300), done: !!body.done, by: who.name, at, log: [...(prev.log || []), { at, by: who.name, exTax, tax, done: !!body.done, note: String(body.note || '').slice(0, 120), prev: { exTax: prev.exTax, tax: prev.tax, done: prev.done } }].slice(-30) }
     doc.vendors[k] = next; doc.updatedAt = at
-    await kvPut(reconKey(ym), doc, '月帳對帳 ' + ym + '(' + who.name + ')'); return { ok: true }
+    if (!(await kvPut(reconKey(ym), doc, '月帳對帳 ' + ym + '(' + who.name + ')'))) return { ok: false, error: '沒存進去（成本模組可能正在搬到新版），請重新整理再試' }; return { ok: true }
   }
   return { ok: false, error: '不認得的操作' }
 }
