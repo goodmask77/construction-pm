@@ -98,6 +98,17 @@ export async function abgdOwnerOf(key) {
   } catch (_) { return 'unknown' }
 }
 const ABGD_MOVED = '這個功能已搬到新版，請從側欄重新點進去（會自動登入新版）'
+// abgd：轉命令給新殼（HMAC＋冪等鍵；同 line-webhook abgdCommand）——資料域在新殼時，GD 其他功能要改那個域的資料走這裡
+async function abgdCmd(domain, action, args, operator) {
+  const base = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '')
+  const sec = (process.env.BRIDGE_SECRET || '').trim()
+  if (!sec) return { ok: false, text: '新版命令金鑰未設定' }
+  const body = JSON.stringify({ idem: 'ms-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), domain, action, args, operator })
+  const sig = crypto.createHmac('sha256', sec).update(body).digest('base64url')
+  try { const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body }); const j = await r.json().catch(() => ({})); return { ...j, ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) } } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
+}
+// SOP（F02＋問題回報 F33）寫入端點：SOP 切新殼後一律 409（GD 側欄已導去新版；舊頁快取還開著的人看到提示）
+const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
@@ -411,6 +422,7 @@ async function syncJoya(daysBack) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'POST' && req.query && SOP_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
   let _lastBound = false // v4.31.0（張良：擋下來的訊息要分「沒登入」跟「沒權限」）：sopWho 每次順手記「這個 token 有沒有綁定」
@@ -4082,6 +4094,7 @@ export default async function handler(req, res) {
     if (bR.op === 'setcheckers') {
       if (!isAdmR) return res.status(403).json({ ok: false, error: '只有管理者能設定核銷人' })
       const names = Array.isArray(bR.names) ? bR.names.map(n => String(n).slice(0, 20)).filter(Boolean).slice(0, 50) : []
+      { const ow = await abgdOwnerOf('sp_finance_pm_sop_def'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'setcheckers', { names }, whoR.name); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, checkers: names } : { ok: false, error: cr.text }) } }
       const def2 = (await kvGet('sp_finance_pm_sop_def')) || {}
       def2.ground = def2.ground || {}; def2.ground.checkers = names
       await kvPut('sp_finance_pm_sop_def', def2, '設定授權核銷人')
@@ -4166,6 +4179,7 @@ export default async function handler(req, res) {
     const itR = (docR.list || []).find(x => x.id === br.id)
     if (!itR) return res.status(404).json({ ok: false })
     if (br.aspect === 'fix' && itR.status !== 'done') return res.status(400).json({ ok: false, error: '還沒核准解決，先不能評解決星' })
+    { const ow = await abgdOwnerOf('sp_finance_pm_sop_issues'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'rate', { id: br.id, aspect: br.aspect, facet: br.facet, stars: sv }, whoR.name); return res.status(cr.ok ? 200 : (cr.status || 400)).json(cr.ok ? { ok: true, stars: cr.stars } : { ok: false, error: cr.text }) } }
     const target = br.aspect === 'find' ? itR.by : itR.doneBy
     if (target === whoR.name) return res.status(400).json({ ok: false, error: '不能評自己的星 😄' })
     itR.stars = itR.stars || {}; itR.stars[br.aspect] = itR.stars[br.aspect] || {}; itR.stars[br.aspect][br.facet] = itR.stars[br.aspect][br.facet] || {}
