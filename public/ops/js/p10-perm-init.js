@@ -55,7 +55,7 @@ async function gdStaffOp(op, name){
   if (op==='del' && !confirm(`把 ${name} 移出 GD 人員？（排班/任務/回饋選單就不會出現他；名冊本體不動）`)) return
   const r = await fetch('/api/mail-sync?gdstaff=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op, name, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+  if (d && d.ok) { if (d.warn) alert(d.warn); shiftLoad() } else alert((d&&d.error)||'失敗') // abgd：加人成功但班表恢復常態沒完成會帶 warn
 }
 function gdStaffAdd(){
   const d = window._shiftD
