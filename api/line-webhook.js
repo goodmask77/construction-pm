@@ -88,6 +88,7 @@ async function abgdOwnerStrict(key) {
     if (!r.ok) return 'unknown'
     const rows = await r.json()
     const hit = rows.filter(l => key.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0]
+    if (!hit && /^sp_finance_pm_sop_/.test(key)) return 'unknown' // 已納入搬家的域（SOP）一定有鎖列；沒有＝查詢不完整，不當 gd（關卡 3 SOP 第二輪）
     return hit ? hit.owner : 'gd'
   } catch (_) { return 'unknown' }
 }
@@ -2419,6 +2420,7 @@ export default async function handler(req, res) {
             if (!itP) { await repP('找不到這筆回報（可能已處理或刪除）。'); continue }
             const headP = `【${itP.st}】${(itP.text || '（附件）').slice(0, 40)}`
             if (piOp === 'go') {
+              if (itP.pub === 'ok') { await repP(`✅ 這筆已經發布過了：${headP}`); continue } // 一案只發布一次（與新殼一致）
               itP.pub = 'ok'
               if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue } // 存不進去就不發群
               try { const { prepLink } = await import('./_webpush.js'); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) }) } catch (_) {}
