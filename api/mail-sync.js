@@ -2632,7 +2632,7 @@ export default async function handler(req, res) {
     const asg = asgDoc || { list: [] }
     asg.list = asg.list || []
     let asgChanged = false
-    if (dtF === todayF && workers.length >= 2) {
+    if (dtF === todayF && workers.length >= 2 && (await abgdOwnerOf('sp_finance_pm_fb_assign')) === 'gd') {
       const sorted = [...workers].sort()
       const N = sorted.length
       const k = Math.min(2, N - 1)
@@ -2668,6 +2668,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.fbj) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fbj) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_fb')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd：回饋已搬新殼，舊頁送出直接擋（不能沒存到卻給分）
     let jb = {}
     try { jb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoJ = await permWho(jb.token, 'fb')
@@ -2691,6 +2692,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.fbset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fbset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_fb')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd：回饋已搬新殼，舊頁送出直接擋（不能沒存到卻給分）
     let fbB = {}
     try { fbB = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoF = await permWho(fbB.token, 'fb')
@@ -2717,7 +2719,7 @@ export default async function handler(req, res) {
     it.text = String(fbB.text || '').slice(0, 1000)
     it.ts = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
     doc.list = doc.list.slice(0, 2000)
-    await kvPut('sp_finance_pm_fb', doc, '每日回饋(' + whoF.name + '→' + tgF + ')')
+    if (!(await kvPut('sp_finance_pm_fb', doc, '每日回饋(' + whoF.name + '→' + tgF + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     // 標記指派完成（當班互評／指定回饋）
     try {
       const ad = (await kvGet('sp_finance_pm_fb_assign')) || { list: [] }
@@ -2732,6 +2734,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.fbdims) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fbdims) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_fb')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd：回饋已搬新殼，舊頁送出直接擋（不能沒存到卻給分）
     let bD = {}
     try { bD = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoD = await permWho(bD.token, 'fb')
@@ -2753,6 +2756,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.fbassign) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fbassign) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_fb')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd：回饋已搬新殼，舊頁送出直接擋（不能沒存到卻給分）
     let bA = {}
     try { bA = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoA = await permWho(bA.token, 'fb')
