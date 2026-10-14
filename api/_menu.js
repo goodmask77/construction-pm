@@ -88,7 +88,7 @@ function buildItem ({ key, brand, name, category, active, basePrice, note, abCos
     const okc = combos.filter(c => c.ok)
     combo = { upcharge: up, extraPack: extra, combos: combos.slice(0, 60), n: combos.length, nOk: okc.length, min: okc.length ? Math.min(...okc.map(c => c.food + c.pack)) : null, max: okc.length ? Math.max(...okc.map(c => c.food + c.pack)) : null }
   }
-  return { key, brand, name, category, active, note: note || '', basePrice, abCost, abComplete, recipeKey: linked ? linked.key : (ov.recipeKey || ''), recipeName: linked ? linked.name : '', recipeOk: !!(linked && linked.ok), recipeStatus: linked ? linked.status : '未連結食譜', recipeGaps: linked ? (linked.gaps || []).slice(0, 4) : [], recipePending: !!(linked && linked.pendingContent), specs, main: mc, cap, over, combo, hasOverlay: !!(ov.specs || ov.pack || ov.combo || ov.recipeKey), updatedAt: ov.at || '' }
+  return { key, brand, name, category, active, note: note || '', basePrice, abCost, abComplete, recipeKey: linked ? linked.key : (ov.recipeKey || ''), recipeName: linked ? linked.name : '', recipeOk: !!(linked && linked.ok), recipeStatus: linked ? linked.status : '未連結食譜', recipeGaps: linked ? (linked.gaps || []).slice(0, 4) : [], recipePending: !!(linked && linked.pendingContent), specs, main: mc, cap, over, combo, hasOverlay: !!(ov.specs || ov.pack || ov.combo || ov.recipeKey), updatedAt: ov.at || '', comboCfg: ov.combo ? { sides: ov.combo.sides || [], drinks: ov.combo.drinks || [], extraPack: ov.combo.extraPack || [], upcharge: Number(ov.combo.upcharge) || 0 } : null } // v4.71.78 comboCfg：回傳套餐原本的選擇（畫面編輯從原設定開始，存檔不會清掉附餐／飲料池與額外包材）
 }
 
 export async function applyPricingOp ({ kvGet, kvPut, who, body }) {
