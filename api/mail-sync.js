@@ -105,7 +105,7 @@ async function abgdCmd(domain, action, args, operator) {
   if (!sec) return { ok: false, text: '新版命令金鑰未設定' }
   const body = JSON.stringify({ idem: 'ms-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), domain, action, args, operator })
   const sig = crypto.createHmac('sha256', sec).update(body).digest('base64url')
-  try { const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body }); const j = await r.json().catch(() => ({})); return { ...j, ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) } } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
+  try { const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body, signal: AbortSignal.timeout(15000) }); const j = await r.json().catch(() => ({})); return { ...j, ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) } } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
 }
 // SOP（F02＋問題回報 F33）寫入端點：SOP 切新殼後一律 409（GD 側欄已導去新版；舊頁快取還開著的人看到提示）
 // 班表 F15（shift 域＝sp_finance_pm_shift_g）寫入端點：切新殼後一律 409（不分方法：shiftoff／shiftdedup 是 GET 也會寫）
@@ -3339,7 +3339,7 @@ export default async function handler(req, res) {
         const evN = String(ev.event || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)) // 全形數字→半形（實際資料是「２０２６年８月」）
         const mN = /(\d{4})\s*年\s*(\d{1,2})\s*月/.exec(evN)
         if (mN) ym9 = mN[1] + '-' + String(+mN[2]).padStart(2, '0')
-        else if (ev.payDate) { const d9 = new Date(ev.payDate + 'T00:00:00Z'); d9.setUTCMonth(d9.getUTCMonth() - 1); ym9 = d9.toISOString().slice(0, 7) }
+        else if (ev.payDate) { const d9 = new Date(String(ev.payDate).slice(0, 7) + '-01T00:00:00Z'); d9.setUTCMonth(d9.getUTCMonth() - 1); ym9 = d9.toISOString().slice(0, 7) }
         const lv9 = Object.entries(ev.leaves || {}).map(([k9, v9]) => k9 + ' ' + v9 + 'h').join('、')
         hrPay.push({ n: ev.name, ym: ym9, ev: ev.event, pd: ev.payDate, g: ev.gross, net: ev.net, ot: (ev.otFree || 0) + (ev.otTax || 0), otF: ev.otFree || 0, otT: ev.otTax || 0, otH: ev.otH || 0, lv: lv9 })
       }
@@ -5404,7 +5404,7 @@ export default async function handler(req, res) {
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
     const todayM = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosM = (() => { const out = []; const d = new Date(todayM + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosM = (() => { const out = []; const d = new Date(todayM.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const [ordiDocs, catDoc] = await Promise.all([
       Promise.all(mosM.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
       kvGet('sp_finance_pm_boss_matcat'),
@@ -5495,7 +5495,7 @@ export default async function handler(req, res) {
     const mkS = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mkS || String(req.query.matseed) !== mkS) return res.status(403).json({ ok: false })
     const todayS = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosS = (() => { const out = []; const d = new Date(todayS + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosS = (() => { const out = []; const d = new Date(todayS.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     if (req.method === 'POST') {
       let bs = {}
       try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
@@ -5537,7 +5537,7 @@ export default async function handler(req, res) {
     const meW = probeP ? { name: 'probe' } : await sopWho(meTk)
     if (!meW) return res.status(403).json({ ok: false, error: '菜單成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
     const todayP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosP = (() => { const out = []; const d = new Date(todayP + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosP = (() => { const out = []; const d = new Date(todayP.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const canEditP = !probeP && !!(await permWho(meTk, 'pricing'))
     if (req.method === 'POST') {
       if (!canEditP) return res.status(403).json({ ok: false, error: '沒有編輯菜單定價的權限' })
@@ -5552,7 +5552,7 @@ export default async function handler(req, res) {
     const mkG = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mkG || String(req.query.gdfive) !== mkG) return res.status(403).json({ ok: false })
     const todayG = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosG = (() => { const out = []; const d = new Date(todayG + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosG = (() => { const out = []; const d = new Date(todayG.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const r = await seedGdFive({ kvGet, kvPut, who: { name: 'CC（批次 4 骨架）' }, applyRecipeOp: rcpApply, months: mosG })
     await announceChanged()
     return res.status(200).json(r)
@@ -5577,7 +5577,7 @@ export default async function handler(req, res) {
       return res.redirect(302, u)
     }
     const todayR = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosR = (() => { const out = []; const d = new Date(todayR + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosR = (() => { const out = []; const d = new Date(todayR.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const canEditR = !probeR && !!(await permWho(meTk, 'rcp'))
     if (req.method === 'POST') {
       if (!canEditR) return res.status(403).json({ ok: false, error: '沒有編輯食譜的權限（食譜分頁權限）' })
@@ -5621,6 +5621,7 @@ export default async function handler(req, res) {
           const cr = await abgdCmd('matcard', 'merge', { supplyKeys: Array.isArray(bM.supplyKeys) ? bM.supplyKeys.map(String).slice(0, 50) : [], targetCardId: bM.targetCardId ? String(bM.targetCardId) : '', name: String(bM.name || '').slice(0, 80), primary: bM.primary ? String(bM.primary) : '', reason: String(bM.reason || '').slice(0, 200), by: meW.name }, meW.name)
           return res.status(cr.ok ? 200 : 409).json(cr.ok ? { ok: true, cardId: cr.cardId } : { ok: false, error: '合併沒完成（' + cr.text + '）' })
         }
+        if (String(bM.op || '') === 'merge') return res.status(409).json({ ok: false, error: '物料卡正在切換到新版，請一分鐘後再按一次' }) // 成本待辦合併：使用者不在物料卡頁，「從側欄重新點」會誤導
         return res.status(409).json({ ok: false, error: ABGD_MOVED })
       }
       const { uploadPrivate } = await import('./_onboard.js')
@@ -5629,7 +5630,7 @@ export default async function handler(req, res) {
       return res.status(r.ok ? 200 : 400).json(r)
     }
     const todayM2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosM2 = (() => { const out = []; const d = new Date(todayM2 + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosM2 = (() => { const out = []; const d = new Date(todayM2.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const t = await mcBuild({ kvGet, months: mosM2 })
     if (req.query.card) { // 單卡明細（含每個供應品的價格紀錄）：開卡時才抓，列表回傳不帶 recs（1.4MB→瘦身）
       const c = (t.cards || []).find(x => x.id === String(req.query.card)); if (!c) return res.status(404).json({ ok: false, error: '找不到這張卡' })
@@ -5660,7 +5661,7 @@ export default async function handler(req, res) {
       return res.status(r.ok ? 200 : 400).json(r)
     }
     const todayD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosD = (() => { const out = []; const d = new Date(todayD + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosD = (() => { const out = []; const d = new Date(todayD.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const view = String(req.query.view || 'dash')
     if (view === 'vendors') { const t = await cdVendors({ kvGet, months: mosD, ym: String(req.query.ym || ''), detail: String(req.query.vendor || '') }); return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t }) }
     const t = await cdDash({ kvGet, months: mosD })
@@ -5725,7 +5726,7 @@ export default async function handler(req, res) {
       return res.status(r.ok ? 200 : 400).json(r)
     }
     const todayC = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosC = (() => { const out = []; const d = new Date(todayC + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosC = (() => { const out = []; const d = new Date(todayC.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const t = await costBuildTodo({ kvGet, months: mosC })
     if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
     return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
@@ -5784,7 +5785,7 @@ export default async function handler(req, res) {
   if (req.query?.vegcmp || (req.method === 'POST' && req.query?.vegimport)) {
     const { buildVegCmp, importQuotes, confirmMatched, marketSeries, syncFromSheets, togglePin, mealStats } = await import('./_vegquote.js')
     const todayV = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosV = (() => { const out = []; const d = new Date(todayV + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosV = (() => { const out = []; const d = new Date(todayV.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     let bV = {}
     if (req.method === 'POST') { try { bV = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
     if (req.query?.vegimport) {
@@ -5836,7 +5837,7 @@ export default async function handler(req, res) {
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '叫貨單屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
     const todayO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosO = (() => { const out = []; const d = new Date(todayO + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mosO = (() => { const out = []; const d = new Date(todayO.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const tpeDay = s => { const t = Date.parse(String(s || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
     // v4.70.42 兩店都列（張良 2026-10-11 問 DD「GD 10 月叫貨單」才發現這頁也只有 AB）：store=AB（阿桑 OPS ord/ordi）／GD（gops gord/gordi）
     const [ordDocs, ordiDocs, gordDocs, gordiDocs] = await Promise.all([

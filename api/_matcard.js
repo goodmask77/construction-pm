@@ -59,10 +59,11 @@ export async function buildCards ({ kvGet, months }) {
   for (const s of [...serA.series, ...serG.series]) {
     if (!s.code) continue
     const k = supplyKeyOf(s.sys, s.code)
-    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order' })))
+    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order', _t: p.t || 0 })))
   }
-  for (const q of (doc.quotes || [])) (recs[q.supplyKey] = recs[q.supplyKey] || []).push({ d: q.date, p: q.price, src: q.src || 'quote', by: q.by, note: q.note })
-  for (const k of Object.keys(recs)) recs[k].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0))
+  for (const q of (doc.quotes || [])) (recs[q.supplyKey] = recs[q.supplyKey] || []).push({ d: q.date, p: q.price, src: q.src || 'quote', by: q.by, note: q.note, _t: Infinity })
+  // 同日：跨廠商依下單時間排、手動紀錄排在叫貨後（v4.71.61，與新殼 abgd 同算法）
+  for (const k of Object.keys(recs)) { recs[k].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : ((a._t - b._t) || 0))); for (const r of recs[k]) delete r._t }
   // 供應品（即時主檔）＋拆分出來的虛擬供應品
   const supplies = {}
   for (const p of master.products) {
@@ -100,6 +101,7 @@ export async function buildCards ({ kvGet, months }) {
   const prodBySys = {}
   const rows = []
   for (const c of Object.values(cards)) {
+    c.supplies.sort() // 供應品依鍵排序再選主要來源（v4.71.61；原本依主檔列順序＝阿桑同步順序，GD 與新殼 abgd 可能不同）
     const sups = c.supplies.map(k => supplies[k])
     const primaryKey = (c.primary && supplies[c.primary] && c.supplies.includes(c.primary)) ? c.primary : (sups.find(s => s.status === '啟用' && s.lastOrder) || sups.find(s => s.status === '啟用') || sups[0]).key
     const pri = supplies[primaryKey]
@@ -147,7 +149,7 @@ export async function buildCards ({ kvGet, months }) {
     c.neverDead = c.neverOrdered && !c.usedRecipes.length && !c.usedMenus.length // 沒叫過、食譜／菜單也沒用到＝真的死料候選
     c.lastOrderDay = sps.reduce((m, s) => (s.lastOrder && s.lastOrder.d > m ? s.lastOrder.d : m), '')
   }
-  rows.sort((a, b) => (a.status === '啟用' ? 0 : 1) - (b.status === '啟用' ? 0 : 1) || (b.usedMenus.length - a.usedMenus.length) || (a.name < b.name ? -1 : 1))
+  rows.sort((a, b) => (a.status === '啟用' ? 0 : 1) - (b.status === '啟用' ? 0 : 1) || (b.usedMenus.length - a.usedMenus.length) || (a.name < b.name ? -1 : a.name > b.name ? 1 : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) // 同名依卡 ID（v4.71.61）
   const facets = { types: TYPES, baseUnits: BASE_UNITS, brands: ['A Beach', 'GROUN:D'], cats: [...new Set(rows.flatMap(c => c.cats))].sort(), stores: [...new Set(rows.map(c => c.store).filter(Boolean))].sort(), suppliers: [...new Set(rows.flatMap(c => c.suppliers))].sort() }
   const orderFrom = [serA.firstDay, serG.firstDay].filter(Boolean).sort()[0] || '' // v4.70.77 叫貨紀錄最早一天（「沒叫過」的口徑要講清楚）
   return { cards: rows, supplies, facets, log: (doc.log || []).slice(-80).reverse(), live: master.live, masterUpdatedAt: master.updatedAt, snapAsOf: snap.asOf, nMerged: Object.keys(doc.supplyCard || {}).length, orderFrom, orderFromA: serA.firstDay || '', orderFromG: serG.firstDay || '' }

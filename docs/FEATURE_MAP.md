@@ -31,7 +31,7 @@
 | F08 | 物料庫（boss 叫貨進價波動／叫貨單） | p16-matlib | matlib、matcat、matord、matseed | pm_boss_ord_／ordi_／gord_／gordi_／matcat／prod／sup | 阿桑 boss-api | boss-sync 每小時 | **高（阿桑 API）** | app/ops/matlib；ops.boss_orders／boss_order_items／supplier_cats | 待搬 |
 | F09 | 耗損 | p18-waste | waste、wasteimg；api/_waste.js | pm_waste_(月檔)、pm_waste_cfg | AI 讀秤 | — | 中 | app/ops/waste；ops.waste_logs | 待搬 |
 | F10 | 食譜（食譜庫＋AI 匯入） | p20-recipe、p20b-rcpimport | recipes、rcpimg；api/_recipe.js、_rcpimport.js | pm_recipebook、pm_recipecost_snap | AI | — | 中 | app/ops/recipes；ops.recipes／recipe_items | 待搬 |
-| F11 | 物料卡 | p19-matcard | matcard、mcard、mcphoto；api/_matcard.js | pm_matcard、pm_inv | — | — | 中 | app/ops/matcard；ops.material_cards | 待搬 |
+| F11 | 物料卡 | p19-matcard | matcard、mcard、mcphoto；api/_matcard.js | pm_matcard（獨立 matcard 域）、讀 boss／recipe／menu | — | — | 中 | app/ops/matcard；通用 gd_docs 引擎（ops.matcard_view／matcard_ver） | **影子**（10-14：讀取對帳卡 1172／供應品 1172 全欄位相同，同日多單 3 處差異已由 GD v4.71.61 同步算法消除，見 5.3；P95 0.37～0.43 秒；GD v4.71.60 閘門＋合併轉發已上線；關卡 3 審查中） |
 | F12 | 菜單成本（定價） | p22-pricing | pricing、priceset；api/_menu.js | pm_pricing、pm_pos_prices、pm_pos_costs、pm_menu | — | — | 中 | app/ops/pricing；ops.menu_items／menu_prices | 待搬 |
 | F13 | 成本總覽（含廠商月帳、菜商比價、員餐分析、偵錯待辦） | p21-costdash、p21b-vegcmp、p17-costtodo | costdash、costsnap、costtodo、vendor、vegcmp、vegimport；api/_costdash.js、_cost.js、_vegquote.js | pm_cost_snap_*、pm_cost_todo、pm_cost_cfg、pm_veg_quotes、pm_veg_market、pm_vendor_recon_ | 農業部行情、Google 試算表 | mail-sync 排程（菜商報價／試算表） | **高（月帳對帳）** | app/ops/cost；ops.cost_snapshots／veg_quotes／veg_market | 待搬 |
 | F14 | 會議（宣達簽收） | p04-inv-meet | meet、meetset、meetping | pm_meet | LINE 提醒 | joya-intraday（宣達追提醒） | 低 | app/ops/meetings；ops.meetings／meeting_acks | ✅ **已切入口 2026-10-14 晚**（epoch 5；關卡 3 四輪；通知走 GD 代發口 api/abgd-fx.js；追提醒改新殼排程）→ 只改新殼 |
@@ -183,6 +183,23 @@ Meta OAuth 重新授權、綠界特約商店申請、LINE Pay 回呼白名單、
 - 命令紀錄、收據、發布嘗試紀錄要訂清理期限（配合重播與備份）。
 - 問題回報發布（第七輪定案）：「發布中」記在那筆回報本身 pubTry {入口, 時間, 人, 固定鍵}，GD 用整數版本 CAS（pm_doc_cas，0012）寫入、新殼用 gdTxn；凍結後記不進去＝不會開始新的外發。規則：已發布不再發；之前有嘗試且走別的入口或超過 23 小時＝不重發，標已發布＋pubNote「未確認，請到群組核對」（問題卡上會顯示）；同入口 23 小時內固定鍵重送（LINE 24 小時去重）；代發口收到超過 23 小時的發布事件不送。發布中不能刪除、不能改保留。一案只發一個群（先按的入口決定）。
 - 已知：若 LINE 其實沒收到、又剛好換入口或隔天才按，這筆會標「未確認」而不會進群——要靠人看到註記補發（刻意選「寧可漏發待核對、不要重複發」）。
+
+## 5.3 物料卡 F11 差異與修正（2026-10-14，關卡 3 第一輪）
+
+**已消除（GD v4.71.61 同步改成同一套算法）**
+- 同日多張單「最後叫貨」：原本 GD 照阿桑 API 回傳順序（新單在前）只按日期排，取到當天較早那張（實例 G\|GDS-0083、G\|RNG004、G\|RNG005 數量不同）。現在兩邊都依「日期→下單時間」全域排（跨廠商也一起排），手動價格紀錄排在同日叫貨之後。
+- 合併卡沒指定主要來源：兩邊都先把供應品依鍵排序再挑（原本看主檔列順序，兩邊可能不同）。同名卡列表依卡 ID 排。
+- GD 舊 bug：每月 29～31 號「往回 13 個月」會重複當月、漏最舊一月（叫貨數量變兩倍）。GD 11 處月份產生器一律從當月 1 號往回推。
+
+**新殼比 GD 嚴格（刻意，GD 的讀者不受影響）**
+
+| 項目 | GD | 新殼 |
+|---|---|---|
+| 卡 ID／供應品鍵 | 不驗 | 卡 ID 只收 `mc_…`／`auto:…`；拒絕 `constructor`、`__proto__` 等保留字；讀取一律只認自有屬性 |
+| 重按合併 | 每次都建新卡 | 這組代碼＝某張人建卡的全部供應品時，回那張卡、不重做（回 noop） |
+| 數值／日期 | `Number()>0`（Infinity 會過）、日期只驗外形 | 有限數字；日期要真的存在（2026-02-30 拒絕） |
+| edit 紀錄 after | 原樣記送來的 fields | 記實際寫入的值（截字、跳過非法值之後） |
+| 照片 | 任何 image/*、時間檔名、可覆寫 | 驗檔頭 JPG／PNG／WebP、隨機檔名、不覆寫 |
 
 ## 6. 三家關卡紀錄
 
