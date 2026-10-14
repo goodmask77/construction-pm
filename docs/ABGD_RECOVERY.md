@@ -1,4 +1,4 @@
-# ABGD 切換／回切 人工恢復手冊（一頁）v9
+# ABGD 切換／回切 人工恢復手冊（一頁）v10
 
 > 2026-10-14 立；v2 依回饋 F17 關卡 3 第七輪三家意見改：每一步都是切換口的一個指令＋要讀回確認的結果，不手寫 SQL。
 > v5（第十輪）：清旗標後立刻 align、B 收尾等 dirty=0 且 dead=0、GD 探測帶 domain、freeze 回應列出全部未結案操作、接管瞬間 GD 可能被舊程序動過的說法改準確；入口發布有版本圍欄（舊快照晚到 GD 回 409）。
@@ -57,6 +57,11 @@
 1. 立刻 `GET …&domain=<域>`，看 `abgd`（writer／state／epoch）與 `gd_locks` 每個前綴 owner／epoch。
 2. 兩端一致（新殼 frozen、GD 全 frozen 且同世代）→ 照原步驟重試那個工具。
 3. 不一致、有前綴是 gd、或任一欄 unavailable → 回到 C 第 1 步重新 freeze（會把兩端推到同一個新世代），再走 B。
+
+## G：SOP 切換前後（問題回報的 LINE 發布）
+- 切換前：GD `sp_finance_pm_pipub_log` 沒有 state=sending／unknown 的未結案嘗試；`sp_finance_pm_sop_issues` 沒有 pub=pending 的案件（有就先在 GD 處理完）。
+- 切換後：核對 pipub_log 在切換前後 10 分鐘的紀錄——state=accepted 但新殼該案 pub≠ok → 人工補成已發布（不要再按發布，會再排一次；新殼同一把固定鍵 24 小時內 LINE 會擋，但不要依賴）。
+- 切換後實測（第一次真的走完整流程）：LINE 審核三顆按鈕、GD 首頁「N 筆回報等確認發布」、排行榜評星、積分核銷人設定。
 
 ## E：演練守則（正式環境）
 - 只在演練專用資料域 `drill`（鍵 sp_finance_pm_zzdrill）做；「不修改真功能資料」，但仍共用同步租約、入口序號、資料庫與 API——長時間、網路故障、租約失效類測試先在測試庫做。
