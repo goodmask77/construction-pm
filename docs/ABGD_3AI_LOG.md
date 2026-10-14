@@ -94,4 +94,15 @@
 ### CC 修正（v0.3.x＋GD v4.71.30，全部上線）
 檔案操作限定同公司＋該夾＋未刪、排序／序號原子函式、上傳登記驗路徑／fid／桶內物件／真實大小／回 UUID、上傳過渡期直接進 GD 桶（路徑相容，無前綴）、撤 authenticated 寫入 RLS、who() 一次查＋審核人快取、人名按需且限同公司、身分影子投影（prep_perm／名冊→成員角色／權限例外／gd_role）、DD 存檔走新殼命令（HMAC 冪等）、空白改名保留、dl 截 120、/f/ no-store、updatedAt 最後異動、同頁預覽。
 有意差異：新殼一律要登入（不開訪客）；noExport 同 GD 只藏按鈕。
-### 第二輪（複審）：進行中
+### 第二輪（複審）
+| 家 | 結論 | 條件 |
+|---|---|---|
+| OpenAI | 不可切 | 讀取仍可 REST 直讀繞 ACL；DD 登記只驗前綴；upsert 覆寫；部分成功假報；異動／稽核／同步非同交易；影子投影不處理名單外與錯誤；setacl 無範圍與筆數 |
+| Gemini | 有條件可切 | 投影同交易＋rev 守門；刪夾同交易；超大檔刪實體 |
+| Claude | 有條件可切 | **回音洗回**（writer=abgd 時 pull 仍投影 GD JSON 回真表）；名冊新人無帳號；noExport 預覽視窗；MIME 欄位；DD idem |
+### CC 修正 v4～v6（全部上線；GD v4.71.31）
+撤 authenticated SELECT（REST 直讀／直寫實測 401）；`ops.library_op` 單一交易（異動＋稽核＋sync_events）含刪夾子檔、setacl 樂觀鎖＋恰好一筆＋ACL 驗值；DD 登記驗精確路徑＋桶 HEAD＋insert 不覆寫＋逐檔結果＋身分由新殼解析；GD 端只移除登記成功者；`core.perm_apply` 同交易＋`legacy.projection_state` rev 守門＋完整快照語意；超大檔刪實體；writer=abgd 域只鏡像不投影；MIME mimetype；名冊新人自動建帳號（不能編）；noExport 預覽一致。
+### 演練 3（正式環境）
+JWT 直讀 401／直寫 401；切換 epoch 2；DD 壞路徑拒；新增→改名→改 ACL→push→對帳 0→pull 不洗回→刪→對帳 0→切回→對帳 0。速度 n=30 端到端 P50 569／P95 989 ms（熱單次 ~300）。
+### 第三輪（最終確認）：進行中
+
