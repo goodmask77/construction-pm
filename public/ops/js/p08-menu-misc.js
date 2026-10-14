@@ -38,6 +38,7 @@ function incRender(){
 }
 async function fbLoad(date){
   curStore = 'fb'; setTabs('fb')
+  if (!window._abgdSkip_fb && typeof abgdTry === 'function' && await abgdTry('fb', '')) return // abgd：已切到新殼就開新殼
   fbDate = (typeof date === 'string' && date) || fbDate || todayTpe()
   if (!window._fbD || window._fbD.date !== fbDate) { const c = tcGet('fb_'+fbDate); if (c) window._fbD = c }
   if (window._fbD && window._fbD.date === fbDate) { document.getElementById('upd').textContent = '每日回饋・' + fbDate; fbRender() } else app.innerHTML = '<section>載入中…</section>'
