@@ -2420,17 +2420,17 @@ export default async function handler(req, res) {
             const headP = `【${itP.st}】${(itP.text || '（附件）').slice(0, 40)}`
             if (piOp === 'go') {
               itP.pub = 'ok'
-              await kvSet('sp_finance_pm_sop_issues', docP)
+              if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue } // 存不進去就不發群
               try { const { prepLink } = await import('./_webpush.js'); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) }) } catch (_) {}
               try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: `⚠️ 問題回報【${itP.st}】`, body: `${(itP.text || '（附件）').slice(0, 60)} — ${itP.by}`, url: '/prep' }) } catch (_) {} // v4.33.0 GD推播
               await repP(`✅ 已發布到內部群：${headP}`)
             } else if (piOp === 'hold') {
               itP.pub = 'hold'
-              await kvSet('sp_finance_pm_sop_issues', docP)
+              if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue }
               await repP(`📥 已保留（不進群，看板上仍看得到）：${headP}`)
             } else if (piOp === 'del') {
               docP.list = (docP.list || []).filter(x => x.id !== piId)
-              await kvSet('sp_finance_pm_sop_issues', docP)
+              if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue }
               await repP(`🗑 已刪除：${headP}`)
             }
           } catch (e) { console.log('pub issue postback error', e?.message); await repP('⚠️ 處理出錯，再按一次或到 /prep 任務分頁操作。') }
