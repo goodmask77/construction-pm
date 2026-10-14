@@ -61,15 +61,47 @@ async function ccInboxAdd(text, tag) {
 }
 // v4.70.40 單鍵讀取（原本沒有這個函式：loadEmText 從 v4.43.7 起呼叫 kvGet 一直 ReferenceError 被 try 吞掉＝DD 從沒看過 EM 包場資料；query_orders 也用）
 async function kvGet(id) { return (await kvGetMany([id]))[id] || null }
+const abgdLockedHits = [] // abgd 搬家：這次請求裡被資料庫閘門擋下的鍵（回話要講，不假存檔）
 async function kvSet(id, valueObj) {
-  if (!SB_URL || !SB_KEY) return
+  if (!SB_URL || !SB_KEY) return false
   try {
-    await fetch(`${SB_URL}/rest/v1/pm_documents`, {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
       method: 'POST',
       headers: { ...sbHeaders, Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({ id, data: { v: JSON.stringify(valueObj) }, editor: 'D哥', updated_at: new Date().toISOString() }),
     })
-  } catch (_) {}
+    if (!r.ok) { const tx = await r.text().catch(() => ''); console.log('[kvSet] 失敗', id, r.status, tx.slice(0, 120)); if (/ABGD_LOCKED/.test(tx)) abgdLockedHits.push(id); return false }
+    return true
+  } catch (_) { return false }
+}
+
+// ── abgd 搬家：DD 寫入 adapter（第 0 波骨架，2026-10-14）──
+// 資料域切到新殼後，GD 資料庫閘門會擋 DD 的寫入（ABGD_LOCKED）。這裡：
+//  1) abgdOwner(prefix)：查該鍵前綴現在誰是 writer（讀 GD 表 pm_domain_lock，60 秒快取）
+//  2) abgdCommand(domain, action, args, operator)：owner=abgd 時改打新殼 /api/core/commands（HMAC 簽章＋冪等鍵）
+//  3) kvSet 被擋時回 false 並讓動作迴圈回「這項已搬到新版」，不假存檔
+const _abgdLockCache = { at: 0, rows: [] }
+async function abgdOwner(key) {
+  try {
+    if (Date.now() - _abgdLockCache.at > 60e3) {
+      const r = await fetch(`${SB_URL}/rest/v1/pm_domain_lock?select=prefix,domain,owner,epoch`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      _abgdLockCache.rows = r.ok ? await r.json() : []; _abgdLockCache.at = Date.now()
+    }
+    const hit = _abgdLockCache.rows.filter(l => key.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0]
+    return hit ? { owner: hit.owner, domain: hit.domain, epoch: hit.epoch } : { owner: 'gd', domain: null, epoch: 0 }
+  } catch (_) { return { owner: 'gd', domain: null, epoch: 0 } }
+}
+async function abgdCommand(domain, action, args, operator) {
+  const base = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '')
+  const sec = (process.env.BRIDGE_SECRET || '').trim()
+  if (!sec) return { ok: false, text: '新版命令金鑰未設定' }
+  const body = JSON.stringify({ idem: 'dd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), domain, action, args, operator })
+  const sig = crypto.createHmac('sha256', sec).update(body).digest('base64url')
+  try {
+    const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body })
+    const j = await r.json().catch(() => ({}))
+    return { ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) }
+  } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
 }
 // 刪一筆文件（跨空間刪任務用；App 端刪除也是直接 DELETE 該列，同一套行為）
 async function kvDel(id) {
@@ -1512,6 +1544,10 @@ async function executeActions(actions, operator) {
   for (const a of actions) {
     const t = a.type
     try {
+      // abgd 搬家：此動作要寫的資料域若已切到新殼→改打新殼命令 API，不碰舊表
+      { const spName0 = spaceOf(a.space), pfx0 = SPACE_PFX[spName0] || ''
+        const keyGuess = /task|todo/.test(t) ? pfx0 + 'pm_task_' : /category|item|payment/.test(t) ? pfx0 + 'pm_data' : /finance|petty/.test(t) ? 'sp_finance_pm_fin_' : /log/.test(t) ? 'pm_worklog' : ''
+        if (keyGuess) { const ow = await abgdOwner(keyGuess); if (ow.owner === 'abgd') { const cr = await abgdCommand(ow.domain, t, a, operator); results.push((cr.ok ? '✅ ' : '⚠️ ') + cr.text + '（新版）'); continue } if (ow.owner === 'frozen') { results.push('⚠️ 這項資料正在搬家中（暫時凍結），幾分鐘後再試'); continue } } }
       if (t === 'add_category') {
         // 跨空間建大項（張良 2026-09-01：叫D哥在團隊工作建「採購/營運/表單/SOP」被拒——以前只會寫工程 pm_data）
         const spName = spaceOf(a.space), pfx = SPACE_PFX[spName]
@@ -1674,7 +1710,9 @@ async function executeActions(actions, operator) {
     } catch (e) { results.push(`⚠️ 執行「${t}」失敗`) }
   }
   const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, pm_conclusions: conclusions }
+  abgdLockedHits.length = 0
   for (const k of changed) if (saveMap[k] !== undefined) await kvSet(k, saveMap[k])
+  if (abgdLockedHits.length) results.push('⚠️ 這些資料已搬到新版，這次沒有存進舊版：' + [...new Set(abgdLockedHits)].join('、') + '——請在新版操作')
   // 任務/交易明細：已遷移逐筆存＝只寫動到的那幾筆；還沒遷移＝照舊整包寫
   if (changed.has('pm_tasks')) { if (tR.v2) await kvSaveRecordsDiff('pm_task_', tasks0, tasks, true); else await kvSet('pm_tasks', tasks) }
   if (changed.has('sp_finance_pm_fin_ledger')) { if (lR.v2) await kvSaveRecordsDiff('sp_finance_pm_fin_tx_', ledger0, ledger, false); else await kvSet('sp_finance_pm_fin_ledger', ledger) }
