@@ -38,6 +38,7 @@ async function libPost(q, body) {
 }
 
 async function libLoad() {
+  if (!window._abgdSkip_lib && typeof abgdTry === 'function' && await abgdTry('lib', location.hash && /meet=/.test(location.hash) ? '#' + (location.hash.match(/meet=([A-Za-z0-9]+)/)||[])[1] : '')) return // abgd：已切到新殼就開新殼
   curStore = 'lib'; setTabs('lib')
   const b = document.getElementById('tab-lib'); if (b) b.className = 'on'
   document.getElementById('upd').textContent = '文件庫'

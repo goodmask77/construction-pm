@@ -468,6 +468,7 @@ function punchAdminExport(){
 // ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
 function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }
 async function meetLoad(){
+  if (!window._abgdSkip_meet && typeof abgdTry === 'function' && await abgdTry('meet', location.hash && /meet=/.test(location.hash) ? '#' + (location.hash.match(/meet=([A-Za-z0-9]+)/)||[])[1] : '')) return // abgd：已切到新殼就開新殼
   curStore = 'meet'; setTabs('meet')
   if (!window._meetD) { const c = tcGet('meet'); if (c) window._meetD = c }
   if (window._meetD) meetRender(); else app.innerHTML = '<section>載入中…</section>'
