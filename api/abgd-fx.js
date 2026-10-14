@@ -75,7 +75,7 @@ const ACTIONS = {
     if (!AI_ROUTES_OK.has(route)) throw new Error('這個 AI 路由沒開放給新殼：' + route)
     // 內容限制（abgd 耗損關卡 3 第一輪）：只收 user 訊息、文字或圖片（JPEG／PNG／WebP）、圖片最多 14 張、整包 ≤4.3MB、maxTokens 1～4000；不接受指定模型（override）
     const msgs = Array.isArray(a.messages) ? a.messages : []
-    if (msgs.length > 4 || JSON.stringify(msgs).length > 4_300_000 || String(a.system || '').length > 8000) throw new Error('送 AI 的內容太大')
+    if (msgs.length > 4 || Buffer.byteLength(JSON.stringify(a)) > 4_300_000 || Buffer.byteLength(String(a.system || '')) > 24000) throw new Error('送 AI 的內容太大') // 量實際位元組（中文一字 3 位元組），含 system 與所有參數
     let nImg = 0
     for (const m of msgs) {
       if (!m || m.role !== 'user') throw new Error('訊息格式不對')
