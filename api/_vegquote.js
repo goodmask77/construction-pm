@@ -127,7 +127,7 @@ async function fetchSheetCsv (src) {
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000)
   try { const r = await fetch(u, { signal: ctl.signal, redirect: 'follow' }); if (!r.ok) throw new Error('試算表打不開（HTTP ' + r.status + '），分享要設「知道連結的人可檢視」'); if (/accounts\.google\.com/.test(r.url || '')) throw new Error('試算表要登入才看得到，分享要設「知道連結的人可檢視」'); return await r.text() } finally { clearTimeout(tm) }
 }
-export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOverride }) {
+export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOverride, queueDm }) { // queueDm：新殼每日排程才帶（GD 自己直接發，不帶）
   const doc = (await kvGet(VQ_KEY)) || { vendors: {}, log: [] }
   const out = { ok: true, at: new Date().toISOString(), vendors: [] }
   for (const v of VENDORS) {
@@ -152,7 +152,8 @@ export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOve
     } catch (e) { doc.vendors[v] = { ...cur, lastSync: out.at, lastSyncErr: String(e.message || e).slice(0, 200) }; out.vendors.push({ vendor: v, ok: false, error: String(e.message || e).slice(0, 200) }) }
   }
   doc.sync = { at: out.at, by: who.name, summary: out.vendors.map(x => x.ok ? `${x.vendor} ${x.changes.length} 筆變動` : `${x.vendor} 失敗：${x.error}`) }
-  doc.sync.text = syncSummaryText(out) // 要私訊的摘要跟報價同一筆存（v4.71.71，abgd 關卡 3：通知不能因程序中斷而永久遺失；新殼排程依 sync.at 補入耐久佇列）
+  doc.sync.text = syncSummaryText(out) // 這次同步的摘要（給畫面看）
+  if (queueDm && doc.sync.text) doc.pendingDm = [...(Array.isArray(doc.pendingDm) ? doc.pendingDm : []), { id: out.at.replace(/[^0-9]/g, '') + '-' + Math.random().toString(36).slice(2, 8), at: out.at, text: doc.sync.text }].slice(-30) // v4.71.72 待發私訊清單（跟報價同一筆存；新殼排程入列時同交易移除；abgd 關卡 3 第三輪：不能被下一次同步蓋掉）
   doc.log = [...(doc.log || []), { at: out.at, by: who.name, sync: doc.sync.summary }].slice(-50)
   if (!(await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')'))) { out.ok = false; out.saveErr = '報價讀到了但沒存進去（成本模組可能已搬到新版）' } // 沒存進去就不能報「有變動」
   return out
