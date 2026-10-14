@@ -489,9 +489,24 @@ const TAB_ICONS = {
   costdash: _I('<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'), // 成本總覽＝長條圖（批次 5a v4.70.34） // 耗損＝垃圾桶（批次 1b v4.70.32） // 🧾 物料庫＝叫貨收據（v4.70.19 張良 2026-10-10：九宮格缺圖補上）
 }
 const stripEmoji = (s) => String(s||'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}⭐★☆✅✏️📌]/gu,'').trim()
+// abgd 搬家（2026-10-14）：入口切到新殼的分頁，點下去＝拿橋接票→POST 新殼 /api/core/auth/bridge（同分頁開，自動登入）；沒登入的人照舊開 GD 頁
+async function abgdOpen(k, url){
+  try {
+    const tk = (typeof TK==='function' ? TK() : '') || ''
+    if (!tk) { alert('請先登入（私訊 DD「登入碼」）'); return }
+    const r = await fetch('/api/mail-sync?bridge=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: tk }) })
+    const j = await r.json()
+    if (!j.ok || !j.ticket) { alert(j.error || '新版入口暫時打不開，先用舊版'); return }
+    const u = new URL(url); const f = document.createElement('form'); f.method = 'POST'; f.action = u.origin + '/api/core/auth/bridge'; f.style.display = 'none'
+    const add = (n, v) => { const i = document.createElement('input'); i.name = n; i.value = v; f.appendChild(i) }
+    add('ticket', j.ticket); add('to', u.pathname + u.search)
+    document.body.appendChild(f); f.submit()
+  } catch(e) { alert('新版入口打不開：' + (e && e.message || e)) }
+}
 function applyTabs(cfg){
   cfg = cfg || {}
   window._tabCfg = cfg
+  try { const rt = cfg.routes || {}; document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (rt[k]) { b.setAttribute('onclick', ''); b.onclick = (ev) => { ev.preventDefault(); abgdOpen(k, rt[k]) }; b.dataset.abgd = '1' } }) } catch(_) {}
   const bar = document.querySelector('.tabs'), gear = document.getElementById('tab-gear')
   const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
   Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) }) // v4.39.1 新分頁排最後=設定上面（張良 2026-10-04 inline 指定位置；要移前面去設定拖）
@@ -766,7 +781,7 @@ function sopPage(){ // ✅ SOP 獨立分頁（張良 2026-10-02：從首頁拆�
 }
 async function tabsInit(){
   meChipInit()
-  applyTabs(tcGet('tabcfg') || {})
+  applyTabs(Object.assign({}, tcGet('tabcfg') || {}, { routes: {} })) // abgd：routes 不用本機快取，只信剛抓的（切回要立刻生效）
   try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K)); const d = await r.json(); if (d && d.ok) { tcSet('tabcfg', d); applyTabs(d) } } catch(e){}
 }
 function tabsEdit(){

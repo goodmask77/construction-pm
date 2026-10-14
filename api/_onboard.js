@@ -26,6 +26,7 @@ export async function kvSet(id, obj) {
     method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'onboard-bot', updated_at: new Date().toISOString() }),
   })
+  if (!r.ok) { try { const tx = await r.text(); console.log('[kvSet] 失敗', id, r.status, tx.slice(0, 160)) } catch (_) {} } // abgd 閘門（ABGD_LOCKED）或其他失敗都要看得見
   return r.ok
 }
 
