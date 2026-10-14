@@ -12,23 +12,37 @@ import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
 const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 // 冪等：每個事件（含逐收件人的子事件）一個鍵 pm_abgd_fxk_<sha1>，用「insert 不覆寫」原子佔位（pm_abgd_ 前綴不屬於任何資料域）
 const fxKey = (idem) => 'pm_abgd_fxk_' + crypto.createHash('sha1').update(String(idem)).digest('hex')
-async function claim(idem) { // 回 'new'（我佔到）／{done:r}（做過）／'busy'（別人正在做，5 分鐘內）
-  const id = fxKey(idem)
-  const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ s: 'sending', t: Date.now() }) }, editor: 'abgd-fx', updated_at: new Date().toISOString() }) })
-  if (r.ok) return 'new'
-  const cur = await kvGet(id) || {}
+async function claim(idem) { // 回 {tok}（我佔到）／{done:r}（做過）／'busy'（別人正在做）；儲存失敗丟錯（由呼叫端回可重試）
+  const id = fxKey(idem), tok = crypto.randomUUID(), now = new Date().toISOString()
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ s: 'sending', t: Date.now(), tok }) }, editor: 'abgd-fx', updated_at: now }) })
+  if (r.ok) return { tok }
+  if (r.status !== 409) throw new Error('佔位失敗 HTTP ' + r.status) // 只有「已存在」才當衝突
+  const g = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&select=data,updated_at`, { headers: svc })
+  if (!g.ok) throw new Error('讀佔位失敗 HTTP ' + g.status)
+  const row = (await g.json())[0]; if (!row) throw new Error('佔位消失')
+  let cur = {}; try { cur = JSON.parse(row.data.v) } catch (_) {}
   if (cur.s === 'done') return { done: cur.r }
   if (Date.now() - (cur.t || 0) < 5 * 60e3) return 'busy'
-  await kvSet(id, { s: 'sending', t: Date.now() }); return 'new' // 卡太久（程序死掉）→ 重領
+  // 過期重領：條件更新（updated_at 沒變才改），只有一個請求搶得到
+  const u = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&updated_at=eq.${encodeURIComponent(row.updated_at)}`, { method: 'PATCH', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify({ data: { v: JSON.stringify({ s: 'sending', t: Date.now(), tok }) }, updated_at: new Date().toISOString() }) })
+  if (!u.ok) throw new Error('重領失敗 HTTP ' + u.status)
+  return (await u.json()).length ? { tok } : 'busy'
 }
-const finish = (idem, r) => kvSet(fxKey(idem), { s: 'done', t: Date.now(), r })
-const release = (idem) => fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${fxKey(idem)}`, { method: 'DELETE', headers: svc })
+async function finish(idem, r) {
+  const ok = await kvSet(fxKey(idem), { s: 'done', t: Date.now(), r })
+  if (!ok) throw new Error('完成紀錄寫入失敗')
+}
+async function release(idem) { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${fxKey(idem)}`, { method: 'DELETE', headers: svc }).catch(() => {}) }
 // 子事件：同一個動作裡逐收件人只發一次（重試時已發的人不再發）
-async function once(sub, fn) { const c = await claim(sub); if (c === 'busy') return { busy: true }; if (c !== 'new') return c.done; try { const r = await fn(); if (r && r.ok === false && r.retry) { await release(sub); return r } await finish(sub, r); return r } catch (e) { await release(sub); throw e } }
+async function once(sub, fn) { const c = await claim(sub); if (c === 'busy') return { ok: false, retry: true, busy: true }; if (c.done !== undefined) return c.done; try { const r = await fn(); if (r && r.ok === false && r.retry) { await release(sub); return r } await finish(sub, r); return r } catch (e) { await release(sub); throw e } }
+let _retryBase = '' // 目前事件的 idem（handler 設定），用來派生 LINE 重試鍵
+const retryKey = (to) => { const h = crypto.createHash('sha1').update(_retryBase + '|' + to).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
 async function linePush(to, messages) {
   const tk = TK(); if (!tk || !to) return false
-  const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to, messages }) })
-  return r.ok
+  const h = { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }
+  if (_retryBase) h['X-Line-Retry-Key'] = retryKey(to)
+  const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: h, body: JSON.stringify({ to, messages }) })
+  return r.ok || r.status === 409 // 409＝同一重試鍵 LINE 已收過（先前其實送出了）
 }
 async function bindMaps() {
   const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
@@ -96,7 +110,7 @@ const ACTIONS = {
     let n = 0
     for (const u of Object.keys(ops)) {
       const r = await once(idem + ':' + u, async () => { const ok = await linePush(u, [{ type: 'text', text: '❓ 會議宣達發問【' + a.type + ' ' + a.date + '】\n' + a.by + '：' + a.q + '\n到 /prep → 會議 回覆（他會收到通知）' }]); if (!ok) return { ok: false, retry: true }; try { await logPush(u, 1, '會議發問通知') } catch (_) {} return { ok: true } })
-      if (r && r.ok === false) return { ok: false, retry: true, n }
+      if (!r || r.ok === false) return { ok: false, retry: true, n }
       n++
     }
     return { ok: true, n }
@@ -161,7 +175,7 @@ const ACTIONS = {
     const lnk = tkP ? `https://ground-pm.vercel.app/prep?me=${tkP}#meet=${a.id}` : prepLink('meet=' + a.id)
     const ok = await linePush(po.lineUserId, [{ type: 'text', text: `📣 會議宣達還沒簽收（第 ${a.n} 次提醒）\n【${a.type}・${a.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnk}` }])
     if (!ok) return { ok: false, retry: true }
-    await logPush(po.lineUserId, 1, '宣達未簽提醒')
+    try { await logPush(po.lineUserId, 1, '宣達未簽提醒') } catch (_) {}
     try { await wpPushUids([po.lineUserId], { title: '📣 會議簽收提醒', body: `【${a.type}・${a.date}】還沒簽收，點開直達這則`, url: '/prep#meet=' + a.id, badge: a.badge }) } catch (_) {}
     return { ok }
   },
@@ -188,13 +202,15 @@ export default async function handler(req, res) {
   const readOnly = b.action === 'meet_meta'
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
-  const c = await claim(b.idem)
-  if (c === 'busy') return res.status(409).json({ ok: false, retry: true, error: '同一個事件正在處理中' })
-  if (c !== 'new') return res.status(200).json({ ok: true, dup: true, result: c.done })
+  let c
+  try { c = await claim(b.idem) } catch (e) { return res.status(200).json({ ok: false, retry: true, error: String(e?.message || e) }) }
+  if (c === 'busy') return res.status(200).json({ ok: false, retry: true, error: '同一個事件正在處理中' })
+  if (c.done !== undefined) return res.status(200).json({ ok: true, dup: true, result: c.done })
   try {
+    _retryBase = b.idem
     const r = await fn(b.args || {}, b.idem)
     if (r && r.ok === false) { await release(b.idem); return res.status(200).json({ ok: false, retry: !!r.retry, result: r, error: '送出失敗' }) }
-    await finish(b.idem, r)
+    try { await finish(b.idem, r) } catch (_) { /* 已送出但完成紀錄沒寫上：回成功（不要讓新殼重送）；GD 佔位 5 分鐘後過期，若再收到同 idem，LINE 重試鍵會擋重送 */ }
     return res.status(200).json({ ok: true, result: r })
   } catch (e) {
     await release(b.idem)
