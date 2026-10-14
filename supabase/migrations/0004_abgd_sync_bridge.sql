@@ -51,7 +51,7 @@ language plpgsql security definer set search_path = public as $$
 declare k text; r bigint; o text; e text; del boolean;
 begin
   if tg_op = 'DELETE' then k := old.id; e := old.editor; del := true; else k := new.id; e := new.editor; del := false; end if;
-  if k like 'sp_finance_pm_inline_ph3_%' or k like 'sp_finance_pm_inline_cs_%' then return null; end if; -- 衍生索引不同步
+  if k like 'sp_finance_pm_inline_ph3_%' or k like 'sp_finance_pm_inline_cs_%' or k like 'pm_abgd_%' then return null; end if; -- 衍生索引不同步
   o := case when current_setting('abgd.sync', true) = '1' then 'abgd' else 'gd' end;
   insert into public.pm_rev(key, rev, deleted, updated_at) values (k, 1, del, now())
     on conflict (key) do update set rev = pm_rev.rev + 1, deleted = del, updated_at = now()

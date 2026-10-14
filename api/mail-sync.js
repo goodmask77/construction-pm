@@ -91,10 +91,11 @@ export async function invStatus(kind) {
 export async function abgdOwnerOf(key) {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_domain_lock?select=prefix,owner`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
-    const rows = r.ok ? await r.json() : []
+    if (!r.ok) return 'unknown' // 查不到＝不放行（fail closed），寫入端點會回「已搬到新版」
+    const rows = await r.json()
     const hit = rows.filter(l => key.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0]
     return hit ? hit.owner : 'gd'
-  } catch (_) { return 'gd' }
+  } catch (_) { return 'unknown' }
 }
 const ABGD_MOVED = '這個功能已搬到新版，請從側欄重新點進去（會自動登入新版）'
 export async function kvPut(id, obj, editor) {
