@@ -2044,15 +2044,21 @@ export default async function handler(req, res) {
     // v4.71.4（張良 2026-10-12「夏傳程加入人員名單但是沒出現在班表」真因：班表設定的「✕非常態」名單照姓名存，
     // 人被移出 GD 再加回來舊標記還在→未排/快選都不列他）：加人＝一律恢復常態排班，不留舊標記
     if (gb.op === 'add') {
-      var gdWarn = ''; const shG = await kvGet('sp_finance_pm_shift_g')
-      const owS = await abgdOwnerOf('sp_finance_pm_shift_g')
-      if (owS === 'abgd') { const cr = await abgdCmd('shift', 'unoff', { name: pG.name, by: whoG.name }, whoG.name); if (!cr.ok) gdWarn = '人員已加入，但班表「恢復常態」沒完成（' + cr.text + '），請到新版班表設定確認' } // abgd 關卡 3 班表第一輪：班表在新殼＝一律轉新殼（由正本判斷要不要改），失敗回警告
-      else if (owS !== 'gd') gdWarn = '人員已加入，但班表正在搬家，「恢復常態」沒做，請稍後到班表設定確認'
-      else if (owS === 'gd' && shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) {
-        shG.offStaff = shG.offStaff.filter(n9 => n9 !== pG.name)
-        shG.hist = [...(shG.hist || []).slice(-499), { ts: new Date().toISOString(), by: whoG.name, d: '↺ ' + pG.name + ' 加入 GD 人員，恢復常態排班' }]
-        await kvPut('sp_finance_pm_shift_g', shG, 'GD加人恢復常態(' + pG.name + ')')
-      }
+      // abgd 關卡 3 班表第二輪：人已加入後，班表「恢復常態」整段任何失敗都只回警告（不能讓加人看起來失敗）；先查歸屬，只有 GD 是正本才讀 GD 副本
+      var gdWarn = ''
+      try {
+        const owS = await abgdOwnerOf('sp_finance_pm_shift_g')
+        if (owS === 'abgd') { const cr = await abgdCmd('shift', 'unoff', { name: pG.name, by: whoG.name }, whoG.name); if (!cr.ok) gdWarn = '人員已加入，但班表「恢復常態」沒完成（' + cr.text + '），請到新版班表設定確認' } // 一律轉新殼（由正本判斷要不要改）
+        else if (owS !== 'gd') gdWarn = '人員已加入，但班表正在搬家，「恢復常態」沒做，請稍後到班表設定確認'
+        else {
+          const shG = await kvGet('sp_finance_pm_shift_g')
+          if (shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) {
+            shG.offStaff = shG.offStaff.filter(n9 => n9 !== pG.name)
+            shG.hist = [...(shG.hist || []).slice(-499), { ts: new Date().toISOString(), by: whoG.name, d: '↺ ' + pG.name + ' 加入 GD 人員，恢復常態排班' }]
+            if (!(await kvPut('sp_finance_pm_shift_g', shG, 'GD加人恢復常態(' + pG.name + ')'))) gdWarn = '人員已加入，但班表「恢復常態」沒存進去，請到班表設定確認'
+          }
+        }
+      } catch (e) { gdWarn = '人員已加入，但班表「恢復常態」沒完成（' + String(e && e.message || e).slice(0, 60) + '），請到班表設定確認' }
     }
     return res.status(200).json({ ok: true, ...(typeof gdWarn === 'string' && gdWarn ? { warn: gdWarn } : {}) })
   }

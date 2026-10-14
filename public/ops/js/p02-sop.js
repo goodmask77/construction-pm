@@ -223,7 +223,7 @@ function simWipe(){ try { Object.keys(localStorage).filter(k2=>k2.startsWith('ob
 // 跟伺服器 permWho 同一套邏輯＝畫面上鎖的跟實際擋的一定一致。模擬時看到的鎖＝那個人本人看到的鎖。
 window._meW = (()=>{ try { return JSON.parse(localStorage.getItem('obt_mew')||'null') } catch(e){ return null } })()
 function curTabKey(){ const c = curStore; if (c==='ground'||c==='abeach') return 'board'; if (c==='settings') return 'gear'; return c }
-// abgd 搬家：班表格子編輯已搬新殼（側欄入口 routes.shift 存在）→ 這裡只能看；加人／角色（寫名冊，還在 GD）不受影響
+// abgd 搬家：班表格子編輯已搬新殼（側欄入口 routes.shift 存在）→ 這裡只能看；加人／角色（寫名冊）、人力時數配置 lb*（還在 GD）不受影響
 const shMoved = () => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.shift)
 function canTab(k){
   if (k === 'shiftgrid') { if (shMoved()) return false; k = 'shift' }
@@ -256,7 +256,7 @@ const EDIT_FN = {
 }
 function permFnTab(el){
   const src = (el.getAttribute('onclick') || '') + ';' + (el.getAttribute('onchange') || '')
-  for (const m of src.matchAll(/([A-Za-z_]\w*)\s*\(/g)) { const t = EDIT_FN[m[1]]; if (t) return t === '*' ? curTabKey() : (t === 'shift' && !/^(gdStaff|gdRole)/.test(m[1]) ? 'shiftgrid' : t) }
+  for (const m of src.matchAll(/([A-Za-z_]\w*)\s*\(/g)) { const t = EDIT_FN[m[1]]; if (t) return t === '*' ? curTabKey() : (t === 'shift' && !/^(gdStaff|gdRole|lb)/.test(m[1]) ? 'shiftgrid' : t) }
   return null
 }
 function permScan(root){ // 每次重畫：沒權限的寫入鈕上鎖變灰（還是可以點＝點了跳說明窗）

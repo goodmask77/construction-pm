@@ -490,24 +490,26 @@ const TAB_ICONS = {
 }
 const stripEmoji = (s) => String(s||'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}⭐★☆✅✏️📌]/gu,'').trim()
 // abgd 搬家（2026-10-14）：入口切到新殼的分頁，點下去＝拿橋接票→POST 新殼 /api/core/auth/bridge（同分頁開，自動登入）；沒登入的人照舊開 GD 頁
-async function abgdOpen(k, url){
+async function abgdOpen(k, url, orig){
+  // 關卡 3 班表第二輪：沒登入（例：店內共用 iPad）或新版登入失敗＝照舊開 GD 舊頁（搬走的功能在舊頁是唯讀）
+  const legacy = () => { try { if (orig) new Function(orig)() } catch (_) {} }
   try {
     const tk = (typeof TK==='function' ? TK() : '') || ''
-    if (!tk) { alert('請先登入（私訊 DD「登入碼」）'); return }
+    if (!tk) { legacy(); return }
     const r = await fetch('/api/mail-sync?bridge=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: tk }) })
     const j = await r.json()
-    if (!j.ok || !j.ticket) { alert(j.error || '新版入口暫時打不開，先用舊版'); return }
+    if (!j.ok || !j.ticket) { legacy(); return }
     const u = new URL(url); const f = document.createElement('form'); f.method = 'POST'; f.action = u.origin + '/api/core/auth/bridge'; f.style.display = 'none'
     const add = (n, v) => { const i = document.createElement('input'); i.name = n; i.value = v; f.appendChild(i) }
     add('ticket', j.ticket); add('to', u.pathname + u.search + u.hash)
     document.body.appendChild(f); f.submit()
-  } catch(e) { alert('新版入口打不開：' + (e && e.message || e)) }
+  } catch(e) { legacy() } // 新版入口打不開＝照舊開 GD 舊頁
 }
 function applyTabs(cfg){
   cfg = cfg || {}
   window._tabCfg = cfg
   // abgd：網址帶 ?legacy=1（新殼「到舊版處理」連結）＝這次不導去新殼，留在舊頁用還沒搬的功能（例：班表頁的人力配置、法規薪資）
-  try { const rt = /[?&]legacy=1\b/.test(location.search) ? {} : (cfg.routes || {}); document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (rt[k]) { b.setAttribute('onclick', ''); b.onclick = (ev) => { ev.preventDefault(); abgdOpen(k, rt[k]) }; b.dataset.abgd = '1' } }) } catch(_) {}
+  try { const rt = /[?&]legacy=1\b/.test(location.search) ? {} : (cfg.routes || {}); document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (rt[k]) { if (b.dataset.orig === undefined) b.dataset.orig = b.getAttribute('onclick') || ''; b.setAttribute('onclick', ''); b.onclick = (ev) => { ev.preventDefault(); abgdOpen(k, rt[k], b.dataset.orig) }; b.dataset.abgd = '1' } }) } catch(_) {}
   const bar = document.querySelector('.tabs'), gear = document.getElementById('tab-gear')
   const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
   Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) }) // v4.39.1 新分頁排最後=設定上面（張良 2026-10-04 inline 指定位置；要移前面去設定拖）
