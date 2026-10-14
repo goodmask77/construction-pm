@@ -358,7 +358,7 @@ export async function applyDecision ({ kvGet, kvPut, who, body }) {
     if (body.catRules && typeof body.catRules === 'object') { for (const k of ['veg', 'tight']) if (typeof body.catRules[k] === 'string') { try { new RegExp(body.catRules[k]); doc.cfg.catRules[k] = body.catRules[k].slice(0, 120) } catch (_) {} } }
     logIt({ op: 'cfg', thr: doc.cfg.thr, catRules: doc.cfg.catRules })
   } else return { ok: false, error: '不認得的操作' }
-  await kvPut(TODO_KEY, doc, '成本待處理(' + who.name + ')')
+  if (!(await kvPut(TODO_KEY, doc, '成本待處理(' + who.name + ')'))) return { ok: false, error: '沒存進去（成本模組可能正在搬到新版），請重新整理再試' } // 存檔失敗不能回成功（abgd 搬家）
   return { ok: true }
 }
 
@@ -366,6 +366,6 @@ export async function applyDecision ({ kvGet, kvPut, who, body }) {
 export async function putSnapshot ({ kvPut, sheet, rows, asOf }) {
   if (!SNAP_SHEETS.includes(sheet)) return { ok: false, error: '不認得的 sheet：' + sheet }
   if (!Array.isArray(rows)) return { ok: false, error: 'rows 要是陣列' }
-  await kvPut(snapKey(sheet), { rows, asOf: String(asOf || ''), n: rows.length, importedAt: new Date().toISOString() }, '成本快照 ' + sheet)
+  if (!(await kvPut(snapKey(sheet), { rows, asOf: String(asOf || ''), n: rows.length, importedAt: new Date().toISOString() }, '成本快照 ' + sheet))) return { ok: false, error: '快照沒存進去（成本模組可能已搬到新版）' }
   return { ok: true, sheet, n: rows.length }
 }
