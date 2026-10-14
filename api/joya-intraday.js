@@ -33,6 +33,9 @@ export default async function handler(req, res) {
   //    改成每天台北 20:05 一則「收班彙整」（api/sop-summary.js + vercel.json cron）。站內狀態即時更新，群組只收彙整。
   // ── 📣 會議宣達未簽收追提醒（v4.16.0 張良：24h/48h/72h DD私訊、3次不理→大群點名；cron每15分隨機命中=時點不固定）──
   try {
+    // abgd 搬家：會議域切到新殼後，追提醒改由新殼排程做（這裡跳過，避免重複提醒）
+    const { abgdOwnerOf } = await import('./mail-sync.js')
+    if ((await abgdOwnerOf('sp_finance_pm_meet')) !== 'gd') throw new Error('meet 已由新殼負責')
     const meetDoc = await kvGet('sp_finance_pm_meet')
     const listM = (meetDoc && meetDoc.list) ? meetDoc.list.slice(0, 30) : []
     const tkM = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()

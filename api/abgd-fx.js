@@ -1,0 +1,162 @@
+import './_qpatch.js' // DD 推播統一補額度尾巴（與 GD 其他推播同一出口）
+// abgd 搬家：新殼代發口（2026-10-14）
+// 資料域切到新殼後，新殼不自己拿 LINE 金鑰，所有對外通知（LINE 群／私訊、Web Push、積分、建任務）都打這裡，由 GD 原本的單一出口送出：
+// 文字照抄 GD 原程式、logPush／額度尾巴／推播紀錄完全不變。HMAC(BRIDGE_SECRET) 簽 body；idem 冪等（同一個 idem 只做一次，重送回上次結果）。
+import crypto from 'node:crypto'
+import { kvGet, kvSet } from './_onboard.js'
+import { logPush, groupMembers, quotaFoot } from './push.js'
+import { wpPush, wpPushUids, prepLink } from './_webpush.js'
+import { awardPts } from './_points.js'
+import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
+
+const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+const FX_KEY = 'pm_abgd_fx' // 冪等紀錄（pm_abgd_ 前綴不屬於任何資料域）
+async function linePush(to, messages) {
+  const tk = TK(); if (!tk || !to) return false
+  const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to, messages }) })
+  return r.ok
+}
+async function bindMaps() {
+  const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
+  const ids = {}, uid = {}, tok = {}
+  for (const [k, v] of Object.entries(bd.tokens || {})) {
+    if (!v || !v.name) continue
+    ;(ids[v.name] = ids[v.name] || []); if (v.rid) ids[v.name].push(v.rid); if (v.uid) ids[v.name].push(v.uid)
+    if (v.uid && !uid[v.name]) { uid[v.name] = v.uid; tok[v.name] = k }
+  }
+  return { bd, ids, uid, tok }
+}
+const gdNames = (rosterDoc) => {
+  const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
+  const gd = alive.filter(p2 => p2.gd).map(p2 => p2.name).filter(Boolean)
+  return gd.length ? gd : alive.map(p2 => p2.name).filter(Boolean)
+}
+
+const ACTIONS = {
+  // 讀：會議頁需要的名單（與 GD ?meet 同算法）
+  async meet_meta() {
+    const [rosM, shM, defM, bindM] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_shift_g'), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_bind')])
+    const offM = new Set((shM || {}).offStaff || [])
+    const regNames = gdNames(rosM).filter(n => !offM.has(n))
+    const approvers = (((defM || {}).ground || {}).approvers) || ['張良瑋']
+    const boundNames = [...new Set(Object.values((bindM || {}).tokens || {}).map(v => v && v.name).filter(Boolean))]
+    const allNames = [...new Set((((rosM || {}).people) || []).filter(p => !p.endDate && (p.status || '在職') !== '離職').map(p => p.name).filter(Boolean))]
+    let sendGroups = []; try { sendGroups = (await ddAll()).groups } catch (_) {}
+    return { regNames, allNames, boundNames, sendGroups, approvers }
+  },
+  async meet_group(a) { // 新會議發大群（DD 自動訊息 meet_new）
+    const cfgG = await ddGet('meet_new')
+    if (!TK() || !cfgG.on) return { skipped: true }
+    const lnkG = prepLink('meet=' + a.id)
+    const GRP = await ddGroupGid(a.group || cfgG.group)
+    const mem = await groupMembers(GRP)
+    const body = ddFill(cfgG.text, { type: a.type, date: a.date, content: String(a.text || '').slice(0, 300), n: a.n, link: lnkG }) + await quotaFoot(mem)
+    const imgs = (a.media || []).filter(u => /^https:\/\//.test(u)).slice(0, 4).map(u => ({ type: 'image', originalContentUrl: u, previewImageUrl: u }))
+    const ok = await linePush(GRP, [{ type: 'text', text: body }, ...imgs])
+    if (ok) { const nQ = a.n || 1; try { await logPush(GRP, nQ, '會議宣達發大群(' + a.by + ')') } catch (_) {} return { sent: true, n: nQ } }
+    return { fail: true }
+  },
+  async meet_dm_picked(a) { // 指定對象：逐一私訊（個人直達連結）
+    const { uid, tok } = await bindMaps()
+    const imgs = (a.media || []).filter(u => /^https:\/\//.test(u)).slice(0, 4).map(u => ({ type: 'image', originalContentUrl: u, previewImageUrl: u }))
+    let dm = 0
+    for (const nm of a.names || []) {
+      const u = uid[nm]; if (!u) continue
+      const lnk = tok[nm] ? `https://ground-pm.vercel.app/prep?me=${tok[nm]}#meet=${a.id}` : prepLink('meet=' + a.id)
+      if (await linePush(u, [{ type: 'text', text: `📢 會議宣達【${a.type}・${a.date}】（${a.by} 指定你簽收）\n${String(a.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」\n${lnk}` }, ...imgs])) { dm++; try { await logPush(u, 1, '會議個別私訊(' + a.by + ')') } catch (_) {} }
+    }
+    return { dm }
+  },
+  async wp_names(a) { // App 站內通知＋推播（同名所有身分 id）
+    const { ids } = await bindMaps()
+    const rids = [...new Set((a.names || []).flatMap(n => ids[n] || []))]
+    if (!rids.length) return { n: 0 }
+    return { n: await wpPush(rids, a.msg) }
+  },
+  async meet_all_acked(a) { // 全員簽完→發起人 LINE 私訊
+    const { uid } = await bindMaps(); const u = uid[a.by]
+    if (!u) return { skipped: true }
+    const ok = await linePush(u, [{ type: 'text', text: `🎉 會議全員已簽收【${a.type}・${a.date}】\n${a.total} 人全部確認熟知，點開看 👇\nhttps://ground-pm.vercel.app/prep#meet=${a.id}` }])
+    if (ok) { try { await logPush(u, 1, '會議全員簽收(' + a.by + ')') } catch (_) {} }
+    return { ok }
+  },
+  async award(a) { return { ok: await awardPts(a.person, a.act, a.ref) } },
+  async meet_ask(a) { // 發問→DD 私訊老闆群操作者＋收件匣任務
+    const ops = (await kvGet('pm_bot_operators')) || {}
+    for (const u of Object.keys(ops)) { if (await linePush(u, [{ type: 'text', text: '❓ 會議宣達發問【' + a.type + ' ' + a.date + '】\n' + a.by + '：' + a.q + '\n到 /prep → 會議 回覆（他會收到通知）' }])) { try { await logPush(u, 1, '會議發問通知') } catch (_) {} } }
+    const id = 'mq' + Date.now().toString(36)
+    await kvSet('sp_team_pm_task_mq' + Date.now().toString(36), { id, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
+    return { ok: true }
+  },
+  async meet_answer(a) { // 回覆→DD 通知提問人
+    const ros = await kvGet('sp_crew_kb_roster')
+    const po = (((ros || {}).people) || []).find(p2 => p2.name === a.asker && p2.lineUserId)
+    if (!po) return { skipped: true }
+    const ok = await linePush(po.lineUserId, [{ type: 'text', text: '💬 你的會議發問有回覆了【' + a.type + ' ' + a.date + '】\nQ：' + a.q + '\nA：' + a.ans + '（' + a.ansBy + '）' }])
+    if (ok) { try { await logPush(po.lineUserId, 1, '會議發問回覆') } catch (_) {} }
+    return { ok }
+  },
+  async meet_nudge(a) { // 點未簽的人→單獨 DD 私訊＋App 推播
+    const { bd } = await bindMaps()
+    let tok = null, uid = null, rid = null
+    for (const [k, v] of Object.entries(bd.tokens || {})) { if (v && v.name === a.name) { tok = k; uid = v.uid; rid = v.rid || v.uid; break } }
+    let sent = 0
+    if (uid && TK()) {
+      const link = 'https://ground-pm.vercel.app/prep?me=' + tok + '#meet=' + a.id
+      await linePush(uid, [{ type: 'text', text: '📣 會議簽收提醒【' + a.type + '・' + a.date + '】\n' + a.by + ' 請你確認熟知，點開直達這則並簽收 👇\n' + link }])
+      try { await logPush(uid, 1, '會議個別催簽(' + a.name + ')') } catch (_) {}
+      sent++
+    }
+    if (rid) { try { await wpPush([rid], { title: '📣 會議簽收提醒', body: a.type + '・' + a.date + '（' + a.by + ' 提醒你簽收）', url: '/prep#meet=' + a.id, cat: 'meet' }) } catch (_) {} }
+    return { sent, bound: !!(uid || rid) }
+  },
+  async meet_remind(a) { // 未簽追提醒（排程）
+    const [ros, bd] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+    const po = (((ros || {}).people) || []).find(p2 => p2.name === a.name && p2.lineUserId)
+    if (!po) return { noLine: true }
+    const tkP = (((bd || {}).byUid) || {})[po.lineUserId]
+    const lnk = tkP ? `https://ground-pm.vercel.app/prep?me=${tkP}#meet=${a.id}` : prepLink('meet=' + a.id)
+    const ok = await linePush(po.lineUserId, [{ type: 'text', text: `📣 會議宣達還沒簽收（第 ${a.n} 次提醒）\n【${a.type}・${a.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnk}` }])
+    if (ok) await logPush(po.lineUserId, 1, '宣達未簽提醒')
+    try { await wpPushUids([po.lineUserId], { title: '📣 會議簽收提醒', body: `【${a.type}・${a.date}】還沒簽收，點開直達這則`, url: '/prep#meet=' + a.id, badge: a.badge }) } catch (_) {}
+    return { ok }
+  },
+  async meet_nudge_group(a) { // 3 次沒簽→大群點名（DD 自動訊息 meet_nudge）
+    const cfg = await ddGet('meet_nudge')
+    if (!cfg.on || !TK()) return { skipped: true }
+    const gid = await ddGroupGid(cfg.group)
+    const mem = await groupMembers(gid)
+    const ok = await linePush(gid, [{ type: 'text', text: ddFill(cfg.text, { type: a.type, date: a.date, names: (a.names || []).join('、'), link: prepLink('meet=' + a.id) }) + await quotaFoot(mem) }])
+    return { ok }
+  },
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false })
+  const sec = (process.env.BRIDGE_SECRET || '').trim()
+  const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})
+  const sig = String(req.headers['x-abgd-sig'] || '')
+  const expect = sec ? crypto.createHmac('sha256', sec).update(raw).digest('base64url') : ''
+  if (!sec || sig.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return res.status(401).json({ ok: false, error: '簽章不符' })
+  let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
+  const fn = ACTIONS[b.action]
+  if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
+  const readOnly = b.action === 'meet_meta'
+  if (!readOnly && !b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
+  if (!readOnly) {
+    const log = (await kvGet(FX_KEY)) || { done: {} }
+    if (log.done && log.done[b.idem]) return res.status(200).json({ ok: true, dup: true, result: log.done[b.idem].r })
+  }
+  try {
+    const r = await fn(b.args || {})
+    if (!readOnly) {
+      const log = (await kvGet(FX_KEY)) || { done: {} }
+      log.done = log.done || {}; log.done[b.idem] = { t: Date.now(), r }
+      const keys = Object.keys(log.done); if (keys.length > 2000) for (const k of keys.sort((x, y) => log.done[x].t - log.done[y].t).slice(0, keys.length - 2000)) delete log.done[k]
+      await kvSet(FX_KEY, log)
+    }
+    return res.status(200).json({ ok: true, result: r })
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) })
+  }
+}

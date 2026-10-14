@@ -418,6 +418,10 @@ function lbFinder(nm){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
+// abgd 搬家：深層連結指到已切到新殼的分頁→直接開新殼（自動登入）；即時抓 tabcfg（no-store），不用快取
+async function abgdTry(tab, hash) {
+  try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K), { cache: 'no-store' }); const d = await r.json(); const u = d && d.routes && d.routes[tab]; if (!u) return false; abgdOpen(tab, u + (hash || '')); return true } catch (_) { return false }
+}
 // 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
@@ -440,8 +444,8 @@ function lbFinder(nm){
     const mK9 = hs.match(/task=([A-Za-z0-9_-]+)/) // v4.41.6 任務卡深層連結（張良「通知跟訊息直接帶過去看那張卡片閃金光」）
     if (mK9) { window.tnFocusId = mK9[1]; taskEmbed(); return true }
     if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
-    if (mM) { meetLoad(); glowWait('mt-' + mM[1]); return true } // v4.52.3 張良「不要打開卡片，定位+閃光讓本人自己點進去」：拿掉自動展開(_meetOpen)+自動開詳情(meetMop view)，只捲到卡片閃金光
-    if (mT && R[mT[1]]) { R[mT[1]](); return true }
+    if (mM) { abgdTry('meet', '#' + mM[1]).then(ok => { if (!ok) { meetLoad(); glowWait('mt-' + mM[1]) } }); return true } // v4.52.3 張良「不要打開卡片，定位+閃光讓本人自己點進去」：拿掉自動展開(_meetOpen)+自動開詳情(meetMop view)，只捲到卡片閃金光
+    if (mT && R[mT[1]]) { abgdTry(mT[1], '').then(ok => { if (!ok) R[mT[1]]() }); return true }
     return false
   }
   window.addEventListener('hashchange', routeHash)
