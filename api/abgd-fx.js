@@ -191,6 +191,87 @@ const ACTIONS = {
     try { await wpPushUids([po.lineUserId], { title: '📣 會議簽收提醒', body: `【${a.type}・${a.date}】還沒簽收，點開直達這則`, url: '/prep#meet=' + a.id, badge: a.badge }) } catch (_) {}
     return { ok }
   },
+  // ── SOP／問題回報（F02＋F33，文字照抄 mail-sync 原程式）──
+  async sop_sug_dm(a) { // 💡 建議 → DD 私訊該站負責人（原 sopsugset add）
+    const ros = await kvGet('sp_crew_kb_roster')
+    const po = (((ros || {}).people) || []).find(p2 => p2.name === a.owner && p2.lineUserId)
+    if (!po || !TK()) return { ok: true, skipped: true }
+    const ok = await linePush(po.lineUserId, [{ type: 'text', text: '💡 ' + a.by + ' 對你負責的 SOP【' + a.st + '】提了建議：\n' + a.text + '\n到 /prep → SOP 按「💡 建議」審核（通過他會加分）' }])
+    if (!ok) return { ok: false, retry: true }
+    await logPush(po.lineUserId, 1, 'SOP建議通知'); return { ok: true, sent: true }
+  },
+  async sop_sug_result(a) { // 建議審核結果 → DD 通知申請人（原 sopsugset decide）
+    const ros = await kvGet('sp_crew_kb_roster')
+    const po = (((ros || {}).people) || []).find(p2 => p2.name === a.to && p2.lineUserId)
+    if (!po || !TK()) return { ok: true, skipped: true }
+    const ok = await linePush(po.lineUserId, [{ type: 'text', text: a.pass ? ('✅ 你對 SOP【' + a.st + '】的建議通過了（' + a.decBy + ' 核）——記你 1 分！') : ('📁 你對 SOP【' + a.st + '】的建議未採納（' + a.decBy + '）：' + a.note + '\n已歸檔留紀錄。') }])
+    if (!ok) return { ok: false, retry: true }
+    await logPush(po.lineUserId, 1, 'SOP建議結果'); return { ok: true, sent: true }
+  },
+  async ntf_add(a) { // 通知中心只記歷史（原 sopreport：不發 web push）
+    const nd = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+    nd.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: a.cat || 'other', title: a.title, body: a.body, url: a.url || '/prep', to: a.to || null }, ...(nd.list || [])].slice(0, 300)
+    if (!(await kvSet('sp_finance_pm_prep_ntf', nd))) return { ok: false, retry: true }
+    return { ok: true }
+  },
+  async sop_report_dm(a, idem) { // 問題回報 → DD 私訊審核人【發布／保留／刪除】（原 sopreport）
+    const [defD, rosterD] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const apr = (((defD || {}).ground || {}).approvers || ['張良瑋'])
+    const iss = a.iss || {}
+    const out = []
+    for (const an of apr) {
+      const ap = ((rosterD || {}).people || []).find(p => p.name === an && p.lineUserId)
+      if (!TK() || !ap) continue
+      out.push(await once(idem + '|' + an, async () => ({ ok: await linePush(ap.lineUserId, [{ type: 'template', altText: `⚠️ 問題回報待確認【${iss.st}】${(iss.text || '').slice(0, 30)}`, template: { type: 'buttons', title: `⚠️ 問題回報【${iss.st}】`.slice(0, 40), text: `${(iss.text || '（見附件）').slice(0, 100)}\n— ${iss.by}${(iss.media || []).length ? `・附${iss.media.length}檔(看板可看)` : ''}`.slice(0, 160), actions: [
+        { type: 'postback', label: '✅ 發布到群', data: `pi|${iss.id}|go` },
+        { type: 'postback', label: '📥 保留（不進群）', data: `pi|${iss.id}|hold` },
+        { type: 'postback', label: '🗑 刪除', data: `pi|${iss.id}|del` },
+      ] } }]) || false })))
+    }
+    return out.some(r => r && r.ok === false) ? { ok: false, retry: true } : { ok: true, n: out.length }
+  },
+  async sop_resolve_dm(a, idem) { // 夥伴按已解決＝送審 → DD 私訊審核人＋推播（原 sopresolve pending）
+    const [defD, rosterD] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const apr = (((defD || {}).ground || {}).approvers || ['張良瑋'])
+    const it = a.it || {}
+    for (const an of apr) {
+      const ap = ((rosterD || {}).people || []).find(p => p.name === an && p.lineUserId)
+      if (!ap) continue
+      const r = await once(idem + '|' + an, async () => {
+        if (TK()) { const ok = await linePush(ap.lineUserId, [{ type: 'text', text: `🕐 待你審核：【${it.st}】${it.text || '（附件）'}\n${a.who} 說已解決。\n到看板該站卡片按「核准／退回」👇\n${prepLink('')}` }]); if (!ok) return { ok: false, retry: true } }
+        try { await wpPushUids([ap.lineUserId], { title: '🕐 待你審核', body: `【${it.st}】${a.who} 說已解決，按核准／退回`, url: '/prep' }) } catch (_) {}
+        return { ok: true }
+      })
+      if (r && r.ok === false) return { ok: false, retry: true }
+    }
+    return { ok: true }
+  },
+  async issue_pub_group(a) { // 審核發布 go → 發到 DD 自動訊息 issue 設定的群（原 sopissue pub）
+    const cfgI = await ddGet('issue')
+    if (!TK() || !cfgI.on) return { ok: true, skipped: true }
+    const it = a.it || {}
+    const gidI = await ddGroupGid(cfgI.group)
+    const mem = await groupMembers(gidI)
+    const ok = await linePush(gidI, [{ type: 'text', text: ddFill(cfgI.text, { st: it.st, content: (it.text || '（見附件）') + ((it.media || []).length ? `・附件${it.media.length}` : ''), by: it.by }) + await quotaFoot(mem) }])
+    return ok ? { ok: true, sent: true } : { ok: false, retry: true }
+  },
+  async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
+    const it = a.it || {}
+    if (!TK()) return { ok: true, skipped: true }
+    const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TK() }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) })
+    if (!r.ok) return { ok: false, retry: r.status >= 500 || r.status === 429 }
+    try { await wpPush(null, { title: `⚠️ 問題回報【${it.st}】`, body: `${(it.text || '（附件）').slice(0, 60)} — ${it.by}`, url: '/prep' }) } catch (_) {}
+    return { ok: true, sent: true }
+  },
+  async issue_own_dm(a) { // 指派負責人 → DD 私訊被指派者（原 sopissue own）
+    const rosterO = (await kvGet('sp_crew_kb_roster')) || {}
+    const po = (rosterO.people || []).find(p2 => p2.name === a.nm && p2.lineUserId)
+    if (!TK() || !po) return { ok: true, skipped: true }
+    const it = a.it || {}
+    const ok = await linePush(po.lineUserId, [{ type: 'text', text: `📌 ${a.who} 指派給你：【${it.st || '任務'}】${it.text || ''}\n完成後到 /prep 按「已解決」` }])
+    if (!ok) return { ok: false, retry: true }
+    await logPush(po.lineUserId, 1, '任務指派通知'); return { ok: true, sent: true }
+  },
   async meet_nudge_group(a) { // 3 次沒簽→大群點名（DD 自動訊息 meet_nudge）
     const cfg = await ddGet('meet_nudge')
     if (!cfg.on || !TK()) return { ok: true, skipped: true }
