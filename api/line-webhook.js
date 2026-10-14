@@ -81,6 +81,16 @@ async function kvSet(id, valueObj) {
 //  2) abgdCommand(domain, action, args, operator)：owner=abgd 時改打新殼 /api/core/commands（HMAC 簽章＋冪等鍵）
 //  3) kvSet 被擋時回 false 並讓動作迴圈回「這項已搬到新版」，不假存檔
 const _abgdLockCache = { at: 0, rows: [] }
+// 嚴格版（不吃快取、查不到回 unknown）：寫入／對外發送前用，查不到不能當成 gd
+async function abgdOwnerStrict(key) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_domain_lock?select=prefix,owner`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    if (!r.ok) return 'unknown'
+    const rows = await r.json()
+    const hit = rows.filter(l => key.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0]
+    return hit ? hit.owner : 'gd'
+  } catch (_) { return 'unknown' }
+}
 async function abgdOwner(key) {
   try {
     if (Date.now() - _abgdLockCache.at > 60e3) {
@@ -2395,13 +2405,15 @@ export default async function handler(req, res) {
           const repP = (t2) => ev.replyToken ? lineReply(ev.replyToken, t2) : Promise.resolve()
           try {
             const kvP = await kvGetMany(['sp_finance_pm_sop_issues', 'sp_finance_pm_sop_def', 'sp_crew_kb_roster'])
-            const aprP = (((kvP['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
             const meP = ((kvP['sp_crew_kb_roster'] || {}).people || []).find(p2 => p2.lineUserId === uidP)
-            if (!meP || !aprP.includes(meP.name)) { await repP('這按鈕只有審核人能用喔。'); continue }
-            // abgd 搬家：SOP（問題回報）已切新殼 → 轉給新殼處理（回覆文字由新殼回，跟原本一樣）；凍結中先擋
-            const owP = await abgdOwner('sp_finance_pm_sop_issues')
-            if (owP.owner === 'abgd') { const cr = await abgdCommand('sop', 'pi', { id: piId, op: piOp }, meP.name, 'pi-' + (ev.webhookEventId || (piId + '-' + piOp + '-' + ev.timestamp))); await repP(cr.text); continue }
-            if (owP.owner === 'frozen') { await repP('⚠️ 問題回報正在搬家中（暫時凍結），幾分鐘後再按一次。'); continue }
+            if (!meP) { await repP('這按鈕只有審核人能用喔。'); continue }
+            // abgd 搬家（關卡 3 SOP 第一輪）：先看資料歸誰——在新殼就直接轉（審核資格由新殼正本判斷，不用 GD 可能落後的名單）；
+            // 查不到（unknown）或凍結＝不寫、不發，請稍後再按
+            const owP = await abgdOwnerStrict('sp_finance_pm_sop_issues')
+            if (owP === 'abgd') { const cr = await abgdCommand('sop', 'pi', { id: piId, op: piOp }, meP.name, 'pi-' + (ev.webhookEventId || (piId + '-' + piOp + '-' + ev.timestamp))); await repP(cr.text); continue }
+            if (owP !== 'gd') { await repP('⚠️ 問題回報正在搬家中（暫時凍結），幾分鐘後再按一次。'); continue }
+            const aprP = (((kvP['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+            if (!aprP.includes(meP.name)) { await repP('這按鈕只有審核人能用喔。'); continue }
             const docP = kvP['sp_finance_pm_sop_issues'] || { list: [] }
             const itP = (docP.list || []).find(x => x.id === piId)
             if (!itP) { await repP('找不到這筆回報（可能已處理或刪除）。'); continue }

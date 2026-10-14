@@ -198,7 +198,7 @@ const ACTIONS = {
     if (!po || !TK()) return { ok: true, skipped: true }
     const ok = await linePush(po.lineUserId, [{ type: 'text', text: '💡 ' + a.by + ' 對你負責的 SOP【' + a.st + '】提了建議：\n' + a.text + '\n到 /prep → SOP 按「💡 建議」審核（通過他會加分）' }])
     if (!ok) return { ok: false, retry: true }
-    await logPush(po.lineUserId, 1, 'SOP建議通知'); return { ok: true, sent: true }
+    try { await logPush(po.lineUserId, 1, 'SOP建議通知') } catch (_) {} return { ok: true, sent: true }
   },
   async sop_sug_result(a) { // 建議審核結果 → DD 通知申請人（原 sopsugset decide）
     const ros = await kvGet('sp_crew_kb_roster')
@@ -206,17 +206,20 @@ const ACTIONS = {
     if (!po || !TK()) return { ok: true, skipped: true }
     const ok = await linePush(po.lineUserId, [{ type: 'text', text: a.pass ? ('✅ 你對 SOP【' + a.st + '】的建議通過了（' + a.decBy + ' 核）——記你 1 分！') : ('📁 你對 SOP【' + a.st + '】的建議未採納（' + a.decBy + '）：' + a.note + '\n已歸檔留紀錄。') }])
     if (!ok) return { ok: false, retry: true }
-    await logPush(po.lineUserId, 1, 'SOP建議結果'); return { ok: true, sent: true }
+    try { await logPush(po.lineUserId, 1, 'SOP建議結果') } catch (_) {} return { ok: true, sent: true }
   },
-  async ntf_add(a) { // 通知中心只記歷史（原 sopreport：不發 web push）
+  async ntf_add(a, idem) { // 通知中心只記歷史（原 sopreport：不發 web push）
     const nd = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
-    nd.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: a.cat || 'other', title: a.title, body: a.body, url: a.url || '/prep', to: a.to || null }, ...(nd.list || [])].slice(0, 300)
+    // 通知 id 由事件冪等鍵決定（關卡 3 SOP 第一輪）：寫成功但回應丟失再執行，不會多一筆
+    const nid = idem ? 'nx' + crypto.createHash('sha1').update(String(idem)).digest('hex').slice(0, 12) : 'n' + Date.now().toString(36)
+    if ((nd.list || []).some(x => x.id === nid)) return { ok: true, dup: true }
+    nd.list = [{ id: nid, ts: new Date().toISOString(), cat: a.cat || 'other', title: a.title, body: a.body, url: a.url || '/prep', to: a.to || null }, ...(nd.list || [])].slice(0, 300)
     if (!(await kvSet('sp_finance_pm_prep_ntf', nd))) return { ok: false, retry: true }
     return { ok: true }
   },
   async sop_report_dm(a, idem) { // 問題回報 → DD 私訊審核人【發布／保留／刪除】（原 sopreport）
     const [defD, rosterD] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
-    const apr = (((defD || {}).ground || {}).approvers || ['張良瑋'])
+    const apr = Array.isArray(a.apr) ? a.apr : (((defD || {}).ground || {}).approvers || ['張良瑋']) // 新殼正本快照優先（GD 副本可能還沒反推到）
     const iss = a.iss || {}
     const out = []
     for (const an of apr) {
@@ -232,7 +235,7 @@ const ACTIONS = {
   },
   async sop_resolve_dm(a, idem) { // 夥伴按已解決＝送審 → DD 私訊審核人＋推播（原 sopresolve pending）
     const [defD, rosterD] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
-    const apr = (((defD || {}).ground || {}).approvers || ['張良瑋'])
+    const apr = Array.isArray(a.apr) ? a.apr : (((defD || {}).ground || {}).approvers || ['張良瑋'])
     const it = a.it || {}
     for (const an of apr) {
       const ap = ((rosterD || {}).people || []).find(p => p.name === an && p.lineUserId)
@@ -258,8 +261,8 @@ const ACTIONS = {
   async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
     const it = a.it || {}
     if (!TK()) return { ok: true, skipped: true }
-    const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TK() }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) })
-    if (!r.ok) return { ok: false, retry: r.status >= 500 || r.status === 429 }
+    const ok = await linePush('Cf7940efc6517b0c084ad2ad496b45f30', [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }]) // 走 linePush：帶 X-Line-Retry-Key，重試不重發
+    if (!ok) return { ok: false, retry: true }
     try { await wpPush(null, { title: `⚠️ 問題回報【${it.st}】`, body: `${(it.text || '（附件）').slice(0, 60)} — ${it.by}`, url: '/prep' }) } catch (_) {}
     return { ok: true, sent: true }
   },
@@ -270,7 +273,7 @@ const ACTIONS = {
     const it = a.it || {}
     const ok = await linePush(po.lineUserId, [{ type: 'text', text: `📌 ${a.who} 指派給你：【${it.st || '任務'}】${it.text || ''}\n完成後到 /prep 按「已解決」` }])
     if (!ok) return { ok: false, retry: true }
-    await logPush(po.lineUserId, 1, '任務指派通知'); return { ok: true, sent: true }
+    try { await logPush(po.lineUserId, 1, '任務指派通知') } catch (_) {} return { ok: true, sent: true }
   },
   async meet_nudge_group(a) { // 3 次沒簽→大群點名（DD 自動訊息 meet_nudge）
     const cfg = await ddGet('meet_nudge')

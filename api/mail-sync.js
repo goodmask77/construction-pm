@@ -3684,7 +3684,7 @@ export default async function handler(req, res) {
       for (const [cg, who] of Object.entries(gdef.catOwner || {})) { for (const stX of gdef.stations) { if ((gdef.stCats[stX] || []).includes(cg) && !gdef.stOwner[stX]) gdef.stOwner[stX] = who } }
       mig20 = true
     }
-    if (mig18 || mig19 || mig20) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig20 ? 'SOP階段改每站自己一份' : mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
+    if ((mig18 || mig19 || mig20) && (await abgdOwnerOf('sp_finance_pm_sop_def')) === 'gd') { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig20 ? 'SOP階段改每站自己一份' : mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
     const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
@@ -4175,11 +4175,12 @@ export default async function handler(req, res) {
     if (!whoR) return res.status(403).json({ ok: false, error: permDeny() })
     const sv = Math.round(Number(br.stars))
     if (!br.id || !['find', 'fix'].includes(br.aspect) || !FACETS.includes(br.facet) || !(sv >= 1 && sv <= 5)) return res.status(400).json({ ok: false, error: '參數不對' })
+    // abgd（關卡 3 SOP 第一輪）：先看資料歸誰；在新殼就直接轉，存在／狀態／自評判斷都由正本做（GD 副本可能落後）
+    { const ow = await abgdOwnerOf('sp_finance_pm_sop_issues'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'rate', { id: br.id, aspect: br.aspect, facet: br.facet, stars: sv }, whoR.name); return res.status(cr.ok ? 200 : (cr.status || 400)).json(cr.ok ? { ok: true, stars: cr.stars } : { ok: false, error: cr.text }) } }
     const docR = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
     const itR = (docR.list || []).find(x => x.id === br.id)
     if (!itR) return res.status(404).json({ ok: false })
     if (br.aspect === 'fix' && itR.status !== 'done') return res.status(400).json({ ok: false, error: '還沒核准解決，先不能評解決星' })
-    { const ow = await abgdOwnerOf('sp_finance_pm_sop_issues'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'rate', { id: br.id, aspect: br.aspect, facet: br.facet, stars: sv }, whoR.name); return res.status(cr.ok ? 200 : (cr.status || 400)).json(cr.ok ? { ok: true, stars: cr.stars } : { ok: false, error: cr.text }) } }
     const target = br.aspect === 'find' ? itR.by : itR.doneBy
     if (target === whoR.name) return res.status(400).json({ ok: false, error: '不能評自己的星 😄' })
     itR.stars = itR.stars || {}; itR.stars[br.aspect] = itR.stars[br.aspect] || {}; itR.stars[br.aspect][br.facet] = itR.stars[br.aspect][br.facet] || {}
