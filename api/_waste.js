@@ -34,7 +34,9 @@ export function specG (s) {
   const f = mult ? Number(mult) : 1
   const g = (u === 'kg' || u === 'k' || u === '公斤') ? v * 1000 * f : (u === 'g' || u === '公克' || u === '克') ? v * f : null
   const ml = (u === 'l' || u === '公升') ? v * 1000 * f : (u === 'ml' || u === '毫升') ? v * f : null
-  return { g, ml, total: g != null ? g : ml, kind: g != null ? 'g' : 'ml' }
+  const total = g != null ? g : ml
+  if (total == null || !Number.isFinite(total) || total <= 0 || total > 1e9) return null // 規格數字離譜（超長、溢位）＝當沒寫，不能算出「零成本」（v4.71.67，與新殼同）
+  return { g, ml, total, kind: g != null ? 'g' : 'ml' }
 }
 // 物料「每 g 成本」＋依據（算不出→null，畫面標「待物料卡」）
 export function perGram (p) {
