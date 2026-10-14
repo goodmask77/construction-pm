@@ -100,7 +100,7 @@ async function abgdCommand(domain, action, args, operator) {
   try {
     const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body })
     const j = await r.json().catch(() => ({}))
-    return { ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) }
+    return { ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status), results: j.results || [], count: j.count }
   } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
 }
 // 刪一筆文件（跨空間刪任務用；App 端刪除也是直接 DELETE 該列，同一套行為）
@@ -231,7 +231,7 @@ async function saveCachedToLibrary(folderName, who, convId) {
   if (!mine.length) return { ok: false, msg: `找不到剛剛傳的檔案（超過 60 分鐘會清掉）。請重新傳一次，傳完馬上說「存到文件庫 ${folder.name}」。` }
   const { uploadPrivate } = await import('./_onboard.js')
   lib.files[folder.id] = lib.files[folder.id] || []
-  const names = [], failed = []
+  const names = [], failed = [], uploaded = [] // uploaded＝本次真的傳進桶的物件（abgd 登記用，不用名字回頭猜）
   for (const f of mine) {
     try {
       const r = await fetch(`https://api-data.line.me/v2/bot/message/${f.mid}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
@@ -246,6 +246,7 @@ async function saveCachedToLibrary(folderName, who, convId) {
       const maxo = Math.max(0, ...lib.files[folder.id].map(x => x.order || 0))
       const ts = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
       lib.files[folder.id].push({ id: fid, name: f.name, path, ext, mime: ct, size: buf.length, ts, by: who.name + '(LINE)', order: maxo + 1 })
+      uploaded.push({ fid, path, name: f.name, ext, mime: ct, size: buf.length, mid: f.mid })
       names.push(f.name)
     } catch (_) { failed.push(f.name) }
   }
@@ -254,11 +255,15 @@ async function saveCachedToLibrary(folderName, who, convId) {
   // abgd 搬家：文件庫域切到新殼時，索引改打新殼命令（檔案本體已在 GD 桶，路徑相容）；舊表寫入會被閘門擋
   const ownL = await abgdOwner(LIBRARY_KEY)
   if (ownL.owner === 'abgd') {
-    const added = (lib.files[folder.id] || []).filter(x => names.includes(x.name) && mine.some(m => m.name === x.name)).slice(-names.length)
-    const cr = await abgdCommand('library', 'add_file', { folderName: folder.name, files: added.map(x => ({ fid: x.id, path: x.path, name: x.name, ext: x.ext, mime: x.mime, size: x.size })), actor: { rid: who.rid, name: who.name, role: who.role, mgr: !!who.mgr } }, who.name)
-    if (!cr.ok) return { ok: false, msg: '新版文件庫登記失敗：' + cr.text }
-    await kvSet(FILECACHE_KEY, { list: rest })
-    return { ok: true, folder: folder.name, count: names.length, names, failed }
+    const cr = await abgdCommand('library', 'add_file', { folderName: folder.name, files: uploaded.map(x => ({ fid: x.fid, path: x.path, name: x.name, ext: x.ext, mime: x.mime, size: x.size })), actor: { rid: who.rid, name: who.name } }, who.name)
+    const okFids = new Set((cr.results || []).filter(r => r.ok).map(r => r.fid))
+    const okMids = new Set(uploaded.filter(u => okFids.has(u.fid)).map(u => u.mid))
+    // 只把「登記成功」的從待處理清單移掉；失敗的留著可重試
+    await kvSet(FILECACHE_KEY, { list: all.filter(f => !okMids.has(f.mid)) })
+    if (!cr.ok || !okFids.size) return { ok: false, msg: '新版文件庫登記失敗：' + cr.text }
+    const okNames = uploaded.filter(u => okFids.has(u.fid)).map(u => u.name)
+    const badNames = uploaded.filter(u => !okFids.has(u.fid)).map(u => u.name)
+    return { ok: true, folder: folder.name, count: okNames.length, names: okNames, failed: [...failed, ...badNames] }
   }
   if (ownL.owner === 'frozen') return { ok: false, msg: '文件庫正在搬家中（暫時凍結），幾分鐘後再試 🙏' }
   lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD存 ${names.length}檔→${folder.name}` }, ...(lib.log || [])].slice(0, 100)
