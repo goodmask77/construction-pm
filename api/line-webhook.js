@@ -81,18 +81,18 @@ async function kvSet(id, valueObj) {
 //  2) abgdCommand(domain, action, args, operator)：owner=abgd 時改打新殼 /api/core/commands（HMAC 簽章＋冪等鍵）
 //  3) kvSet 被擋時回 false 並讓動作迴圈回「這項已搬到新版」，不假存檔
 const _abgdLockCache = { at: 0, rows: [] }
-// abgd 關卡 3 SOP 第五／六輪：問題回報條件更新——讀 data＋updated_at → fn(doc) 改（回 false＝不寫）→ PATCH 要求 updated_at 沒變（版本 CAS，
-// updated_at 每次寫入都換成新的時間，不會回到舊值）→ 回傳筆數 1 才算成功；衝突重讀重做 4 次；被搬家閘門擋＝失敗
+// abgd 關卡 3 SOP 第五～七輪：問題回報條件更新——pm_doc_get 同一語句讀 data＋整數版本 rev（pm_rev，每次寫入 +1）→ fn(doc) 改（回 false＝不寫）
+// → pm_doc_cas 同一交易鎖版本列、比對、寫入（搬家閘門照樣擋）；衝突重讀重做 4 次
 async function sopIssueCas(fn) {
+  const rpc = (f, b) => fetch(`${SB_URL}/rest/v1/rpc/${f}`, { method: 'POST', headers: sbHeaders, body: JSON.stringify(b) })
   for (let i = 0; i < 4; i++) {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_sop_issues&select=data,updated_at`, { headers: sbHeaders })
-    if (!r.ok) return false
-    const row = (await r.json())[0]; if (!row) return false
-    const doc = JSON.parse(row.data.v || '{}'); doc.list = doc.list || []
+    const r = await rpc('pm_doc_get', { p_id: 'sp_finance_pm_sop_issues' }); if (!r.ok) return false
+    const g = await r.json(); if (!g || !g.data) return false
+    const doc = JSON.parse(g.data.v || '{}'); doc.list = doc.list || []
     if (fn(doc) === false) return false
-    const u = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_sop_issues&updated_at=eq.${encodeURIComponent(row.updated_at)}`, { method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=representation' }, body: JSON.stringify({ data: { v: JSON.stringify(doc) }, editor: 'D哥', updated_at: new Date().toISOString() }) })
-    if (!u.ok) return false
-    if ((await u.json()).length === 1) return true
+    const u = await rpc('pm_doc_cas', { p_id: 'sp_finance_pm_sop_issues', p_rev: g.rev, p_data: { v: JSON.stringify(doc) }, p_editor: 'D哥' })
+    if (!u.ok) return false // 搬家閘門擋等
+    const j = await u.json(); if (j && j.ok) return true; if (!j || !j.conflict) return false
     await new Promise(res => setTimeout(res, 150 + Math.random() * 300))
   }
   return false
@@ -2447,7 +2447,7 @@ export default async function handler(req, res) {
                 await repP(okU ? `⚠️ 這筆之前已經嘗試發布過、結果不明；為避免重複不再自動重發，已標為已發布，請到群組確認：${headP}` : '⚠️ 狀態沒存進去（可能正在搬家），請稍後再按一次。'); continue
               }
               if (!prevT) {
-                const okT = await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok' || x.pubTry) return false; x.pubTry = { ch: 'pi', key: fk, ts: new Date().toISOString(), by: meP.name }; return true })
+                const okT = await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok' || x.pubTry) return false; x.pubTry = { ch: 'pi', key: fk, to: 'Cf7940efc6517b0c084ad2ad496b45f30', ts: new Date().toISOString(), by: meP.name }; return true })
                 if (!okT) { await repP('⚠️ 沒能開始發布（可能正在搬家或有人同時按），請稍後再按一次。'); continue }
               }
               let sentP = false
@@ -2461,10 +2461,10 @@ export default async function handler(req, res) {
               try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: `⚠️ 問題回報【${itP.st}】`, body: `${(itP.text || '（附件）').slice(0, 60)} — ${itP.by}`, url: '/prep' }) } catch (_) {} // v4.33.0 GD推播
               await repP(`✅ 已發布到內部群：${headP}`)
             } else if (piOp === 'hold') {
-              if (!(await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok') return false; x.pub = 'hold'; return true }))) { await repP('⚠️ 沒存進去（已發布過、找不到，或正在搬家），請重新整理後再按。'); continue }
+              if (!(await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok' || x.pubTry) return false; x.pub = 'hold'; return true }))) { await repP('⚠️ 沒存進去（已發布、發布中、找不到，或正在搬家），請重新整理後再按。'); continue }
               await repP(`📥 已保留（不進群，看板上仍看得到）：${headP}`)
             } else if (piOp === 'del') {
-              if (!(await sopIssueCas(d => { const n0 = (d.list || []).length; d.list = (d.list || []).filter(y => y.id !== piId); return d.list.length !== n0 }))) { await repP('⚠️ 沒刪成（找不到或正在搬家），請重新整理後再按。'); continue }
+              if (!(await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || (x.pubTry && x.pub !== 'ok')) return false; d.list = d.list.filter(y => y.id !== piId); return true }))) { await repP('⚠️ 沒刪成（發布中、找不到或正在搬家），請重新整理後再按。'); continue } // 發布中不能刪（發布紀錄在這筆上）
               await repP(`🗑 已刪除：${headP}`)
             }
           } catch (e) { console.log('pub issue postback error', e?.message); await repP('⚠️ 處理出錯，再按一次或到 /prep 任務分頁操作。') }
