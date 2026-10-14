@@ -171,4 +171,6 @@ revoke all on function public.pm_read_current(text[]) from public, anon, authent
 revoke all on function public.pm_snapshot() from public, anon, authenticated;
 revoke all on function public.pm_kv_project(uuid, text, text, int, boolean) from public, anon, authenticated;
 revoke all on function public.pm_domain_set(text, text, text, int, text) from public, anon, authenticated;
+grant execute on function public.pm_outbox_claim(text,int,int), public.pm_outbox_done(bigint[],uuid,text), public.pm_read_current(text[]), public.pm_snapshot(), public.pm_kv_project(uuid,text,text,int,boolean), public.pm_domain_set(text,text,text,int,text) to service_role;
+grant select, insert, update, delete on public.pm_rev, public.pm_outbox, public.pm_domain_lock, public.pm_sync_applied to service_role;
 -- 不開任何 policy：只有 service role 讀寫得到
