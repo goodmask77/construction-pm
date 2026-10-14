@@ -2401,7 +2401,10 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.menu) !== ok2) return res.status(403).json({ ok: false })
     const [mdoc0, meM2] = await Promise.all([kvGet('sp_finance_pm_menu'), sopWho(req.query.me)])
     let mdoc = mdoc0
-    if (!mdoc || !mdoc.base) { // 首次：把既有菜單（2026-09 紙本）種進去，base 之後不動、draft 開放編輯
+    if (!mdoc || !mdoc.base) { // v4.71.80 種子只在「確定沒有這個鍵」時寫：讀取失敗（kvGet 出錯回 null）或資料壞掉時原本會用 2026-09 紙本蓋掉現在的菜單；菜單搬新殼後 GD 不再種
+      let existsM = null
+      try { const rE = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_menu&select=id`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }); if (rE.ok) existsM = (await rE.json()).length > 0 } catch (_) {}
+      if (existsM !== false || (await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd') return res.status(503).json({ ok: false, error: '菜單資料暫時讀不到，請稍後重新整理（不會自動重建）' })
       const S = (nm, note, items) => ({ name: nm, note: note || '', items })
       const I = (id, nm, pr, note) => ({ id, name: nm, price: pr, note: note || '' })
       const seed = { note: '套餐玩法 +89 元＝任一主餐 ＋ 副食A區 ＋ 飲品B區', sections: [
@@ -2414,7 +2417,7 @@ export default async function handler(req, res) {
         S('咖啡・其他飲品', '', [I('m61','美式咖啡',75,'冰/熱'), I('m62','國寶鮮奶茶',90,'#無咖啡因'), I('m63','經典拿鐵',90,'冰/熱'), I('m64','抹茶/可可拿鐵',100)]),
       ] }
       mdoc = { base: seed, draft: JSON.parse(JSON.stringify(seed)), edits: [] }
-      await kvPut('sp_finance_pm_menu', mdoc, '菜單種子(既有菜單2026-09)')
+      if (!(await kvPut('sp_finance_pm_menu', mdoc, '菜單種子(既有菜單2026-09)'))) return res.status(503).json({ ok: false, error: '菜單種子沒存進去，請稍後再試' })
     }
     const pmM = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {}, pending: {} }
     const meU = meM2 ? pmM.users[meM2.rid || meM2.uid] : null
