@@ -2275,6 +2275,24 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_prep_routes', rt, 'abgd-switch')
     return res.status(200).json({ ok: true, routes })
   }
+  // abgd 看門狗（2026-10-14，獨立 Claude 關卡 2 ④）：每 5 分鐘 cron。入口指向新殼的分頁，若新殼健康檢查連續 3 次失敗→GD 自己清掉 routes（夥伴回舊頁）＋私訊張良；不動資料庫鎖（鎖只有新殼控制器能解，資料不會雙寫）
+  if (req.query?.abgdwatch) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim(), cs = (process.env.CRON_SECRET || '').trim()
+    const fromCron = String(req.headers['user-agent'] || '').startsWith('vercel-cron') || (cs && req.headers.authorization === 'Bearer ' + cs)
+    if (!fromCron && (!ok2 || String(req.query.abgdwatch) !== ok2)) return res.status(403).json({ ok: false })
+    const rt = (await kvGet('sp_finance_pm_prep_routes')) || {}
+    const routes = rt.routes || {}
+    const keys = Object.keys(routes)
+    if (!keys.length) return res.status(200).json({ ok: true, routes: 0 })
+    const origin = (() => { try { return new URL(Object.values(routes)[0]).origin } catch (_) { return '' } })()
+    let bad = 0
+    for (let i = 0; i < 3; i++) { try { const r = await fetch(origin + '/api/core/health', { cache: 'no-store' }); if (!r.ok) bad++ } catch (_) { bad++ } if (bad < i + 1) break; await new Promise(r => setTimeout(r, 2000)) }
+    if (bad < 3) return res.status(200).json({ ok: true, routes: keys.length, healthy: true })
+    rt.routes = {}; rt.log = (rt.log || []).slice(-49); rt.log.push({ ts: new Date().toISOString(), by: 'gd-watchdog', reason: '新殼健康檢查連續 3 次失敗，GD 自己切回', keys })
+    await kvPut('sp_finance_pm_prep_routes', rt, 'gd-watchdog')
+    try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼連續 3 次健康檢查失敗，已把入口切回舊版：' + keys.join('、') + '\n資料庫鎖未動（新殼控制器恢復後要人工確認）') } catch (_) {}
+    return res.status(200).json({ ok: true, routes: 0, healthy: false, cleared: keys })
+  }
   // abgd 橋接票（2026-10-14）：GD 已登入的人點到切過去的分頁 → 前端 POST 這裡拿 60 秒一次性 HMAC 票 → 貼給新殼 /api/core/auth/bridge 換 session
   if (req.query?.bridge) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -4947,7 +4965,7 @@ export default async function handler(req, res) {
       } else return res.status(400).json({ ok: false, error: '未知操作' })
       lib.log = [{ by: whoL.name, ts: nowTS(), what: '資料夾' + op }, ...(lib.log || [])].slice(0, 100)
       lib.updatedAt = new Date().toISOString()
-      await kvPut(LIB_KEY, lib, '文件庫資料夾' + op + '(' + whoL.name + ')')
+      if (!(await kvPut(LIB_KEY, lib, '文件庫資料夾' + op + '(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: '文件庫已搬到新版，請從側欄點「文件庫」在新版操作' })
       return res.status(200).json({ ok: true })
     }
 
@@ -4970,7 +4988,7 @@ export default async function handler(req, res) {
       lib.files[f.id].push({ id: fid, name, path, ext: ext || 'bin', mime: m[1], size: buf.length, ts: nowTS(), by: whoL.name, order: maxo + 1 })
       lib.log = [{ by: whoL.name, ts: nowTS(), what: '上傳 ' + name + ' → ' + f.name }, ...(lib.log || [])].slice(0, 100)
       lib.updatedAt = new Date().toISOString()
-      await kvPut(LIB_KEY, lib, '文件庫上傳(' + whoL.name + ')')
+      if (!(await kvPut(LIB_KEY, lib, '文件庫上傳(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: '文件庫已搬到新版，請在新版上傳' })
       return res.status(200).json({ ok: true, id: fid })
     }
 
@@ -5000,7 +5018,7 @@ export default async function handler(req, res) {
       lib.files[f.id] = arr
       lib.log = [{ by: whoL.name, ts: nowTS(), what: '檔案' + op + ' @' + f.name }, ...(lib.log || [])].slice(0, 100)
       lib.updatedAt = new Date().toISOString()
-      await kvPut(LIB_KEY, lib, '文件庫檔案' + op + '(' + whoL.name + ')')
+      if (!(await kvPut(LIB_KEY, lib, '文件庫檔案' + op + '(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: '文件庫已搬到新版，請在新版操作' })
       return res.status(200).json({ ok: true })
     }
   }

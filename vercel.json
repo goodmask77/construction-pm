@@ -93,6 +93,10 @@
     {
       "path": "/api/pinterest-sync",
       "schedule": "35 * * * *"
+    },
+    {
+      "path": "/api/mail-sync?abgdwatch=cron",
+      "schedule": "*/5 * * * *"
     }
   ],
   "regions": [
