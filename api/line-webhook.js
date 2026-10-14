@@ -250,10 +250,20 @@ async function saveCachedToLibrary(folderName, who, convId) {
     } catch (_) { failed.push(f.name) }
   }
   if (!names.length) return { ok: false, msg: '檔案抓取失敗（可能超過 LINE 下載期限），請重新傳一次。' }
+  const rest = all.filter(f => !mine.some(m => m.mid === f.mid))
+  // abgd 搬家：文件庫域切到新殼時，索引改打新殼命令（檔案本體已在 GD 桶，路徑相容）；舊表寫入會被閘門擋
+  const ownL = await abgdOwner(LIBRARY_KEY)
+  if (ownL.owner === 'abgd') {
+    const added = (lib.files[folder.id] || []).filter(x => names.includes(x.name) && mine.some(m => m.name === x.name)).slice(-names.length)
+    const cr = await abgdCommand('library', 'add_file', { folderName: folder.name, files: added.map(x => ({ fid: x.id, path: x.path, name: x.name, ext: x.ext, mime: x.mime, size: x.size })), actor: { rid: who.rid, name: who.name, role: who.role, mgr: !!who.mgr } }, who.name)
+    if (!cr.ok) return { ok: false, msg: '新版文件庫登記失敗：' + cr.text }
+    await kvSet(FILECACHE_KEY, { list: rest })
+    return { ok: true, folder: folder.name, count: names.length, names, failed }
+  }
+  if (ownL.owner === 'frozen') return { ok: false, msg: '文件庫正在搬家中（暫時凍結），幾分鐘後再試 🙏' }
   lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD存 ${names.length}檔→${folder.name}` }, ...(lib.log || [])].slice(0, 100)
   lib.updatedAt = new Date().toISOString()
-  await kvSet(LIBRARY_KEY, lib)
-  const rest = all.filter(f => !mine.some(m => m.mid === f.mid))
+  if (!(await kvSet(LIBRARY_KEY, lib))) return { ok: false, msg: '文件庫寫入失敗（可能已搬到新版），請在 App 文件庫操作 🙏' }
   await kvSet(FILECACHE_KEY, { list: rest })
   return { ok: true, folder: folder.name, count: names.length, names, failed }
 }
@@ -283,8 +293,9 @@ async function pushLibraryFile(folderName, fileKw, who, to) {
   for (let i = 0; i < msgs.length; i += 5) {
     await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to, messages: msgs.slice(i, i + 5) }) })
   }
-  lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD撈 ${hits.length}檔 ${folder.name}→傳送` }, ...(lib.log || [])].slice(0, 100)
-  await kvSet(LIBRARY_KEY, lib)
+  const ownP = await abgdOwner(LIBRARY_KEY)
+  if (ownP.owner === 'abgd') { try { await abgdCommand('library', 'log', { what: `DD撈 ${hits.length}檔 ${folder.name}→傳送`, actor: { rid: who.rid, name: who.name } }, who.name) } catch (_) {} }
+  else if (ownP.owner === 'gd') { lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD撈 ${hits.length}檔 ${folder.name}→傳送` }, ...(lib.log || [])].slice(0, 100); await kvSet(LIBRARY_KEY, lib) }
   return { ok: true, count: Math.min(hits.length, 5), folder: folder.name, names: hits.slice(0, 5).map(x => x.name) }
 }
 
