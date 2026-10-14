@@ -1,10 +1,11 @@
-# ABGD 切換／回切 人工恢復手冊（一頁）v8
+# ABGD 切換／回切 人工恢復手冊（一頁）v9
 
 > 2026-10-14 立；v2 依回饋 F17 關卡 3 第七輪三家意見改：每一步都是切換口的一個指令＋要讀回確認的結果，不手寫 SQL。
 > v5（第十輪）：清旗標後立刻 align、B 收尾等 dirty=0 且 dead=0、GD 探測帶 domain、freeze 回應列出全部未結案操作、接管瞬間 GD 可能被舊程序動過的說法改準確；入口發布有版本圍欄（舊快照晚到 GD 回 409）。
 > v6（第十一輪）：補投影改用 `op=reproject`（只在 GD 正本 gd/gd 時跑，凍結中不能補）；新增 D 入口隔離；B 第 1 步驗收不過就停；`reproject_required=true` 超過 10 分鐘看門狗會私訊。
 > v7（第十二輪）：C 第 1 步與 B 第 1 步用同一份 freeze 驗收；控制器「控制權查不到」不再當成被接管（會隔離、留 unknown、私訊）；**正式環境的演練一律在演練專用資料域 `drill`（鍵 sp_finance_pm_zzdrill，沒有功能使用）做，不拿真功能試**。
 > v8（第十三輪）：restore_gd 回應多 `reproject`（控制面恢復 vs 影子補投影分開看）；B 收尾要看 reproject_required=false；新增 E「演練守則」。
+> v9（第十四輪，關卡通過）：align／restore_gd 回失敗→立刻重讀兩端，不能因 open_ops 空就繼續；切換窗口內禁止演練與其他域切換；目前可切清單只有 feedback、drill。
 > 指令：`POST https://ab-gd.vercel.app/api/core/switch?key=<CRON_SECRET>`，body 見各步（`by` 填你的名字）。
 > **看狀態（只讀）**：`GET 同網址&domain=<域>` → `abgd`（writer／state／epoch／manual_required）、`gd_locks`（每個前綴 owner／epoch，`missing` 要是空的）、`open_ops`（全部 running／unknown）、`sync`（dirty／dead／oldestDirty）、`routes`。任一欄是 `unavailable`＝那項查不到，不要當正常。
 > **GD 連得上嗎**：`GET /api/core/health?gd=1&domain=<域>`（標頭 Authorization: Bearer CRON_SECRET）回 `gd:true`——這支真的去查 GD 該域的鎖列；`/api/core/health?domain=` 只驗新殼自己。
@@ -51,11 +52,18 @@
 2. 解除：`{"op":"routes_unquarantine","keys":["<功能代碼，例 fb>"],"by":"…","reason":"<確認了什麼，至少 10 字>"}` → 回 `routes`（實際入口）與剩下的 `quarantine`。
 3. 如果該域當時是新殼正本（writer=abgd），解除後入口會回到新殼；如果要改回 GD，走一般 rollback。
 
+## F：人工工具失敗（align／restore_gd／adopt_gd 回 ok:false）
+- **不要因為 open_ops 是空的就當沒事**：這些工具跨兩個資料庫，可能做到一半（新殼已推進世代、GD 只改了部分前綴）就回失敗。
+1. 立刻 `GET …&domain=<域>`，看 `abgd`（writer／state／epoch）與 `gd_locks` 每個前綴 owner／epoch。
+2. 兩端一致（新殼 frozen、GD 全 frozen 且同世代）→ 照原步驟重試那個工具。
+3. 不一致、有前綴是 gd、或任一欄 unavailable → 回到 C 第 1 步重新 freeze（會把兩端推到同一個新世代），再走 B。
+
 ## E：演練守則（正式環境）
 - 只在演練專用資料域 `drill`（鍵 sp_finance_pm_zzdrill）做；「不修改真功能資料」，但仍共用同步租約、入口序號、資料庫與 API——長時間、網路故障、租約失效類測試先在測試庫做。
 - 演練前：drill 狀態口 gd/gd、open_ops 空、dirty／dead 0、reproject_required false；`core.settings` 沒有殘留 `fault_inject`。
 - 故障注入：`core.settings` key=`fault_inject`（store_id 空），只對 drill 生效：`ctl_unavailable`（控制權一律查不到）、`fail_after_gd_frozen`（GD 凍結後丟錯）、`take_over`（丟錯前模擬人工接管）、`unavailable_after`（故障觸發後才查不到）。
 - 演練後：刪 fault_inject；照 C→B 收尾到 gd/gd；手動用過假 rev 的投影版本要校回 GD 真值（legacy.projection_state）；三功能對帳 0。
+- **真切換窗口內（切換前確認＋切後 30 分鐘監看）禁止任何演練、假 rev 測試、其他域切換。**
 - 注意：drill 的隔離／凍結一樣會私訊張良（看門狗與控制器不分域），演練前先告知。
 
 ## 永遠不要做
