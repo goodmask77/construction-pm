@@ -16,12 +16,13 @@
 | 耗損 F09 | ✅ 10-15 01:26 已切（epoch 1，關卡 3 兩輪；當班驗收 15 項全過） | waste |
 | 成本總覽 F13 | ✅ 10-15 03:22 已切（epoch 1，關卡 3 六輪；冒煙 24 項全過；03:27 拆驗收閘門） | cost |
 | 食譜 F10 | ✅ 10-15 04:15 已切（epoch 1，關卡 3 兩輪；冒煙 21 項全過；04:17 拆驗收閘門） | recipe |
+| 菜單成本 F12 | ✅ 10-15 04:53 已切（從 menu 拆出 pricing 域；關卡 3 兩輪；冒煙 12 項＋正式回切演練 10 項；epoch 2；04:57 拆驗收閘門） | pricing |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.81（main）、GD v4.71.76（main，已部署）。
+版本：新殼 v0.4.84（main）、GD v4.71.79（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
- ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ 菜單成本 F12＋菜單 F18（menu 域：pricing、pos_prices／pos_costs、menu；GD 定價讀食譜兩鍵的反推鏡像；pos_costs 寫入者不明要先查，疑似主 App anon 直寫）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ 菜單 F18＋POS 牌價／成本／改名／隱藏（menu 域剩 5 鍵：GET ?menu 讀不到會寫種子要先停；pos_costs 主 App Finance.jsx:218 與 Supply.jsx:1147 用前端直寫、吞錯誤、兩個寫入者；團訂 _grporder、會員 _member、DD 即時讀 menu.draft；建議先拆 pos_alias／hidden／prices，再 pos_costs，最後 menu＋menu_assets）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -79,3 +80,9 @@
 - AI 匯入抓網址只收白名單（Google 試算表／文件本體），其他網站請截圖——字串檢查擋不了轉址與 DNS 指內網。
 - 步驟媒體、連結類欄位：伺服器端只收私有桶路徑或 http(s)，畫面也只把 http(s) 做成連結（擋 javascript:）。
 - 冒煙腳本寫在新規則之前要更新（這次第一跑漏帶草稿記號，留下一份測試草稿，已用正確記號捨棄）。
+
+## 10-15 菜單成本學到的（下一個功能照做）
+- 一個域裡有難搬的鍵時，先把好搬的鍵拆成獨立域（migration 附後置條件查核：涵蓋該鍵的域只剩一個、原域其他鍵與狀態不變、入口對應各自一個）。
+- 版本記號不能用時間戳或會被刪掉的欄位：用每個項目「只增不減、刪除也加」的版本號（doc.gen[key]），否則刪除後舊畫面能把內容寫回（ABA）。
+- 畫面編輯框的初值要從「原設定」讀，不能從計算結果反推（GD 套餐池原本每次從空白開始、一存就清掉；加價從計算結果來，池子空時變 0）。
+- 回切演練可以在正式環境、拆閘門前做：回切→新殼被擋、GD 可寫（用沒設定過的品項寫了再清）→其他域不變→再切回→版本號保留＋GD 期間的寫入讀得到→GD 再被擋。scratchpad cost-test/prdrill.mjs 是樣板。
