@@ -28,7 +28,7 @@
 3. 決議（每個差異鍵擇一）：
    - 保留 GD 版本：`{"op":"adopt_gd","domain":"<域>","by":"…","keys":["<鍵>",…]}` → 回 `adopted`（含 GD 來源版本與摘要）；再對帳確認那些鍵差 0。要求 GD 全 frozen 且世代一致（第 1 步 freeze 已做到）。
    - 保留新殼版本：`{"op":"keep_abgd","domain":"<域>","by":"…","keys":["<鍵>",…],"note":"<為什麼，至少 10 字>"}` → 回 `n`；會補待推事件，第 5 步 align 之後由反推送回 GD（**不做這一步，新殼版本不會自己推回去**）。
-4. `{"op":"manual_clear","domain":"<域>","by":"…","note":"<核對了什麼、怎麼處理，至少 10 字>"}` → 回 ok（程式先驗：新殼 frozen、GD 每個前綴有鎖列、不是 gd、世代號與新殼相同）。**清完旗標後立刻做第 5 步**（中間不要去處理別的；align 被拒「還有未結案的操作」→ 先走 C 第 2 步結案再 align）。
+4. `{"op":"manual_clear","domain":"<域>","by":"…","note":"<核對了什麼、怎麼處理，至少 10 字>"}` → 回 ok（程式先驗：新殼 frozen、GD 每個前綴有鎖列、不是 gd、世代號與新殼相同）。**清完旗標後立刻做第 5 步**（中間不要去處理別的；align 被拒「還有未結案的操作」→ 先走 C 第 2 步結案再 align）。manual_clear 自己被拒「還有操作握控制權」＝有 unknown 的操作（常是之前失敗的 freeze）→ 先走 C 第 2 步 resolve_op 再清。
 5. `{"op":"align","domain":"<域>","by":"…"}` → writer=abgd 時 GD 前綴回 abgd（新世代，反推恢復）；writer=gd 時 GD 前綴維持 frozen。
 6. 收尾：
    - writer=abgd（新殼曾是正本）→ 等 `sync.dirty=0` **且 `sync.dead=0`**（dead>0 → 照 A 第 2 步 replay 再等）→ 再對帳一次差 0 → `{"op":"rollback",…}`（或要續留新殼找 CC）。
@@ -39,6 +39,7 @@
 1. `{"op":"freeze","domain":"<域>","by":"…","reason":"操作卡住"}` → 回 `controlTaken:true`（新殼一個交易內接管控制權：原本 running 的操作改 unknown＝撤銷、標需人工對帳、世代+1）與 `gdFrozen`（GD 各前綴凍結到同一世代並讀回）。`gdFrozen:false`＝GD 沒凍好，freeze 操作留 unknown，找 CC。回應的 `openOps` 列出這個域全部未結案操作（可能不只一筆），第 2 步要每筆都結案。撤銷後舊程序在**新殼端**的控制寫入（狀態、入口、追平、採用）都會被資料庫以 ABGD_REVOKED 拒絕，它會走「停止、不再動兩端」出口（演練 11、13）；但 **GD 端可能在接管瞬間被舊程序改過**（GD 鎖只靠預期值＋世代），所以接管後一律走 B 對帳，不要假設 GD 沒動過。
 2. 結案（openOps 每一筆都要做）：`{"op":"resolve_op","id":"<ops 裡那筆 id>","by":"…","note":"<結論>"}` → 程式驗兩端：「確認成功」（切換：新殼 abgd/abgd 且 GD 全 abgd）或「確認安全隔離」（新殼 frozen 且 GD 沒有 gd）才會結案（status＋finished_at＋紀錄同交易）。
 3. 接著走 **B**（從第 2 步對帳開始）。
+   - 若被中止的是回切／restore_gd（GD 已恢復正本），新殼影子表可能停在舊內容：對帳有差的鍵 → `POST /api/core/sync/project?key=<CRON_SECRET>` body `{"keys":["<鍵>",…]}` 補投影，再對帳到 0（GD 是正本，這一步只修新殼影子，不會動 GD）。
 4. align／restore_gd 要求該域沒有未結案操作；看到「還有未結案的操作」就先做第 2 步。
 
 ## 永遠不要做
