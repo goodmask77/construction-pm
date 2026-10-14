@@ -260,7 +260,7 @@ const ACTIONS = {
   },
   async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
     const it = a.it || {}
-    if (!TK()) return { ok: true, skipped: true }
+    if (!TK()) return { ok: false, retry: true } // 缺金鑰＝等設定修好重試（不當成已發；關卡 3 SOP 第二輪）
     const ok = await linePush('Cf7940efc6517b0c084ad2ad496b45f30', [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }]) // 走 linePush：帶 X-Line-Retry-Key，重試不重發
     if (!ok) return { ok: false, retry: true }
     try { await wpPush(null, { title: `⚠️ 問題回報【${it.st}】`, body: `${(it.text || '（附件）').slice(0, 60)} — ${it.by}`, url: '/prep' }) } catch (_) {}
