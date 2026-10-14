@@ -5693,6 +5693,7 @@ export default async function handler(req, res) {
     const canW = !probeW && !!(await permWho(tkW, 'waste'))
     if (req.method === 'POST') {
       if (!canW) return res.status(403).json({ ok: false, error: '沒有「耗損」分頁的編輯權限' })
+      if ((await abgdOwnerOf('sp_finance_pm_waste_cfg')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F09）：耗損切新殼後 GD 寫入一律擋（op=ai 也擋：會上傳照片）
       const opW = String(bW.op || '')
       const fn = opW === 'ai' ? WASTE.aiRead : opW === 'add' ? WASTE.addWaste : opW === 'void' ? WASTE.voidWaste : opW === 'cfg' ? WASTE.cfgSave : null
       if (!fn) return res.status(400).json({ ok: false, error: '不認得的操作' })
