@@ -14,6 +14,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords, abgdOwnerOf } from './mail-sync.js'
 import { snapshotRecipeCosts } from './_recipe.js'
+import { orderedKvGet } from './_jsonborder.js' // abgd 食譜 F10：快照算法讀到的鍵順序與新殼一致
 import { EPS, OFF } from './_bossfeeds.js' // 批次 3：每小時同步後，價格／換算／配方有變就寫食譜成本快照（永不改寫）
 
 const BASE = (process.env.BOSS_API_BASE_URL || '').trim().replace(/\/$/, '')
@@ -226,7 +227,7 @@ export default async function handler(req, res) {
   let rcpSnap = null
   try { // 成本快照（規格：價格、換算、配方任一變動 → 重算受影響對象、各寫一筆、永不改寫）；失敗不影響同步
     const mos = (() => { const out = []; const d = new Date(today.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
-    rcpSnap = (await abgdOwnerOf('sp_finance_pm_recipecost_snap')) !== 'gd' ? { skipped: 'abgd（食譜成本快照由新殼每小時排程寫）' } : await snapshotRecipeCosts({ kvGet, kvPut, months: mos }) // abgd 搬家（F10）
+    rcpSnap = (await abgdOwnerOf('sp_finance_pm_recipecost_snap')) !== 'gd' ? { skipped: 'abgd（食譜成本快照由新殼每小時排程寫）' } : await snapshotRecipeCosts({ kvGet: orderedKvGet(kvGet), kvPut, months: mos }) // abgd 搬家（F10）
   } catch (e) { rcpSnap = { err: e.message } }
   state.lastRun = new Date().toISOString()
   state.rcpSnap = rcpSnap
