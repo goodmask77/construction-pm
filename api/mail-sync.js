@@ -5620,7 +5620,8 @@ export default async function handler(req, res) {
         if (owMC === 'abgd' && String(bM.op || '') === 'merge') {
           const keysM = Array.isArray(bM.supplyKeys) ? bM.supplyKeys.map(String) : []
           if (keysM.length > 200) return res.status(400).json({ ok: false, error: '一次最多合併 200 個代碼' })
-          const rq = /^[A-Za-z0-9_-]{8,64}$/.test(String(bM.reqId || '')) ? 'gd-mcm-' + String(bM.reqId) : '' // 前端每次操作一個編號，結果不明重按沿用
+          if (!/^[A-Za-z0-9_-]{8,64}$/.test(String(bM.reqId || ''))) return res.status(400).json({ ok: false, error: '物料卡已搬到新版，請重新整理頁面再按一次' }) // 沒帶操作編號（舊分頁）＝不轉發，不走沒收據的路（關卡 3 第三輪）
+          const rq = 'gd-mcm-' + String(bM.reqId) // 前端每次操作一個編號，結果不明重按沿用；新殼命令路由綁內容雜湊（同編號不同內容拒絕）
           const cr = await abgdCmd('matcard', 'merge', { supplyKeys: keysM, targetCardId: bM.targetCardId ? String(bM.targetCardId) : '', name: String(bM.name || '').slice(0, 80), primary: bM.primary ? String(bM.primary) : '', reason: String(bM.reason || '').slice(0, 200), by: meW.name }, meW.name, rq)
           return res.status(cr.ok ? 200 : 409).json(cr.ok ? { ok: true, cardId: cr.cardId, noop: !!cr.noop, text: cr.noop ? cr.text : '' } : { ok: false, error: '合併結果還沒確認（' + cr.text + '），請再按一次（同一個操作不會合併兩次）' })
         }
