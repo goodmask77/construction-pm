@@ -153,7 +153,7 @@ export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOve
   }
   doc.sync = { at: out.at, by: who.name, summary: out.vendors.map(x => x.ok ? `${x.vendor} ${x.changes.length} 筆變動` : `${x.vendor} 失敗：${x.error}`) }
   doc.sync.text = syncSummaryText(out) // 這次同步的摘要（給畫面看）
-  if (queueDm && doc.sync.text) doc.pendingDm = [...(Array.isArray(doc.pendingDm) ? doc.pendingDm : []), { id: out.at.replace(/[^0-9]/g, '') + '-' + Math.random().toString(36).slice(2, 8), at: out.at, text: doc.sync.text }].slice(-30) // v4.71.72 待發私訊清單（跟報價同一筆存；新殼排程入列時同交易移除；abgd 關卡 3 第三輪：不能被下一次同步蓋掉）
+  if (queueDm && doc.sync.text) doc.pendingDm = [...(Array.isArray(doc.pendingDm) ? doc.pendingDm : []), { id: out.at.replace(/[^0-9]/g, '') + '-' + Math.random().toString(36).slice(2, 8), at: out.at, text: doc.sync.text }] // v4.71.72 待發私訊清單（跟報價同一筆存；新殼排程入列時同交易移除；abgd 關卡 3 第三輪：不能被下一次同步蓋掉）；v4.71.73 不再裁 30 筆（第四輪：裁掉＝靜默丟訊息；一天最多加一筆、每小時清空，不會無限長）
   doc.log = [...(doc.log || []), { at: out.at, by: who.name, sync: doc.sync.summary }].slice(-50)
   if (!(await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')'))) { out.ok = false; out.saveErr = '報價讀到了但沒存進去（成本模組可能已搬到新版）' } // 沒存進去就不能報「有變動」
   return out
