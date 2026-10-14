@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { kvGet, kvSet, SB_URL, svc } from './_onboard.js'
 import { logPush, groupMembers, quotaFoot } from './push.js'
 import { wpPush, wpPushUids, prepLink } from './_webpush.js'
-import { awardPts } from './_points.js'
+import { awardPtsStrict } from './_points.js'
 import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
 
 const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
@@ -147,7 +147,7 @@ const ACTIONS = {
     try { await logPush(u, 1, '會議全員簽收(' + a.by + ')') } catch (_) {}
     return { ok: true }
   },
-  async award(a) { return { ok: true, awarded: await awardPts(a.person, a.act, a.ref) } }, // 沒給分（規則關閉／已給過）也算完成
+  async award(a) { const r = await awardPtsStrict(a.person, a.act, a.ref); return { ok: true, awarded: r.awarded, reason: r.reason } }, // 規則關閉／已給過／達上限＝完成；讀寫失敗丟錯＝新殼重試（關卡 3 回饋第一輪）
   async meet_ask(a) { // 發問→DD 私訊老闆群操作者＋收件匣任務
     const ops = (await kvGet('pm_bot_operators')) || {}
     for (const u of Object.keys(ops)) { if (await linePush(u, [{ type: 'text', text: '❓ 會議宣達發問【' + a.type + ' ' + a.date + '】\n' + a.by + '：' + a.q + '\n到 /prep → 會議 回覆（他會收到通知）' }])) { try { await logPush(u, 1, '會議發問通知') } catch (_) {} } }

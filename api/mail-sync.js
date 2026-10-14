@@ -2686,7 +2686,7 @@ export default async function handler(req, res) {
       if (it.by !== whoJ.name && !aprJ.includes(whoJ.name)) return res.status(403).json({ ok: false, error: '只能刪自己的' })
       doc.list = doc.list.filter(x => x.id !== jb.id)
     } else return res.status(400).json({ ok: false })
-    await kvPut('sp_finance_pm_fbj', doc, '每日回饋紀錄(' + whoJ.name + ')')
+    if (!(await kvPut('sp_finance_pm_fbj', doc, '每日回饋紀錄(' + whoJ.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true })
   }
   if (req.method === 'POST' && req.query?.fbset) {
@@ -2749,7 +2749,7 @@ export default async function handler(req, res) {
     if (bD.op === 'station') { const st = String(bD.station || '').slice(0, 20); if (!st) return res.status(400).json({ ok: false }); const a = clean(bD.aspects); if (a.length) doc.stations[st] = a; else delete doc.stations[st] }
     else if (bD.op === 'default') { doc.default = clean(bD.aspects) }
     else return res.status(400).json({ ok: false })
-    await kvPut('sp_finance_pm_fb_dims', doc, '回饋面向設定(' + whoD.name + ')')
+    if (!(await kvPut('sp_finance_pm_fb_dims', doc, '回饋面向設定(' + whoD.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true, dims: { map: doc.stations, def: doc.default } })
   }
   // 指定回饋／引薦（v4.53.0 管理者/站長指定 A 對 B，具名帶教）：POST ?fbassign= {op:'add', date?, reviewer, reviewee, station?, aspect?} | {op:'del', id}
@@ -2778,7 +2778,7 @@ export default async function handler(req, res) {
     } else if (bA.op === 'del') {
       doc.list = doc.list.filter(a => a.id !== bA.id)
     } else return res.status(400).json({ ok: false })
-    await kvPut('sp_finance_pm_fb_assign', doc, '指定回饋(' + whoA.name + ')')
+    if (!(await kvPut('sp_finance_pm_fb_assign', doc, '指定回饋(' + whoA.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true })
   }
   // 一次性回填（張良 2026-09-21：既有 SOP 條目補 editBy/editTs＝最近一次儲存者；之後逐條照實記）：GET ?sopstamp=<MENU_PROBE_KEY>
