@@ -113,7 +113,7 @@
 | GitHub Pro | ✅ 張良 10-14 已升級（US$48/年） |
 | 私有 repo `goodmask77/abgd` | ✅ 已建；main 已上鎖：必須 PR、必要檢查 `check`、負責人核准、新推送作廢舊核准、最後推送須他人核准、禁止強推與刪除；管理員（goodmask77）可略過核准 |
 | 自動檢查（GitHub Actions `check`） | ✅ 語法、型別、分區檢查（跨區 import／破壞性 migration）、建置、gitleaks 機密掃描 |
-| Vercel 專案 `abgd` | ✅ 函式東京 hnd1、Node 24、接 GitHub、只從 main 正式部署；正式網址 abgd-gamma.vercel.app |
+| Vercel 專案 `abgd` | ✅ 函式東京 hnd1、Node 24、接 GitHub、只從 main 正式部署；正式網址 ab-gd.vercel.app（10-14 張良命名；Vercel 自動配的 abgd-gamma 已移除） |
 | Supabase 正式 `abgd-prod`（東京，Pro 組織） | ✅ 已套 core schema＋RLS；只接 Vercel 正式環境 |
 | Supabase 測試 `abgd-test`（東京） | ✅ 已套同一份 migration；接預覽與本機開發；只放假資料 |
 | 金鑰 | 正式庫管理金鑰只在 Vercel 正式環境（敏感）；兩庫密碼與金鑰只存張良電腦 `abgd/.env.local`（不進 git） |
