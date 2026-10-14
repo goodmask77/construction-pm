@@ -13,13 +13,13 @@
 | SOP F02＋問題回報 F33 | ✅ 已切 20:45（epoch 1；9 輪） | sop（sp_finance_pm_sop_） |
 | 班表 F15 第 A 段（班表主檔） | ✅ 已切 21:50（epoch 1；3 輪） | shift（只有 sp_finance_pm_shift_g） |
 | 物料卡 F11 | ✅ 10-14 23:47 已切（epoch 1，關卡 3 四輪；GD 成本待辦合併經命令轉新殼，必帶操作編號） | matcard |
-| 耗損 F09 | 🟡 影子已上線（新殼 v0.4.62、GD v4.71.64；ops.waste_view 已套兩庫；GD 對照 54 項）；下一步：正式讀取對帳、速度、AI 讀秤實打、關卡 3 | waste |
+| 耗損 F09 | ✅ 10-15 01:26 已切（epoch 1，關卡 3 兩輪；當班驗收 15 項全過） | waste |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
 版本：新殼 v0.4.50（main）、GD v4.71.58（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
-耗損（AI 讀秤走 GD 代發口 ai_call，已上線 v4.71.59）→ 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -56,3 +56,8 @@
 
 ## 待張良（10-15 新增）
 - **新殼自動檢查設定（.github/workflows/ci.yml）要改**：main 推送時的機密掃描放在建置之後，會掃到 node_modules／.next 快取 → 每次都誤報 8 筆（repo 檔案本身掃描 0 筆，已在本機用同版 gitleaks 確認）。修法已寫好（掃描移到最前面），但 CC 用的 GitHub 金鑰沒有 workflow 權限、推不上去。要張良把金鑰加 workflow 權限，或照修法在 GitHub 網頁改。
+
+## 10-15 耗損學到的
+- 子代理（獨立 Claude）可能整個卡住沒產出：連 2 次就改用 model: sonnet 的子代理，只給「一份含完整程式的送審檔」、不准跑指令。
+- 檢查 GD 端所有 kvPut 有沒有看回傳值：切換後資料庫閘門會擋，沒檢查就會「假成功」。新搬的功能開工先 grep 該模組的 kvPut。
+- 送 AI 的照片：上傳前就擋總量、壞照片不上傳不問 AI；代發口量實際位元組。

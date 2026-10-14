@@ -29,7 +29,7 @@
 | F06 | 包材 | p04-inv-meet | inv（kind=pack） | pm_inv | — | — | 低 | 同 F05 | 待搬 |
 | F07 | 採購 | p04-inv-meet | buy、buyadd、buyop | pm_buy | — | — | **高（明天沒食材）** | app/ops/purchase；ops.purchase_orders | 待搬 |
 | F08 | 物料庫（boss 叫貨進價波動／叫貨單） | p16-matlib | matlib、matcat、matord、matseed | pm_boss_ord_／ordi_／gord_／gordi_／matcat／prod／sup | 阿桑 boss-api | boss-sync 每小時 | **高（阿桑 API）** | app/ops/matlib；ops.boss_orders／boss_order_items／supplier_cats | 待搬 |
-| F09 | 耗損 | p18-waste | waste、wasteimg；api/_waste.js | pm_waste_(月檔)、pm_waste_cfg | AI 讀秤 | — | 中 | app/ops/waste；ops.waste_logs | 待搬 |
+| F09 | 耗損 | p18-waste | waste、wasteimg；api/_waste.js | pm_waste_(月檔)、pm_waste_cfg | AI 讀秤 | — | 中 | app/ops/waste；ops.waste_logs | **已切新殼**（10-15 01:26，epoch 1；關卡 3 兩輪；當班驗收 15 項全過；反推對帳差 0） |
 | F10 | 食譜（食譜庫＋AI 匯入） | p20-recipe、p20b-rcpimport | recipes、rcpimg；api/_recipe.js、_rcpimport.js | pm_recipebook、pm_recipecost_snap | AI | — | 中 | app/ops/recipes；ops.recipes／recipe_items | 待搬 |
 | F11 | 物料卡 | p19-matcard | matcard、mcard、mcphoto；api/_matcard.js | pm_matcard（獨立 matcard 域）、讀 boss／recipe／menu | — | — | 中 | app/ops/matcard；通用 gd_docs 引擎（ops.matcard_view／matcard_ver） | **已切新殼**（10-14 23:47，epoch 1；關卡 3 四輪；切後對帳差 0；GD 寫入 409、成本待辦合併轉新殼命令） |
 | F12 | 菜單成本（定價） | p22-pricing | pricing、priceset；api/_menu.js | pm_pricing、pm_pos_prices、pm_pos_costs、pm_menu | — | — | 中 | app/ops/pricing；ops.menu_items／menu_prices | 待搬 |
