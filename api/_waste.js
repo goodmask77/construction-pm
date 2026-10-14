@@ -175,14 +175,14 @@ export async function addWaste ({ kvGet, kvPut, who, body }) {
   const ym = date.slice(0, 7)
   const doc = (await kvGet(monthKey(ym))) || { rows: {} }
   doc.rows[id] = rec; doc.updatedAt = ts
-  await kvPut(monthKey(ym), doc, '耗損入帳(' + who.name + ')')
+  if (!(await kvPut(monthKey(ym), doc, '耗損入帳(' + who.name + ')'))) return { ok: false, error: '沒存進去（耗損可能正在搬到新版），請重新整理再記一次' } // 存檔失敗不能回成功（abgd 關卡 3 第一輪）
   // 學習資料：確認照進辨識圖庫、命中率、盲估配對
   if (p) {
     const wideP = rec.photos.find(x => x.type === 'wide') || rec.photos.find(x => x.type === 'scale')
     if (wideP) { cfg.refs[p.code] = [{ path: wideP.path, ts, id }, ...(cfg.refs[p.code] || [])].slice(0, 5) }
     if (ai && ai.cands && ai.cands.length) { const h = cfg.hit[p.code] || { n: 0, hit: 0 }; h.n++; if (ai.cands[0].code === p.code) h.hit++; cfg.hit[p.code] = h }
     if (ai && ai.est && ai.est.estG > 0 && rec.netG > 0) { cfg.pairs[p.code] = [...(cfg.pairs[p.code] || []), { estG: ai.est.estG, realG: rec.netG, ts }].slice(-200) }
-    await kvPut(WASTE_CFG_KEY, cfg, '耗損學習資料')
+    if (!(await kvPut(WASTE_CFG_KEY, cfg, '耗損學習資料'))) return { ok: true, rec, warn: '耗損已記下，但學習資料沒存到' }
   }
   return { ok: true, rec }
 }
@@ -195,7 +195,7 @@ export async function voidWaste ({ kvGet, kvPut, who, body }) {
   if (src.voidOf || Object.values(doc.rows).some(r => r.voidOf === id)) return { ok: false, error: '這筆已沖銷過' }
   const vid = id + 'v'
   doc.rows[vid] = { ...src, id: vid, ts: new Date().toISOString(), by: who.name, voidOf: id, netG: src.netG != null ? -src.netG : null, qty: src.qty != null ? -src.qty : null, amount: src.amount != null ? -src.amount : null, note: '沖銷：' + String(body.note || '').slice(0, 120), bigFlag: false, photos: [] }
-  await kvPut(monthKey(ym), doc, '耗損沖銷(' + who.name + ')')
+  if (!(await kvPut(monthKey(ym), doc, '耗損沖銷(' + who.name + ')'))) return { ok: false, error: '沖銷沒存進去（耗損可能正在搬到新版），請重新整理再試' }
   return { ok: true }
 }
 
@@ -206,7 +206,7 @@ export async function cfgSave ({ kvGet, kvPut, who, body }) {
   if (num(body.bigAmt) != null) cfg.bigAmt = Math.max(0, num(body.bigAmt))
   if (body.est) cfg.est = { minPairs: Math.max(1, num(body.est.minPairs) || 30), maxErr: Math.max(1, num(body.est.maxErr) || 15) }
   cfg.updatedBy = who.name; cfg.updatedAt = new Date().toISOString()
-  await kvPut(WASTE_CFG_KEY, cfg, '耗損設定(' + who.name + ')')
+  if (!(await kvPut(WASTE_CFG_KEY, cfg, '耗損設定(' + who.name + ')'))) return { ok: false, error: '設定沒存進去（耗損可能正在搬到新版），請重新整理再試' }
   return { ok: true }
 }
 

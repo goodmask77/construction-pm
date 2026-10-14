@@ -73,7 +73,23 @@ const ACTIONS = {
   async ai_call(a) {
     const route = String(a.route || '')
     if (!AI_ROUTES_OK.has(route)) throw new Error('這個 AI 路由沒開放給新殼：' + route)
-    const r = await aiCall(route, { system: a.system || '', messages: Array.isArray(a.messages) ? a.messages : [], maxTokens: Math.min(4000, Number(a.maxTokens) || 600), ...(a.override ? { override: a.override, noFallback: true } : {}) })
+    // 內容限制（abgd 耗損關卡 3 第一輪）：只收 user 訊息、文字或圖片（JPEG／PNG／WebP）、圖片最多 14 張、整包 ≤4.3MB、maxTokens 1～4000；不接受指定模型（override）
+    const msgs = Array.isArray(a.messages) ? a.messages : []
+    if (msgs.length > 4 || JSON.stringify(msgs).length > 4_300_000 || String(a.system || '').length > 8000) throw new Error('送 AI 的內容太大')
+    let nImg = 0
+    for (const m of msgs) {
+      if (!m || m.role !== 'user') throw new Error('訊息格式不對')
+      const parts = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : (Array.isArray(m.content) ? m.content : null)
+      if (!parts) throw new Error('訊息格式不對')
+      for (const c of parts) {
+        if (c && c.type === 'text' && typeof c.text === 'string') continue
+        if (c && c.type === 'image' && /^image\/(jpeg|png|webp)$/.test(String(c.media_type || '')) && typeof c.data === 'string') { nImg++; continue }
+        throw new Error('訊息內容只能是文字或圖片')
+      }
+    }
+    if (nImg > 14) throw new Error('圖片太多')
+    const mt = Math.trunc(Number(a.maxTokens)); const maxTokens = Number.isFinite(mt) && mt >= 1 ? Math.min(4000, mt) : 600
+    const r = await aiCall(route, { system: String(a.system || ''), messages: msgs, maxTokens })
     return { text: r.text || '', provider: r.provider || '', model: r.model || '' }
   },
   // 讀：會議頁需要的名單（與 GD ?meet 同算法）
