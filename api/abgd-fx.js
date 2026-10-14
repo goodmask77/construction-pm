@@ -40,11 +40,13 @@ async function release(idem, tok) { await fetch(`${SB_URL}/rest/v1/pm_documents?
 async function once(sub, fn, base) { const c = await claim(sub); if (c === 'busy') return { ok: false, retry: true, busy: true }; if (c.done !== undefined) return c.done; try { const r = await fn(); if (r && r.ok === false && r.retry) { await release(sub, c.tok); return r } try { await finish(sub, c.tok, r) } catch (_) {} return r } catch (e) { await release(sub, c.tok); throw e } }
 const ctx = new AsyncLocalStorage() // 每個請求自己的事件 idem（同時處理多個請求不會互蓋），用來派生 LINE 重試鍵
 const retryKey = (to) => { const h = crypto.createHash('sha1').update((ctx.getStore() || '') + '|' + to).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
-async function linePush(to, messages) {
+// 由任意字串推出固定 UUID（LINE 重試鍵要 UUID 格式）：同一件事不論哪邊、按幾次都同一把鍵，LINE 24 小時內擋重複
+export const fixedKey = (s) => { const h = crypto.createHash('sha1').update(String(s)).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
+async function linePush(to, messages, key) { // key：指定固定重試鍵（跨系統同一件事共用）；沒給就用事件＋收件人推導
   const tk = TK(); if (!tk || !to) return false
   const h = { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }
-  if (ctx.getStore()) h['X-Line-Retry-Key'] = retryKey(to)
-  const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: h, body: JSON.stringify({ to, messages }) })
+  if (key) h['X-Line-Retry-Key'] = fixedKey(key); else if (ctx.getStore()) h['X-Line-Retry-Key'] = retryKey(to)
+  const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: h, body: JSON.stringify({ to, messages }), signal: AbortSignal.timeout(15000) })
   return r.ok || r.status === 409 // 409＝同一重試鍵 LINE 已收過（先前其實送出了）
 }
 async function bindMaps() {
@@ -261,7 +263,8 @@ const ACTIONS = {
   async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
     const it = a.it || {}
     if (!TK()) return { ok: false, retry: true } // 缺金鑰＝等設定修好重試（不當成已發；關卡 3 SOP 第二輪）
-    const ok = await linePush('Cf7940efc6517b0c084ad2ad496b45f30', [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }]) // 走 linePush：帶 X-Line-Retry-Key，重試不重發
+    // 固定重試鍵＝問題編號（與 GD 舊路徑同一把）：切換前後兩邊、重試幾次，LINE 都只收一次
+    const ok = await linePush('Cf7940efc6517b0c084ad2ad496b45f30', [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }], 'pi-pub:' + (a.id || it.id || ''))
     if (!ok) return { ok: false, retry: true }
     try { await wpPush(null, { title: `⚠️ 問題回報【${it.st}】`, body: `${(it.text || '（附件）').slice(0, 60)} — ${it.by}`, url: '/prep' }) } catch (_) {}
     return { ok: true, sent: true }
