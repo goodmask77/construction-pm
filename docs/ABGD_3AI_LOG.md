@@ -68,3 +68,17 @@
 - 第 0 波程式已上線（abgd v0.2.x、GD v4.71.28），尚未切任何資料域；詳見 docs/FEATURE_MAP.md 5.1。
 - 更正：pm_bot_context 是舊主 App「工程」空間的衍生快照，只要工程資料不搬（F37 不搬），由舊主 App 繼續產生即可，不需要 GD 端 cron（原關卡 1 寫法修正）。
 - 關卡 3 起每個功能切入口前送審：對帳結果＋程式差異＋速度量測（scripts/perf.mjs）。
+
+## 0.5 波演練：文件庫 F21（2026-10-14 10:30～11:35，正式環境）
+| 步驟 | 結果 |
+|---|---|
+| 切換 library → abgd（控制器：abgd 封寫→GD owner=frozen→等 30 秒＋本域 outbox 排空→owner=abgd epoch=1→GD routes lib→新殼） | ✅（第一次失敗：void RPC 空回應被當 JSON、排空看整個 outbox；修 PR 8 後通過） |
+| GD 側欄 tabcfg.routes | ✅ {lib: https://ab-gd.vercel.app/ops/library}（no-store） |
+| GD 舊端點寫入（libfold add） | ✅ 資料庫閘門擋下（pm_abgd_locked 紀錄 1 筆）；**發現假成功**：端點仍回 ok → v4.71.29 改回 409 |
+| 新殼寫入（新增資料夾）→ 反向投影 → GD 大表 | ✅ rev 2、editor=abgd-sync、JSON 含新資料夾；對帳差 0 |
+| 注入錯誤（settings watch_inject）→ 看門狗 | ✅ 3 秒內切回：GD routes 清空、owner=gd；DD 私訊張良；對帳差 0 |
+| GD 寫入恢復 → 正向同步 → 對帳 | ✅ 差 0 |
+| 測試資料清理 | ✅ 三個演練資料夾已刪（GD 端刪→投影同步） |
+| 速度（正式站，張良 session） | /api/ops/library 熱 P50 330 ms／冷 1.1 s；/ops/library 頁 P50 356 ms；首頁 P50 296 ms。**冷啟動與 who() 六次往返待優化（目標 API P95 0.5 s）** |
+- 補強已上線：GD 看門狗 ?abgdwatch 每 5 分（新殼健康檢查連 3 次失敗→GD 自己清入口）；abgd 看門狗每分鐘（反向同步錯誤≥3／注入／合成探測）。
+- 文件庫目前狀態：**shadow**（writer=gd）。正式切換要過關卡 3（對帳＋程式差異＋速度）後再切。

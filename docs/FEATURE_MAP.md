@@ -41,7 +41,7 @@
 | F18 | 菜單（菜單建檔、圖匯出 v15、電視圖、AI 圖、存版本） | p08-menu-misc、menu-ai.js、menu-poster.html、menu-tv.html | menu、menuset、menuimgset、menuocr、menuai、menuaisave、menuassets、menuassetset、menuen、menumv、menunote、menuprobe | pm_menu、pm_menu_assets | AI 生圖、字型檔 | — | 中 | app/ops/menu；ops.menus／menu_assets；出圖頁 app/ops/menu/poster、/tv | 待搬 |
 | F19 | 行銷大師（FB/IG 成效、AI 文案、素材庫、靈感庫、Pinterest、LINE OA 成長） | p14-social | api/social.js、social-oauth.js、social-collect.js、social-publish.js、_pinterest.js、lineoa-sync.js | pm_social_*、pm_pinterest、pm_lineoa_*、pm_lineoa_sum | Meta、Pinterest、LINE Insight | social-collect／publish、lineoa-sync、pinterest-sync | **高（公開發文／授權）** | app/ops/marketing；ops.social_accounts／posts／metrics／assets／slogans／lineoa_daily | 待搬 |
 | F20 | inline（顧客資料庫：洞察首頁、顧客資料、近期展望） | p09（cust 段） | custfind、custact、custnr、custholcopy、custoutlook；api/inline-sync.js、_inline.js | pm_inline、pm_inline_(月檔 142k 筆)、pm_inline_cs_*、pm_inline_ph3_*、pm_inline_nr_、insights、notes、outlook、alerts | inline、Open-Meteo | inline-sync 每小時（含建任務） | 中（個資） | app/ops/customers；ops.reservations／customers／customer_notes | 待搬 |
-| F21 | 文件庫 | p15-library | libget、libfold、libup、liburl、libfile | pm_library | Storage ground-private | DD（存到文件庫） | 中（機密檔） | app/ops/library；ops.library_folders／files | 待搬 |
+| F21 | 文件庫 | p15-library | libget、libfold、libup、liburl、libfile | pm_library | Storage ground-private | DD（存到文件庫） | 中（機密檔） | app/ops/library；ops.library_folders／files | 🟢 新殼已做完（v0.3.0）、0.5 波演練全過、對帳差 0；目前 shadow，等關卡 3 切入口 |
 | F22 | 聊天室 | p23-chat | chat；api/_chat.js | pm_chat_rooms、pm_chatm_*、pm_chat_read_* | @DD | — | 中 | app/ops/chat；ops.chat_rooms／chat_messages／chat_reads | 待搬 |
 | F23 | 收件匣（四官方帳號客服、分類、提醒、問 AI、讀檔、匯入舊紀錄） | p24-inbox | inbox、inboxcc、inboxperf、inboxremindtest；api/_inbox.js、inbox-webhook.js | pm_inbox_c_*、pm_inbox_m_*、pm_inbox_cfg、pm_inbox_acct_* | LINE ×4 webhook、AI | inbox-webhook／line-webhook relay、DD | **高（對外客服）** | app/ops/inbox；ops.inbox_conversations／inbox_messages／inbox_settings | 待搬 |
 | F24 | 團體訂餐（建單、客人點餐頁、核價出圖、LINE Pay、綠界、發票） | p25-grporder、grporder-calc.js、public/order.html | grporder、gorder、ecpay*、pay*；api/_grporder.js、_linepay.js、_ecpay.js | pm_grpord_*、pm_grpord_cfg、pm_grpord_idx | LINE Pay、綠界、LIFF | 客人頁 order.html、LINE Pay／綠界回呼 | **高（金流）** | app/ops/group-orders；ops.group_orders／group_order_lines／payments／invoices；客人頁 app/order/[code] | 待搬（金流最後） |
@@ -153,10 +153,10 @@ Meta OAuth 重新授權、綠界特約商店申請、LINE Pay 回呼白名單、
 | GD 端：DD 寫入 adapter 骨架、kvSet 不假存檔 | ✅ v4.71.28 上線 |
 | 切換控制器（切／切回／凍結）＋命令路由骨架 | ✅ 程式上線（未切任何域） |
 | 資料域種子（30 域）／功能路由（31，全關） | ✅ 兩庫已套 |
-| 每小時備份排程 | 🟡 PR 6 |
-| 側欄分組第 2 版＋登入者 | 🟡 PR 6 |
+| 每小時備份排程 | ✅ 每小時 :07 |
+| 側欄分組第 2 版＋登入者 | ✅ v0.2.1 |
 | 主檔唯讀影子（名冊人資欄／物料／商品） | ❌ 下一步 |
-| 投影層框架＋文件庫 F21 演練（0.5 波） | ❌ 下一步 |
+| 投影層框架＋文件庫 F21 演練（0.5 波） | ✅ 演練全過（切→擋→寫回→注錯→自動切回→對帳差 0）；GD 看門狗 v4.71.29 |
 | LINE Login／LIFF 登入 | ❌ 之後 |
 | Storage 搬新桶＋/f/ 中繼 | ❌ 之後 |
 
