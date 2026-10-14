@@ -152,6 +152,7 @@ export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOve
     } catch (e) { doc.vendors[v] = { ...cur, lastSync: out.at, lastSyncErr: String(e.message || e).slice(0, 200) }; out.vendors.push({ vendor: v, ok: false, error: String(e.message || e).slice(0, 200) }) }
   }
   doc.sync = { at: out.at, by: who.name, summary: out.vendors.map(x => x.ok ? `${x.vendor} ${x.changes.length} 筆變動` : `${x.vendor} 失敗：${x.error}`) }
+  doc.sync.text = syncSummaryText(out) // 要私訊的摘要跟報價同一筆存（v4.71.71，abgd 關卡 3：通知不能因程序中斷而永久遺失；新殼排程依 sync.at 補入耐久佇列）
   doc.log = [...(doc.log || []), { at: out.at, by: who.name, sync: doc.sync.summary }].slice(-50)
   if (!(await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')'))) { out.ok = false; out.saveErr = '報價讀到了但沒存進去（成本模組可能已搬到新版）' } // 沒存進去就不能報「有變動」
   return out
