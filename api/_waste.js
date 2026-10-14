@@ -54,7 +54,7 @@ export function perGram (p) {
 // ── 候選物料（boss-api 即時主檔：GD gprod／AB prod）──
 export async function loadProducts (kvGet) {
   const [g, a] = await Promise.all([kvGet('sp_finance_pm_boss_gprod'), kvGet('sp_finance_pm_boss_prod')])
-  const slim = (rows, sys) => Object.values((rows || {}).rows || {}).filter(p => p && p.is_active !== false && p.name).map(p => ({ sys, code: String(p.code || p.sku || ''), sku: p.sku || '', name: p.name, unit: p.unit || '', spec: p.spec || '', category: p.category || '', supplier: p.supplier || '', store: p.store || '', station: p.station || '', dept: p.dept || '', stock: num(p.stock), cost: num(p.cost), price: num(p.price) }))
+  const slim = (rows, sys) => Object.values((rows || {}).rows || {}).filter(p => p && p.is_active !== false && p.name).map(p => ({ sys, code: String(p.code || p.sku || ''), sku: p.sku || '', name: p.name, unit: p.unit || '', spec: p.spec || '', category: p.category || '', supplier: p.supplier || '', store: p.store || '', station: p.station || '', dept: p.dept || '', stock: num(p.stock), cost: num(p.cost), price: num(p.price) })).sort((x, y) => (x.code < y.code ? -1 : x.code > y.code ? 1 : x.name < y.name ? -1 : x.name > y.name ? 1 : 0)) // 依代碼（同碼依品名）排（v4.71.65：原本照阿桑寫入順序，跟新殼 abgd 不同）
   return { ground: slim(g, 'GROUN:D'), abeach: slim(a, 'A Beach'), updatedAt: (g || {}).updatedAt || null }
 }
 
