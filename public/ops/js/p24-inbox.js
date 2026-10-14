@@ -196,17 +196,17 @@ function ibRenderMsgs(scroll) {
   const box = document.getElementById('ibMsgs'); if (!box) return
   if (!_ibMsgs.length) { box.innerHTML = '<div class="hint" style="text-align:center;padding:20px">還沒有訊息</div>'; return }
   let lastDay = ''
-  box.innerHTML = _ibMsgs.map(m => {
+  box.innerHTML = _ibMsgs.map((m, mi) => {
     const day = (() => { try { const d = new Date(m.t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') } catch (_) { return String(m.t || '').slice(0, 10) } })(); let sep = ''
     if (day !== lastDay) { lastDay = day; sep = `<div class="hint" style="text-align:center;font-size:11px;margin:6px 0">${ibEsc(day)}</div>` }
     if (m.dir === 'sys') return sep + `<div class="hint" style="text-align:center;font-size:12px">${ibEsc(m.text)} · ${ibT(m.t)}</div>`
     const out = m.dir === 'out'
     let body = ''
     if (m.type === 'sticker' && m.sticker) body = `<img src="https://stickershop.line-scdn.net/stickershop/v1/sticker/${ibEsc(m.sticker.id)}/android/sticker.png" style="width:110px;height:110px;object-fit:contain" alt="貼圖" onerror="this.outerHTML='（貼圖）'">`
-    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:block;line-height:0"><img src="${ibEsc(m.url || m.ext)}" style="max-width:260px;max-height:340px;width:auto;height:auto;border-radius:10px;display:block" alt="圖片" onload="ibStick()"></a>`
+    else if (m.type === 'image' && (m.url || m.ext)) body = `<a href="javascript:void 0" onclick="ibPreview(${mi})" style="display:block;line-height:0;cursor:zoom-in"><img src="${ibEsc(m.url || m.ext)}" style="max-width:260px;max-height:340px;width:auto;height:auto;border-radius:10px;display:block" alt="圖片" onload="ibStick()"></a>`
     else if (m.type === 'video' && (m.url || m.ext)) body = `<video src="${ibEsc(m.url || m.ext)}" controls style="max-width:260px;border-radius:10px;display:block"></video>`
     else if (m.type === 'audio' && (m.url || m.ext)) body = `<audio src="${ibEsc(m.url || m.ext)}" controls style="max-width:240px"></audio>`
-    else if (m.type === 'file') body = (m.url || m.ext) ? `<a href="${ibEsc(m.url || m.ext)}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}${m.size ? ` <span class="hint" style="font-size:11px">${Math.round(m.size / 1024)} KB</span>` : ''}</a>` : `${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}（沒抓到內容）`
+    else if (m.type === 'file') body = (m.url || m.ext) ? `<a href="javascript:void 0" onclick="ibPreview(${mi})" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}${m.size ? ` <span class="hint" style="font-size:11px">${Math.round(m.size / 1024)} KB</span>` : ''}</a>` : `${IB_ICON.file} ${ibEsc(m.fileName || '檔案')}（沒抓到內容）`
     else if (m.type === 'location' && m.loc) body = `<a href="https://maps.google.com/?q=${m.loc.lat},${m.loc.lng}" target="_blank" rel="noopener" style="display:flex;gap:6px;align-items:center;color:inherit">${IB_ICON.pin} ${ibEsc(m.text || '位置')}</a>`
     else if (['image', 'video', 'audio'].includes(m.type)) body = `（${{ image: '圖片', video: '影片', audio: '語音' }[m.type]}沒抓到內容）`
     else body = ibEsc(m.text || '')
@@ -225,6 +225,23 @@ function ibListNew(d2) { // v4.71.24 張良「有傳新對話來、我還沒點�
   _ibD = d2; ibRenderList()
   if (fresh.length) libToast(fresh.length === 1 ? `${fresh[0].alias || fresh[0].name || '客人'} 傳來新訊息` : `${fresh.length} 位客人傳來新訊息`)
 }
+// v4.71.26 張良 2026-10-14「點開檔案或照片，同一頁預覽就好，不要開分頁」：照片放大、PDF 內嵌、其他檔案顯示 AI 讀到的內容＋下載鈕；Esc／點外面關
+function ibPreview(i) {
+  const m = _ibMsgs[i]; if (!m) return
+  const url = m.url || m.ext, name = m.fileName || (m.type === 'image' ? '圖片' : '檔案'), ext = String(name).toLowerCase().split('.').pop()
+  const isImg = m.type === 'image' || /^image\//.test(m.mime || ''), isPdf = m.mime === 'application/pdf' || ext === 'pdf'
+  const main = isImg ? `<img src="${ibEsc(url)}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px">`
+    : isPdf ? `<iframe src="${ibEsc(url)}" style="width:100%;height:100%;border:0;border-radius:8px;background:#fff"></iframe>`
+    : `<div style="margin:auto;text-align:center;color:#cbd5e1;font-size:14px;line-height:1.7">${IB_ICON.file}<div style="font-size:16px;font-weight:700;margin-top:6px">${ibEsc(name)}</div>這種檔案瀏覽器沒辦法直接顯示，${m.ai ? '右邊是系統讀到的內容；' : ''}要看原檔按右上「下載」</div>`
+  const side = m.ai ? `<div style="width:min(38%,460px);flex:none;overflow:auto;background:var(--card);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.6;white-space:pre-wrap;color:var(--text,#e5e7eb)"><b style="color:#0ea5e9">系統讀到的內容</b>\n${ibEsc(m.ai)}</div>` : ''
+  const ov = document.createElement('div'); ov.id = 'ibPv'
+  ov.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(5,8,14,.92);display:flex;flex-direction:column;padding:12px 14px;gap:10px'
+  ov.innerHTML = `<div style="display:flex;gap:8px;align-items:center;color:#fff"><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ibEsc(name)}</b><a class="mini" href="${ibEsc(/[?&]token=/.test(url) ? url + '&download=' + encodeURIComponent(name) : url)}" download="${ibEsc(name)}" style="padding:6px 12px;text-decoration:none">下載</a><button class="mini" style="padding:6px 12px" onclick="ibPvClose()">關閉</button></div>
+    <div style="flex:1;min-height:0;display:flex;gap:12px;${window.innerWidth < 760 ? 'flex-direction:column' : ''}"><div style="flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)ibPvClose()">${main}</div>${side}</div>`
+  document.body.appendChild(ov)
+  ov._esc = (e) => { if (e.key === 'Escape') ibPvClose() }; document.addEventListener('keydown', ov._esc)
+}
+function ibPvClose() { const ov = document.getElementById('ibPv'); if (!ov) return; document.removeEventListener('keydown', ov._esc); ov.remove() }
 function ibStick() { const b = document.getElementById('ibMsgs'); if (b && b._stick) b.scrollTop = b.scrollHeight }
 async function ibOpen(id, keep) {
   _ibCur = id; _ibMsgs = []; _ibConv = null

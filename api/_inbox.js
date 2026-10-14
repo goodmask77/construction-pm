@@ -12,7 +12,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
-export const INBOX_VER = '4831' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
+export const INBOX_VER = '4832' // 跟 index.html 的 p24-inbox.js?v= 同步；前端每次輪詢比對，不一樣就自動重新整理（手機 PWA 常抓舊 JS，張良 10-11 錄影）
 export const ACCOUNTS = [
   { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
   { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
@@ -516,7 +516,7 @@ export async function inboxAi({ who, mgr, cfg, id, q, hist }) {
   const rows = await kvLike(`pm_inbox_m_${acct}_${uid}_`, 60, 'id.desc')
   rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
   const tw = (t) => new Date(new Date(t).getTime() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
-  const lines = rows.map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : m.dir === 'out' ? '我們（' + (m.by || '') + '）' : '系統'}：${String(m.text || (m.media ? '（圖片／檔案）' : '')).slice(0, 500)}`)
+  const lines = rows.map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : m.dir === 'out' ? '我們（' + (m.by || '') + '）' : '系統'}：${(String(m.text || (m.media ? '（圖片／檔案）' : '')) + (m.ai ? `\n　〔照片／檔案內容（AI 讀的）〕${m.ai}` : '')).slice(0, m.ai ? 3000 : 500)}`)
   const memos = [...(conv.note ? [{ by: '', text: conv.note }] : []), ...(conv.memos || [])].map(m => `・${m.by ? m.by + '：' : ''}${m.text}`)
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   const pk = pickDates([question, ...(Array.isArray(hist) ? hist : []).slice(-4).map(h => h.text), ...rows.filter(m => m.dir === 'in').slice(-15).map(m => m.text), ...memos].join('\n'), today)
@@ -676,6 +676,74 @@ export async function inboxClassify() {
   for (const c of todo) { const v = map[c.id]; c.aiCatN = (c.aiCatN || 0) + 1; if (v && cats.includes(v)) { c.cat = v; c.catBy = 'ai'; n++ } await kvSet(convKey(c.acct, c.uid), c, '收件匣AI分類') }
   return { ok: true, n, tried: todo.length }
 }
+// ── v4.71.26 讀照片／檔案內容（張良 2026-10-14「summer 的照片跟檔案內容讀取得到嗎」＋「Word、Excel 怎麼會讀不了」）──
+// 每張只讀一次，結果存在那則訊息的 ai 欄位（張良同意）；照片、PDF 給 AI 看（路由 mediaread）；Word／Excel／PowerPoint 直接拆檔取文字，不花 AI 錢
+async function kvLikeRows(prefix, limit) {
+  try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(prefix))}*&select=id,data&order=id.desc&limit=${limit || 300}`, { headers: H() }); const rows = r.ok ? await r.json() : []; return rows.map(x => { try { return { id: x.id, v: JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean) } catch (_) { return [] }
+}
+async function unzipText(buf, want) { // 極簡 zip 讀取（Office 檔就是 zip）：只解 want(name) 為真的檔
+  const zlib = await import('node:zlib'); const out = {}
+  let e = buf.length - 22; while (e >= 0 && buf.readUInt32LE(e) !== 0x06054b50) e--
+  if (e < 0) return out
+  let p = buf.readUInt32LE(e + 16); const n = buf.readUInt16LE(e + 10)
+  for (let i = 0; i < n; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break
+    const meth = buf.readUInt16LE(p + 10), csz = buf.readUInt32LE(p + 20), nl = buf.readUInt16LE(p + 28), xl = buf.readUInt16LE(p + 30), cl = buf.readUInt16LE(p + 32), lo = buf.readUInt32LE(p + 42)
+    const name = buf.slice(p + 46, p + 46 + nl).toString('utf8'); p += 46 + nl + xl + cl
+    if (!want(name)) continue
+    const ds = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28), raw = buf.slice(ds, ds + csz)
+    try { out[name] = (meth === 8 ? zlib.inflateRawSync(raw) : raw).toString('utf8') } catch (_) {}
+  }
+  return out
+}
+const xmlText = (x) => String(x || '').replace(/<\/w:p>|<\/a:p>|<w:br\/>|<w:tab\/>/g, m => m === '<w:tab/>' ? '\t' : '\n').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim()
+async function officeText(buf, ext) {
+  if (ext === 'docx') { const f = await unzipText(buf, n => n === 'word/document.xml'); return xmlText(f['word/document.xml']) }
+  if (ext === 'pptx') { const f = await unzipText(buf, n => /^ppt\/slides\/slide\d+\.xml$/.test(n)); return Object.keys(f).sort((a, b) => parseInt(a.match(/\d+/)) - parseInt(b.match(/\d+/))).map((k, i) => `【第 ${i + 1} 頁】\n` + xmlText(f[k])).join('\n') }
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+    const X = (await import('xlsx')).default || (await import('xlsx')); const wb = X.read(buf, { type: 'buffer' })
+    return wb.SheetNames.slice(0, 5).map(nm => `【${nm}】\n` + X.utils.sheet_to_csv(wb.Sheets[nm], { blankrows: false }).split('\n').slice(0, 300).join('\n')).join('\n')
+  }
+  if (ext === 'txt') return buf.toString('utf8')
+  return ''
+}
+const MEDIA_PROMPT = '把這個檔案的內容完整轉成繁體中文文字，給餐廳客服同事看。對話截圖：逐則列出「誰：說了什麼」（含時間、金額、帳號末幾碼）；報價單／意向書／合約：列出所有欄位、日期、時段、人數、金額、訂金、帳戶；一般照片：一句話描述＋圖上看得到的字。不要加評論，不要省略數字。'
+async function mediaReadOne(m) {
+  if (!m.media) return ''
+  const ext = String(m.fileName || m.media).toLowerCase().split('.').pop(), mime = String(m.mime || '')
+  const isImg = m.type === 'image' || mime.startsWith('image/'), isPdf = mime === 'application/pdf' || ext === 'pdf'
+  const office = ['docx', 'xlsx', 'xls', 'pptx', 'csv', 'txt'].includes(ext)
+  if (!isImg && !isPdf && !office) return '' // 影片、語音、舊版 .doc／.ppt 先跳過
+  const u = await signedUrl(m.media, 600); if (!u) return ''
+  const r = await fetch(u); if (!r.ok) return ''
+  const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 18e6) return '（檔案太大，沒有讀）'
+  if (office) return (await officeText(buf, ext)).slice(0, 6000)
+  const { aiCall } = await import('./_ai.js')
+  const res = await aiCall('mediaread', { messages: [{ role: 'user', content: [{ type: 'image', media_type: isPdf ? 'application/pdf' : (mime.startsWith('image/') ? mime : 'image/jpeg'), data: buf.toString('base64') }, { type: 'text', text: MEDIA_PROMPT }] }], maxTokens: 2500, timeoutMs: 90000 })
+  return String(res.text || '').trim().slice(0, 6000)
+}
+export async function inboxMediaRead({ force, limit = 12 } = {}) { // 每小時：有新動靜的對話裡還沒讀過的照片／檔案；force＝全部對話補讀
+  const all = await kvLike('pm_inbox_c_', 600, 'updated_at.desc')
+  const convs = all.filter(c => c && !(acctOf(c.acct) || {}).relay && c.lastT && (force || !c.mediaChkT || c.lastT > c.mediaChkT))
+  let n = 0, tried = 0, fail = 0
+  for (const c of convs) {
+    if (tried >= limit) break
+    const rows = (await kvLikeRows(`pm_inbox_m_${c.acct}_${c.uid}_`, 300)).filter(x => x.v.media && x.v.ai == null)
+    let got = 0
+    for (const x of rows) {
+      if (tried >= limit) break
+      tried++
+      let txt = ''; try { txt = await mediaReadOne(x.v) } catch (e) { fail++; continue }
+      x.v.ai = txt || ''; x.v.aiT = nowIso(); await kvSet(x.id, x.v, '收件匣讀檔'); if (txt) { n++; got++ }
+    }
+    const left = rows.length - rows.filter(x => x.v.ai != null).length
+    const cur = await kvGet(convKey(c.acct, c.uid)); if (!cur) continue
+    if (!left) cur.mediaChkT = nowIso()
+    if (got) cur.bkChkT = '' // 讀到新內容→下一輪訂位偵測重看這位
+    await kvSet(convKey(c.acct, c.uid), cur, '收件匣讀檔')
+  }
+  return { ok: true, read: n, tried, fail }
+}
 // ── v4.71.23 確定訂位日期 × inline 有沒有訂（張良 2026-10-14「偵測客人已經確定的訂位日期、inline 訂位了沒，常態顯示讓我不會漏掉」）──
 // conv.bk＝{date,time,n,name,phone,by:'ai'|'man',ok(人工標已訂),t}；conv.bkSt＝{st:'ok'|'maybe'|'none',rec,dayG,dayN,ref,pct,em,at}；conv.bkRem＝{d,h,sent}
 // 提醒（張良 B）：活動前兩週起每天提醒；還沒到兩週但那天 inline 已訂到平常滿位的一半以上（訂不到位的風險）就提早每天提醒；時間每天隨機 12~20 點
@@ -691,7 +759,7 @@ export async function bkDetect({ limit = 15, force } = {}) {
   let n = 0
   const one = async (c) => {
     const rows = await kvLike(`pm_inbox_m_${c.acct}_${c.uid}_`, 80, 'id.desc'); rows.sort((x, y) => String(x.t).localeCompare(String(y.t)))
-    const lines = rows.filter(m => m.text && m.dir !== 'sys').map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : '店家'}：${String(m.text).slice(0, 300)}`).join('\n').slice(-9000)
+    const lines = rows.filter(m => (m.text || m.ai) && m.dir !== 'sys').map(m => `[${tw(m.t)}] ${m.dir === 'in' ? '客人' : '店家'}：${String(m.text || '').slice(0, 300)}${m.ai ? `〔照片／檔案內容〕${String(m.ai).slice(0, 1500)}` : ''}`).join('\n').slice(-14000)
     const memos = (c.memos || []).map(m => m.text).join('\n').slice(0, 2000)
     let j = null
     try {
