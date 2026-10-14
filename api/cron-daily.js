@@ -138,12 +138,16 @@ export default async function handler(req, res) {
   if (req.query?.vegsync === '1' || tpeH0 === 8) {
     let vegR = null
     try {
+      const ownR = await fetch(`${SB_URL}/rest/v1/pm_domain_lock?select=prefix,owner`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }) // 同 mail-sync abgdOwnerOf（不載入整個 mail-sync）；讀不到＝不同步（fail closed）
+      const ownL = ownR.ok ? await ownR.json() : null
+      const ownHit = Array.isArray(ownL) ? ownL.filter(l => 'sp_finance_pm_veg_quotes'.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0] : { owner: 'unknown' }
+      if ((ownHit ? ownHit.owner : 'gd') !== 'gd') throw new Error('skip-abgd') // abgd 搬家（F13）：成本模組切新殼後由新殼排程同步，GD 不讀、不寫、不發 LINE
       const { syncFromSheets, syncSummaryText } = await import('./_vegquote.js')
       vegR = await syncFromSheets({ kvGet, kvPut: kvSave, who: { name: '每日自動' } })
       const txt = syncSummaryText(vegR)
       if (txt && TOKEN && BOSS && req.query?.dry !== '1') { const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: BOSS, messages: [{ type: 'text', text: txt.slice(0, 4900) }] }) }); vegR.pushed = pr.ok }
       console.log('vegsync', JSON.stringify((vegR.vendors || []).map(x => ({ v: x.vendor, ok: x.ok, ch: (x.changes || []).length, err: x.error }))))
-    } catch (e) { console.log('vegsync err', e?.message); vegR = { ok: false, error: e?.message } }
+    } catch (e) { if (e?.message === 'skip-abgd') { console.log('vegsync 跳過：成本模組已在新殼'); vegR = { ok: true, skipped: 'abgd' } } else { console.log('vegsync err', e?.message); vegR = { ok: false, error: e?.message } } }
     if (req.query?.vegsync === '1') return res.status(200).json({ ok: true, veg: vegR })
   }
   try { const { ddHealthCleanup } = await import('./_ddhealth.js'); console.log('ddhealth cleanup', JSON.stringify(await ddHealthCleanup())) } catch (e) { console.log('ddhealth cleanup err', e?.message) } // v4.70.39 去重列
