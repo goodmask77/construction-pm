@@ -257,7 +257,7 @@ const ACTIONS = {
     const it = a.it || {}
     const gidI = await ddGroupGid(cfgI.group)
     const mem = await groupMembers(gidI)
-    const ok = await linePush(gidI, [{ type: 'text', text: ddFill(cfgI.text, { st: it.st, content: (it.text || '（見附件）') + ((it.media || []).length ? `・附件${it.media.length}` : ''), by: it.by }) + await quotaFoot(mem) }])
+    const ok = await linePush(gidI, [{ type: 'text', text: ddFill(cfgI.text, { st: it.st, content: (it.text || '（見附件）') + ((it.media || []).length ? `・附件${it.media.length}` : ''), by: it.by }) + await quotaFoot(mem) }], 'issue-pub:' + (a.id || it.id || '') + ':' + gidI) // 固定鍵＝問題＋目標群（不同群是不同發送單元）
     return ok ? { ok: true, sent: true } : { ok: false, retry: true }
   },
   async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
