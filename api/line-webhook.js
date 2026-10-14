@@ -81,19 +81,17 @@ async function kvSet(id, valueObj) {
 //  2) abgdCommand(domain, action, args, operator)：owner=abgd 時改打新殼 /api/core/commands（HMAC 簽章＋冪等鍵）
 //  3) kvSet 被擋時回 false 並讓動作迴圈回「這項已搬到新版」，不假存檔
 const _abgdLockCache = { at: 0, rows: [] }
-// abgd 關卡 3 SOP 第五輪：問題回報 LINE 發布嘗試紀錄（鍵在 SOP 資料域以外：sp_finance_pm_pipub_log），保留 200 筆
-async function piPubLog() { return (await kvGet('sp_finance_pm_pipub_log')) || { list: [] } }
-async function piPubLogPut(e) { const d = await piPubLog(); d.list = [e, ...(d.list || []).filter(x => !(x.id === e.id && x.state !== 'accepted' && e.state === 'accepted') && !(x.id === e.id && x.state === e.state))].slice(0, 200); await kvSet('sp_finance_pm_pipub_log', d) }
-// 問題回報單筆條件更新：讀 data＋updated_at → 改指定一筆 → PATCH 時要求 updated_at 沒變（=版本 CAS），衝突重試 4 次
-async function sopIssueCas(id, fn) {
+// abgd 關卡 3 SOP 第五／六輪：問題回報條件更新——讀 data＋updated_at → fn(doc) 改（回 false＝不寫）→ PATCH 要求 updated_at 沒變（版本 CAS，
+// updated_at 每次寫入都換成新的時間，不會回到舊值）→ 回傳筆數 1 才算成功；衝突重讀重做 4 次；被搬家閘門擋＝失敗
+async function sopIssueCas(fn) {
   for (let i = 0; i < 4; i++) {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_sop_issues&select=data,updated_at`, { headers: sbHeaders })
     if (!r.ok) return false
     const row = (await r.json())[0]; if (!row) return false
-    const doc = JSON.parse(row.data.v || '{}'); const it = (doc.list || []).find(x => x.id === id); if (!it) return false
-    fn(it)
+    const doc = JSON.parse(row.data.v || '{}'); doc.list = doc.list || []
+    if (fn(doc) === false) return false
     const u = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_sop_issues&updated_at=eq.${encodeURIComponent(row.updated_at)}`, { method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=representation' }, body: JSON.stringify({ data: { v: JSON.stringify(doc) }, editor: 'D哥', updated_at: new Date().toISOString() }) })
-    if (!u.ok) return false // 閘門擋（搬家中）等
+    if (!u.ok) return false
     if ((await u.json()).length === 1) return true
     await new Promise(res => setTimeout(res, 150 + Math.random() * 300))
   }
@@ -2439,33 +2437,34 @@ export default async function handler(req, res) {
             const headP = `【${itP.st}】${(itP.text || '（附件）').slice(0, 40)}`
             if (piOp === 'go') {
               if (itP.pub === 'ok') { await repP(`✅ 這筆已經發布過了：${headP}`); continue } // 一案只發布一次（與新殼一致）
-              // abgd 關卡 3 SOP 第五輪：發布嘗試紀錄（SOP 資料域以外的鍵，搬家凍結中也寫得進去）——
-              // LINE 已接受過的問題，不管隔多久都不再發（只補存狀態）；切換時用這份清單核對在途發布
-              const plog = await piPubLog()
-              const prevA = (plog.list || []).find(x => x.id === piId && x.state === 'accepted')
-              let sentP = !!prevA
-              if (!sentP) {
-                const hk = crypto.createHash('sha1').update('pi-pub:' + piId).digest('hex'); const fk = `${hk.slice(0, 8)}-${hk.slice(8, 12)}-4${hk.slice(13, 16)}-a${hk.slice(17, 20)}-${hk.slice(20, 32)}`
-                await piPubLogPut({ id: piId, key: fk, state: 'sending', by: meP.name, ts: new Date().toISOString() })
-                try {
-                  const { prepLink } = await import('./_webpush.js')
-                  const rP = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN, 'X-Line-Retry-Key': fk }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }), signal: AbortSignal.timeout(15000) })
-                  sentP = rP.ok || rP.status === 409
-                } catch (_) {}
-                await piPubLogPut({ id: piId, key: fk, state: sentP ? 'accepted' : 'unknown', by: meP.name, ts: new Date().toISOString() })
+              // abgd 關卡 3 SOP 第六輪：「發布中」記在這筆回報本身（pubTry，版本 CAS 寫入）——
+              // ①搬家凍結後這一步一定被資料庫閘門擋＝凍結後不會再有新的外發開始；②紀錄跟著資料同步到新殼，不會漏帳
+              // ③之前有嘗試且超過 23 小時（LINE 去重期限前）＝不再自動重發，標已發布＋「未確認」註記給人核對
+              const hk = crypto.createHash('sha1').update('pi-pub:' + piId).digest('hex'); const fk = `${hk.slice(0, 8)}-${hk.slice(8, 12)}-4${hk.slice(13, 16)}-a${hk.slice(17, 20)}-${hk.slice(20, 32)}`
+              const prevT = itP.pubTry
+              if (prevT && (prevT.ch !== 'pi' || Date.now() - Date.parse(prevT.ts) > 23 * 3600e3)) {
+                const okU = await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok') return false; x.pub = 'ok'; x.pubNote = '發布結果未確認（前次嘗試' + (prevT.ch !== 'pi' ? '走另一個入口' : '已超過 23 小時') + '），未重發，請到群組核對'; return true })
+                await repP(okU ? `⚠️ 這筆之前已經嘗試發布過、結果不明；為避免重複不再自動重發，已標為已發布，請到群組確認：${headP}` : '⚠️ 狀態沒存進去（可能正在搬家），請稍後再按一次。'); continue
               }
-              if (!sentP) { await repP('⚠️ 這次沒能確認 LINE 有沒有收到，狀態還是待發布；請稍後再按一次（同一則 24 小時內不會重複）。'); continue }
-              // 只改這一筆的發布狀態，用版本（updated_at）條件更新；衝突就重讀再改，不重發、也不蓋掉別人同時的修改
-              if (!(await sopIssueCas(piId, it => { it.pub = 'ok' }))) { await repP('⚠️ LINE 已接受，但「已發布」狀態沒存進去（可能正在搬家）；稍後再按一次只會補存、不會重發。'); continue }
+              if (!prevT) {
+                const okT = await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok' || x.pubTry) return false; x.pubTry = { ch: 'pi', key: fk, ts: new Date().toISOString(), by: meP.name }; return true })
+                if (!okT) { await repP('⚠️ 沒能開始發布（可能正在搬家或有人同時按），請稍後再按一次。'); continue }
+              }
+              let sentP = false
+              try {
+                const { prepLink } = await import('./_webpush.js')
+                const rP = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN, 'X-Line-Retry-Key': fk }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }), signal: AbortSignal.timeout(15000) })
+                sentP = rP.ok || rP.status === 409
+              } catch (_) {}
+              if (!sentP) { await repP('⚠️ 這次沒能確認 LINE 有沒有收到，狀態還是待發布；23 小時內再按一次不會重複（同一把防重複鍵）。'); continue }
+              if (!(await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x) return false; x.pub = 'ok'; return true }))) { await repP('⚠️ LINE 已接受，但「已發布」狀態沒存進去（可能正在搬家）；稍後再按一次只會補存、不會重發。'); continue }
               try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: `⚠️ 問題回報【${itP.st}】`, body: `${(itP.text || '（附件）').slice(0, 60)} — ${itP.by}`, url: '/prep' }) } catch (_) {} // v4.33.0 GD推播
               await repP(`✅ 已發布到內部群：${headP}`)
             } else if (piOp === 'hold') {
-              itP.pub = 'hold'
-              if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue }
+              if (!(await sopIssueCas(d => { const x = (d.list || []).find(y => y.id === piId); if (!x || x.pub === 'ok') return false; x.pub = 'hold'; return true }))) { await repP('⚠️ 沒存進去（已發布過、找不到，或正在搬家），請重新整理後再按。'); continue }
               await repP(`📥 已保留（不進群，看板上仍看得到）：${headP}`)
             } else if (piOp === 'del') {
-              docP.list = (docP.list || []).filter(x => x.id !== piId)
-              if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue }
+              if (!(await sopIssueCas(d => { const n0 = (d.list || []).length; d.list = (d.list || []).filter(y => y.id !== piId); return d.list.length !== n0 }))) { await repP('⚠️ 沒刪成（找不到或正在搬家），請重新整理後再按。'); continue }
               await repP(`🗑 已刪除：${headP}`)
             }
           } catch (e) { console.log('pub issue postback error', e?.message); await repP('⚠️ 處理出錯，再按一次或到 /prep 任務分頁操作。') }
