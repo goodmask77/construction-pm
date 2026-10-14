@@ -2281,10 +2281,14 @@ export default async function handler(req, res) {
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const routes = {}
     for (const [k, u] of Object.entries(b.routes || {})) { if (/^[a-z0-9_]{1,24}$/i.test(k) && /^https:\/\/[a-z0-9.-]+\.vercel\.app\//.test(String(u))) routes[k] = String(u).slice(0, 200) }
-    const rt = (await kvGet('sp_finance_pm_prep_routes')) || {}
-    rt.routes = routes; rt.log = (rt.log || []).slice(-49); rt.log.push({ ts: new Date().toISOString(), by: String(b.by || 'abgd').slice(0, 40), reason: String(b.reason || '').slice(0, 120), keys: Object.keys(routes) })
-    await kvPut('sp_finance_pm_prep_routes', rt, 'abgd-switch')
-    return res.status(200).json({ ok: true, routes })
+    // abgd 關卡 3 第十輪：帶版本（新殼快照當下時間）原子寫入；舊快照晚到被拒（409 stale）
+    const ver = Number(b.ver)
+    if (!Number.isFinite(ver) || ver <= 0) return res.status(400).json({ ok: false, error: '缺版本 ver' })
+    const rr = await fetch(`${SB_URL}/rest/v1/rpc/pm_routes_set`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ p_routes: routes, p_ver: ver, p_by: String(b.by || 'abgd'), p_reason: String(b.reason || '') }) })
+    const rj = rr.ok ? await rr.json() : null
+    if (!rj) return res.status(500).json({ ok: false, error: '寫入失敗 HTTP ' + rr.status })
+    if (rj.stale) return res.status(409).json({ ok: false, stale: true, ver: rj.ver, error: '入口版本過時被拒' })
+    return res.status(200).json({ ok: true, routes, ver })
   }
   // abgd 看門狗（2026-10-14，獨立 Claude 關卡 2 ④）：每 5 分鐘 cron。入口指向新殼的分頁，若新殼健康檢查連續 3 次失敗→GD 自己清掉 routes（夥伴回舊頁）＋私訊張良；不動資料庫鎖（鎖只有新殼控制器能解，資料不會雙寫）
   if (req.query?.abgdwatch) {
@@ -2299,8 +2303,10 @@ export default async function handler(req, res) {
     let bad = 0
     for (let i = 0; i < 3; i++) { try { const r = await fetch(origin + '/api/core/health', { cache: 'no-store' }); if (!r.ok) bad++ } catch (_) { bad++ } if (bad < i + 1) break; await new Promise(r => setTimeout(r, 2000)) }
     if (bad < 3) return res.status(200).json({ ok: true, routes: keys.length, healthy: true })
-    rt.routes = {}; rt.log = (rt.log || []).slice(-49); rt.log.push({ ts: new Date().toISOString(), by: 'gd-watchdog', reason: '新殼健康檢查連續 3 次失敗，GD 自己切回', keys })
-    await kvPut('sp_finance_pm_prep_routes', rt, 'gd-watchdog')
+    // 也走版本圍欄（版本＝現在時間）：之後晚到的舊入口快照不能再把入口指回新殼
+    const cr = await fetch(`${SB_URL}/rest/v1/rpc/pm_routes_set`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ p_routes: {}, p_ver: Date.now(), p_by: 'gd-watchdog', p_reason: '新殼健康檢查連續 3 次失敗，GD 自己切回' }) })
+    const cj = cr.ok ? await cr.json().catch(() => null) : null
+    if (!cj || !cj.ok) { try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼健康檢查連續失敗，但清入口沒成功（HTTP ' + cr.status + '），請人工處理：' + keys.join('、')) } catch (_) {} return res.status(500).json({ ok: false, error: '清入口失敗', status: cr.status }) }
     try { const { linePush } = await import('./_onboard.js'); await linePush('Uf7ce4fb9191cd3055247204e0cb6b4fc', '【GD 看門狗】新殼連續 3 次健康檢查失敗，已把入口切回舊版：' + keys.join('、') + '\n資料庫鎖未動（新殼控制器恢復後要人工確認）') } catch (_) {}
     return res.status(200).json({ ok: true, routes: 0, healthy: false, cleared: keys })
   }
