@@ -1,0 +1,46 @@
+# abgd 搬家交接（2026-10-14 22:30，Opus 5.5）
+
+> 下一個 session 開工：先讀這份 → docs/ABGD_MIGRATION_ORDER.md（張良指令全文）→ docs/ABGD_RECOVERY.md（恢復手冊 v12）→ docs/FEATURE_MAP.md（進度表＋5.2 SOP 刻意差異）→ docs/ABGD_3AI_LOG.md（關卡紀錄）。
+> 授權（張良 10-14）：不等確認、一功能一功能搬完；新表不用先問；**取名字一律先問**；abgd 自己合併部署；GD 改動走 PR、檢查過自己合併並從 origin/main 部署。每個功能：真表→搬資料→對帳差 0→畫面→速度（P95 ≤ 0.5 秒）→關卡 3 三家（分 A 阻擋／B 程序，取較安全）→才切入口。**一律繁體中文回覆**（全域 CLAUDE.md 鐵則）。
+
+## 一、目前狀態
+| 功能 | 狀態 | 資料域（GD 前綴） |
+|---|---|---|
+| 登入／身分 F34 | ✅ 第 0 波 | — |
+| 文件庫 F21 | ✅ 已切（epoch 4） | library |
+| 會議 F14 | ✅ 已切（epoch 5） | meet |
+| 回饋 F17 | ✅ 已切 17:30（epoch 38；關卡 3 共 14 輪） | feedback |
+| SOP F02＋問題回報 F33 | ✅ 已切 20:45（epoch 1；9 輪） | sop（sp_finance_pm_sop_） |
+| 班表 F15 第 A 段（班表主檔） | ✅ 已切 21:50（epoch 1；3 輪） | shift（只有 sp_finance_pm_shift_g） |
+| 物料卡 F11 | 🔧 子代理在 abgd 分支 ops/matcard 寫後端＋畫面（拆域已做、已套兩庫） | matcard |
+| 其餘 | 待搬 | 見 FEATURE_MAP |
+
+版本：新殼 v0.4.50（main）、GD v4.71.58（main，已部署）。
+
+## 二、第 2 波順序（10-14 盤點結論）
+物料卡 → 耗損（要 AI 讀秤：新殼還沒接 AI，要先做「AI 走 GD 代發口唯讀動作」或新殼 AI 出口）→ 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+- **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
+- 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
+
+## 三、搬一個功能的標準做法（照抄 SOP／班表）
+1. abgd：migration 拆／登記資料域（core.domains、feature_domains、feature_routes enabled=false）→ 兩庫套用（scratchpad gdsql.mjs <ref> -f；abgd-prod=cvxfraewzuspajectpir、abgd-test=xyrciaevkchhazdpwhyy、GD=nfzaorkffvyldcbqagte）。
+2. 子代理寫 lib/ops/<功能>.ts（gdTxn＋assertWriter＋canEdit 照 GD permWho）、app/api/ops/<功能>/route.ts、components、讀取合成一次 RPC（ops.<x>_view）＋authSub 並行；GD_DOC_KEYS 登記；scripts/reconcile.mjs 加功能。
+3. 合併部署（scratchpad prmerge.mjs：檢查全過才合；剛 push 等 20 秒）→ POST /api/core/sync/project?key=CRON_SECRET 補投影 → reconcile 差 0 → GD 讀取 vs 新殼讀取逐欄比（不計鍵順序）→ 速度 perf2.mjs（驗 200＋大小）。
+4. GD 端：所有寫該前綴的口 owner≠gd 回 409（不分方法）；跨功能寫入改 abgdCmd 轉新殼命令（新殼 /api/core/commands：佔位＋內容雜湊＋收據 core.cmd_receipts 與業務同交易）；舊頁按鈕走權限鎖門器唯讀；?legacy=1 不導新殼。
+5. 關卡 3：OpenAI／Gemini 用 scratchpad ai3b.mjs，獨立 Claude 用子代理；要求分 A／B；GD 程式段用 grep -F 找行號貼進題目。
+6. 切換：可切清單 SWITCH_ALLOW（lib/core/switch.ts）加域 → 安靜時段 → POST /api/core/switch?key=CRON_SECRET {"op":"switch","domain":...} → 切後驗收（GD 寫口 409、新殼寫一筆看 1 分鐘內反推到 GD、對帳）→ 30 分鐘監看（scratchpad monshift.sh 樣板，每個請求要有逾時）。
+7. 記錄：ABGD_3AI_LOG、FEATURE_MAP、記憶 abgd-shell.md；私訊張良（GD ?dmsend=MENU_PROBE_KEY）。
+
+## 四、已知坑
+- effects.state 只允許 pending／sending／sent／dry／failed／cancelled（寫 processing 會整個失敗）。
+- iCloud 副本「* 2」「* 3」會讓型別檢查失敗：`find . -not -path "./node_modules/*" -name "* [0-9]*" -delete`。
+- abgd 工作樹用 node_modules 捷徑無法 build（Turbopack）——在主目錄 build。
+- 速度量測：登入 15 分鐘過期會量到 401，要先 curl -b cj.txt -c cj.txt 刷新，用 perf2.mjs。
+- GD 鎖觸發器已改「先取最長前綴」（0013）。
+- 正式環境測拒絕路徑用無害內容；演練只在 drill 域（手冊 E）。
+
+## 五、待張良
+- 實測：LINE 問題回報三顆按鈕、GD 首頁「等確認發布」、排行榜評星、新版 SOP 打勾拍照、新版班表排班。
+- 回饋切換後第一筆真實給分還沒核對。
+- 命名待回：core.memberships、sp_finance_pm_prep_routes、「abgd 集團（暫名）」、sp_finance_pm_sopsum_outbox、sp_finance_pm_pipub_log（已不用）。
+- GD repo 改私有。
