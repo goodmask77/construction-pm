@@ -124,6 +124,26 @@ JWT 直讀 401／直寫 401；切換 epoch 2；DD 壞路徑拒；新增→改名
 | 2 | 不可切：fence 沒鎖、投影可倒退、回寫失敗卡住、舊版提醒污染、租約無 token、GD 重領非原子、busy 當成功、guard 錯誤當取消、edit 可不帶 rev | **可切**（下拉已修） | **可切**；中項：簽收擋編輯、失敗提醒卡後續、回切重複提醒 | v0.4.2＋GD v4.71.35：for share fence＋domain_set、meet_project_v rev 守門、meet_apply_result 交易防重比版本、claim token、條件重領、X-Line-Retry-Key、三態 guard、點名重算、content_rev 必帶、回切取消提醒；演練 3 真送全過 |
 | 3 | 不可切：GD finish/release 未驗 token、失去租約仍釋放鍵、投影 rev 0 可繞過 | **可切**；中：重試鍵模組變數並發互蓋 | （已判可切） | v0.4.3＋GD v4.71.36：token 存 editor 條件更新、effects_finish 同交易釋放、拒無效 rev、AsyncLocalStorage |
 | 4 | 只剩：writer NULL 判斷 | — | — | 改 is distinct from（欄位本來 not null） |
-### 結案：**會議 F14 正式切到新殼（2026-10-14 晚，epoch 5）**；切換前後對帳差 0；SIDE_EFFECTS=live；30 分鐘監看中。
+### 結案：**會議 F14 正式切到新殼（2026-10-14 晚，epoch 5）**；切換前後對帳差 0；SIDE_EFFECTS=live；**30 分鐘監看完成：6 次對帳全 0、域狀態維持、通知無失敗**。
 - 有意差異：新殼一律要登入（GD 未綁定可看）；Web Push 照 GD best-effort；通知改為交易提交後由 worker 送（延遲數秒，可靠性更高）。
 - 自我紀錄：PR 19 曾在 CI 失敗下合併（腳本未判斷結果）→ 已改成 CI success 才合併，寫進記憶 abgd-merge-discipline。
+
+
+## 關卡 3：每日回饋 F17（2026-10-14 下午，Opus 5.5）
+送審：影子投影對帳 0（GD 只有 fbj、fb_assign 兩鍵；fb、fb_dims 從沒人寫過）＋同人同日畫面逐欄比對（只多新殼 canEdit）＋演練 1＋速度（今天 P50 349／P95 446 ms）。新做「通用 GD 清單文件引擎」（ops.gd_docs／gd_items／gd_mutate／gd_project／gd_compose），之後 SOP、班表共用。
+演練 1 抓到並修：extra_set 兩層路徑中間層不存在時不寫卻回成功；新文件只有設定時被當清單文件（gd_docs_fix1）。
+### 第一輪
+| 家 | 結論 | 重點 |
+|---|---|---|
+| OpenAI | 有條件可切（目前不能按） | 非清單文件投影 has_list NULL（**實證成立**）、刪除組回成 {}、自動配對與指定回饋非原子／撞號覆蓋、毫秒 id 撞號、瀏覽器快取跨帳號洩漏管理者資料、換日草稿沿用、每日紀錄 ts 格式不同（**實證成立**：GD 是 HH:mm）、反向同步無租約可舊蓋新、只領最舊 100 筆被別域擋、凍結不比 epoch、awardPts 非原子且失敗回成功、給分 guard 名單比畫面窄、upsert 不截斷、gdList 受 1000 列上限、LIKE 底線萬用 |
+| Gemini | 有條件可切 | gd_project 重複 id 檢查 O(N²)（5000 筆）；其餘一致性、交易、回切給分續送都認可 |
+| Claude（獨立） | 有條件可切 | **H1** 中途打卡排序變動 → 配對 id 撞號、新殼覆蓋（GD 允許重複 id）；**H2** 切換中 GD 最後寫入只進鏡像不進真表、之後反推蓋掉；M1 給分檢查要名冊∪打卡者；M2 送出等 kick 3 秒；M3 GD 掛掉整頁壞；M4 給分失敗當成功；L1~L6 |
+### CC 修正（abgd v0.4.7＋GD v4.71.39，全部上線）
+- 引擎 fix2：coalesce、deleted 旗標、雜湊 O(N)、append 撞號報錯、append_unique、upsert 截斷、left()=prefix；gd_doc_get／gd_doc_put（整份版本檢查寫入，新文件 rev 1 起）＋gdTxn。測試庫邊界測試全過；5000 筆投影 1.2 秒。
+- 回饋：ts HH:mm、id 加亂數、配對與指定回饋 append_unique、名單 60 秒＋失敗用上次、給分檢查名冊∪打卡者、after() 觸發、gdList 分頁；前端拿掉 localStorage（回饋＋**會議、文件庫一起拿掉**）、換日重置草稿、只採最後請求、無權限反灰。
+- **H1 實測**：測試庫 2→3→4→5 人依序打卡，GD 原碼與新殼逐筆相同（含重複 id）。
+- **H2 切換追平**：換 writer 前直接讀 GD 最新版鏡像＋投影＋驗每鍵版本，沒對上就退回 GD。演練 2：GD 切換前一刻寫一筆，追平紀錄「GD 4 鍵、投影 4 鍵，版本全部對上」。
+- 反向同步：單例租約、寫前驗租約、只領新殼域、凍結比 epoch。
+- GD：awardPts 改條件更新原子寫入（12 次重試＋亂數退避），測試庫 20 筆同時給分全入帳、筆數完全正確；awardPtsStrict 給代發口（失敗重試）；正式代發口實打已給過 ref 回 dup（不動分數）；三寫入口檢查存檔；GD 閘門前綴改 left()（0005，已套，會議／文件庫對帳 0）。
+### 演練 2（正式環境）
+GD 先寫→切換（epoch 2，含追平）→ 舊端四口 409 → 新殼新增紀錄／指定（重複被擋）／面向 → 反推 3 鍵 → 對帳 0 → 清除 → 切回 → 對帳 0、無殘留、GD 入口只剩 lib／meet。
