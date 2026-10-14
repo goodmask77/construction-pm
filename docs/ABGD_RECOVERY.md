@@ -1,10 +1,10 @@
-# ABGD 切換／回切 人工恢復手冊（一頁）v2
+# ABGD 切換／回切 人工恢復手冊（一頁）v3
 
 > 2026-10-14 立；v2 依回饋 F17 關卡 3 第七輪三家意見改：每一步都是切換口的一個指令＋要讀回確認的結果，不手寫 SQL。
 > 指令：`POST https://ab-gd.vercel.app/api/core/switch?key=<CRON_SECRET>`，body 見各步（`by` 填你的名字）。
-> 看狀態：`GET` 同網址 → `domains`（writer／state／epoch／manual_required）、`ops`（最近 20 筆，含 running／unknown）。
-> 看 GD 鎖：每個指令的回應都會附，或 `freeze` 回應的 `gd` 欄。
-> 演練：7（部分解鎖→需人工對帳→清旗標→回切）、8（死信重放）、9（GD 真寫入→採用 GD 版本→對齊→回切）、10（平台中止→凍結→結案→恢復 GD）。
+> **看狀態（只讀）**：`GET 同網址&domain=<域>` → `abgd`（writer／state／epoch／manual_required）、`gd_locks`（每個前綴 owner／epoch，`missing` 要是空的）、`open_ops`（全部 running／unknown）、`sync`（dirty／dead／oldestDirty）、`routes`。任一欄是 `unavailable`＝那項查不到，不要當正常。
+> **GD 連得上嗎**：`GET /api/core/health?gd=1`（標頭 Authorization: Bearer CRON_SECRET）回 `gd:true`——這支真的去查 GD；`/api/core/health?domain=` 只驗新殼自己。
+> 演練：7（部分解鎖→需人工對帳→清旗標→回切）、8（死信重放）、9（GD 真寫入→採用 GD 版本→對齊→回切）、10（平台中止→凍結→結案→恢復 GD）、11（切換中人工 freeze→舊程序自己停手不解鎖）、12（無待推但 GD 不同→決議保留新殼版本→推回 GD→回切）。
 
 ## 先判斷是哪種狀況
 | 看到 | 狀況 |
@@ -14,28 +14,31 @@
 | 看門狗私訊「死信」或「超過 10 分鐘沒推回 GD」，manual_required=false | **A：反推卡住** |
 
 ## A：反推卡住（manual_required=false）
-1. 確認 GD 真的連得上：`GET /api/core/health?domain=<域>`（帶 Authorization: Bearer CRON_SECRET）回 ok；**不要只看 push 的 errors=0**（全是死信時 push 根本不會呼叫 GD）。
+1. 確認 GD 真的連得上：`GET /api/core/health?gd=1` 回 `gd:true`；**不要只看 push 的 errors=0**（全是死信時 push 根本不會呼叫 GD）。
 2. `{"op":"replay","domain":"<域>","by":"…","reason":"<原因>"}` → 回 `n` 與事件 id 清單。
-3. 等一分鐘 → `GET` 看 sync 積壓歸零（看門狗積壓告警消失）。
+3. 等一分鐘 → `GET …&domain=<域>` 看 `sync.dirty=0、sync.dead=0`（不要拿告警消失當依據，告警每小時才發一次）。
 4. 若域是 `abgd/frozen`（回切失敗的同步隔離）→ `{"op":"rollback","domain":"…","by":"…","reason":"…"}`。
 
 ## B：需人工對帳（manual_required=true）
 1. `{"op":"freeze","domain":"<域>","by":"…","reason":"…"}` → 回 `state:"frozen"`，且 `gd` 每個前綴都不是 gd、世代號一樣（freeze 一定把兩端推到同一個新世代）。
 2. 對帳：abgd repo `node scripts/reconcile.mjs <功能>`。
    - 差 0 → 第 4 步。
-   - 有差 → 看差的鍵在 GD 那邊是不是解鎖期間的新寫入（GD pm_documents.editor／updated_at）。要保留 GD 的 → 第 3 步；要保留新殼的 → 不用動（之後反推會把新殼版本送回 GD）。
-3. `{"op":"adopt_gd","domain":"<域>","by":"…","keys":["<鍵>",…]}` → 回 `adopted`；再對帳一次確認那些鍵差 0。
+   - 有差 → 看差的鍵在 GD 那邊是不是解鎖期間的新寫入（GD pm_documents.editor／updated_at），逐鍵決定保留哪一邊：
+3. 決議（每個差異鍵擇一）：
+   - 保留 GD 版本：`{"op":"adopt_gd","domain":"<域>","by":"…","keys":["<鍵>",…]}` → 回 `adopted`（含 GD 來源版本與摘要）；再對帳確認那些鍵差 0。要求 GD 全 frozen 且世代一致（第 1 步 freeze 已做到）。
+   - 保留新殼版本：`{"op":"keep_abgd","domain":"<域>","by":"…","keys":["<鍵>",…],"note":"<為什麼，至少 10 字>"}` → 回 `n`；會補待推事件，第 5 步 align 之後由反推送回 GD（**不做這一步，新殼版本不會自己推回去**）。
 4. `{"op":"manual_clear","domain":"<域>","by":"…","note":"<核對了什麼、怎麼處理，至少 10 字>"}` → 回 ok（程式先驗：新殼 frozen、GD 每個前綴有鎖列、不是 gd、世代號與新殼相同）。
 5. `{"op":"align","domain":"<域>","by":"…"}` → writer=abgd 時 GD 前綴回 abgd（新世代，反推恢復）；writer=gd 時 GD 前綴維持 frozen。
 6. 收尾：
-   - writer=abgd（新殼曾是正本）→ 等積壓推完（狀況 A 第 3 步）→ `{"op":"rollback",…}`（或要續留新殼找 CC）。
+   - writer=abgd（新殼曾是正本）→ 等 `sync.dirty=0` → 再對帳一次差 0 → `{"op":"rollback",…}`（或要續留新殼找 CC）。
    - writer=gd（新殼從沒開寫）→ `{"op":"restore_gd","domain":"…","by":"…","note":"<結論>"}` → 回 ok；GD 前綴全 gd、新殼 gd/gd。
 
 ## C：操作卡住／結果不明（含平台中止）
 **不要假設已經隔離**（平台中止時程式的隔離步驟可能沒跑）。
-1. `{"op":"freeze","domain":"<域>","by":"…","reason":"操作卡住"}` → 兩端凍結、標需人工對帳；卡住的 running 會改成 unknown。
+1. `{"op":"freeze","domain":"<域>","by":"…","reason":"操作卡住"}` → 兩端凍結（推進到新世代）、標需人工對帳；卡住的 running 改成 unknown＝撤銷它的控制權：舊程序若其實還活著，下一步就會發現自己被接管而停手，不會再動兩端（演練 11）。
 2. 結案：`{"op":"resolve_op","id":"<ops 裡那筆 id>","by":"…","note":"<結論>"}` → 程式驗兩端：「確認成功」（切換：新殼 abgd/abgd 且 GD 全 abgd）或「確認安全隔離」（新殼 frozen 且 GD 沒有 gd）才會結案（status＋finished_at＋紀錄同交易）。
 3. 接著走 **B**（從第 2 步對帳開始）。
+4. align／restore_gd 要求該域沒有未結案操作；看到「還有未結案的操作」就先做第 2 步。
 
 ## 永遠不要做
 - 不要手寫 SQL 改 `pm_domain_lock`、`core.domains`、`switch_ops`；舊的非 CAS 函式（pm_domain_set、core.domain_set）已停用。
