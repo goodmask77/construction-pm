@@ -128,7 +128,7 @@
     let h = `<div class="hint" style="margin-bottom:6px">套餐＝這個主餐＋可選附餐池＋可選飲料池＋額外包材＋加價。系統列出每種合法組合的成本與最低／最高；同一份包材不重複計入；加價是設定值。</div>`
     const pick = (PD.recipesPick || []).filter(r => r.type === 'dish')
     if (can()) {
-      const cur = ed && ed.kind === 'combo' ? ed : { sides: (it.comboCfg || {}).sides || [], drinks: (it.comboCfg || {}).drinks || [], upcharge: cb ? cb.upcharge : 0 } /* v4.71.78 從原設定開始（原本讀不存在的 sidesKeys，每次從空白開始、一存就清掉池） */
+      const cur = ed && ed.kind === 'combo' ? ed : { sides: (it.comboCfg || {}).sides || [], drinks: (it.comboCfg || {}).drinks || [], upcharge: (it.comboCfg || {}).upcharge || 0 } /* v4.71.78 從原設定開始（原本讀不存在的 sidesKeys，每次從空白開始、一存就清掉池） */
       h += `<div style="background:var(--soft);border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="hint">加價</span>${inp('prCbUp', cur.upcharge, 70, 'number')} 元</div>`
         + `<div style="margin-top:6px"><span class="hint">附餐池（可多選）</span><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${pick.map(r => `<button class="mini ${cur.sides.includes(r.key) ? 'on' : ''}" style="padding:2px 8px;font-size:12px" onclick="_prCbTog('sides','${esc(r.key)}')">${esc(r.name)}</button>`).join('')}</div></div>`
         + `<div style="margin-top:6px"><span class="hint">飲料池（可多選）</span><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${pick.map(r => `<button class="mini ${cur.drinks.includes(r.key) ? 'on' : ''}" style="padding:2px 8px;font-size:12px" onclick="_prCbTog('drinks','${esc(r.key)}')">${esc(r.name)}</button>`).join('')}</div></div>`
