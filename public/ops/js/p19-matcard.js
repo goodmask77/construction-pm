@@ -318,8 +318,11 @@
     const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) })
     const j = await r.json().catch(() => ({ ok: false, error: '連線問題' }))
     if (!j.ok) alert(j.error || '沒成功')
+    else if (j.noop && j.text) alert(j.text) // 新版：這些代碼本來就在同一張卡（名稱／主要來源沒改）
     return j.ok
   }
   // 給待處理中心用：合併建議「合併進同一張物料卡」直接生效
-  window.matcardMergeCodes = async function (sys, codes, name) { const keys = codes.map(c => (sys === 'GROUN:D' ? 'G|' : 'A|') + String(c || '').replace(/\s+/g, '')); return post({ op: 'merge', supplyKeys: keys, name, reason: '待處理中心合併建議' }) }
+  // 同一個合併建議：成功前重按都沿用同一個操作編號（結果不明時新版靠收據擋重做；abgd 關卡 3 物料卡第二輪）
+  const _mcReq = {}
+  window.matcardMergeCodes = async function (sys, codes, name) { const keys = codes.map(c => (sys === 'GROUN:D' ? 'G|' : 'A|') + String(c || '').replace(/\s+/g, '')); const rk = keys.slice().sort().join(',') + '|' + (name || ''); const reqId = _mcReq[rk] || (_mcReq[rk] = (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)))); const ok = await post({ op: 'merge', reqId, supplyKeys: keys, name, reason: '待處理中心合併建議' }); if (ok) delete _mcReq[rk]; return ok }
 })()

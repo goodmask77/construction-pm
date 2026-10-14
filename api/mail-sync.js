@@ -99,11 +99,11 @@ export async function abgdOwnerOf(key) {
 }
 const ABGD_MOVED = '這個功能已搬到新版，請從側欄重新點進去（會自動登入新版）'
 // abgd：轉命令給新殼（HMAC＋冪等鍵；同 line-webhook abgdCommand）——資料域在新殼時，GD 其他功能要改那個域的資料走這裡
-async function abgdCmd(domain, action, args, operator) {
+async function abgdCmd(domain, action, args, operator, idem) {
   const base = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '')
   const sec = (process.env.BRIDGE_SECRET || '').trim()
   if (!sec) return { ok: false, text: '新版命令金鑰未設定' }
-  const body = JSON.stringify({ idem: 'ms-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), domain, action, args, operator })
+  const body = JSON.stringify({ idem: idem || ('ms-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)), domain, action, args, operator }) // idem：同一次操作的固定編號（結果不明重按沿用→新殼收據擋重做）
   const sig = crypto.createHmac('sha256', sec).update(body).digest('base64url')
   try { const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body, signal: AbortSignal.timeout(15000) }); const j = await r.json().catch(() => ({})); return { ...j, ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) } } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
 }
@@ -1636,7 +1636,7 @@ export default async function handler(req, res) {
     // AB 沒有日結時段表（Eats365 日結無時段）→ ①主來源：後台 hourlySalesRecordMap 回補的直接每小時營收 sp_finance_pm_ab_hhrev_（可回補歷史＝熱力圖跟 GD 一樣滿，張良 2026-10-10）②補：盤中快照 sp_finance_pm_ab_hh_（joya-intraday 當天累計相鄰相減）補今天進行中的日子
     if (isAB2 && !Object.keys(hourDays).length) {
       const mos = new Set()
-      for (let i = 0; i <= 4; i++) { const dM = new Date(anchor + 'T00:00:00Z'); dM.setUTCMonth(dM.getUTCMonth() - i); mos.add(dM.toISOString().slice(0, 7)) }
+      for (let i = 0; i <= 4; i++) { const dM = new Date(String(anchor).slice(0, 7) + '-01T00:00:00Z'); dM.setUTCMonth(dM.getUTCMonth() - i); mos.add(dM.toISOString().slice(0, 7)) }
       for (const mo of mos) { // ① 回補的直接每小時（優先）
         const rvDoc = await kvGet('sp_finance_pm_ab_hhrev_' + mo)
         if (!rvDoc || !rvDoc.days) continue
@@ -5618,10 +5618,13 @@ export default async function handler(req, res) {
       const owMC = await abgdOwnerOf('sp_finance_pm_matcard')
       if (owMC !== 'gd') {
         if (owMC === 'abgd' && String(bM.op || '') === 'merge') {
-          const cr = await abgdCmd('matcard', 'merge', { supplyKeys: Array.isArray(bM.supplyKeys) ? bM.supplyKeys.map(String).slice(0, 50) : [], targetCardId: bM.targetCardId ? String(bM.targetCardId) : '', name: String(bM.name || '').slice(0, 80), primary: bM.primary ? String(bM.primary) : '', reason: String(bM.reason || '').slice(0, 200), by: meW.name }, meW.name)
-          return res.status(cr.ok ? 200 : 409).json(cr.ok ? { ok: true, cardId: cr.cardId } : { ok: false, error: '合併沒完成（' + cr.text + '）' })
+          const keysM = Array.isArray(bM.supplyKeys) ? bM.supplyKeys.map(String) : []
+          if (keysM.length > 200) return res.status(400).json({ ok: false, error: '一次最多合併 200 個代碼' })
+          const rq = /^[A-Za-z0-9_-]{8,64}$/.test(String(bM.reqId || '')) ? 'gd-mcm-' + String(bM.reqId) : '' // 前端每次操作一個編號，結果不明重按沿用
+          const cr = await abgdCmd('matcard', 'merge', { supplyKeys: keysM, targetCardId: bM.targetCardId ? String(bM.targetCardId) : '', name: String(bM.name || '').slice(0, 80), primary: bM.primary ? String(bM.primary) : '', reason: String(bM.reason || '').slice(0, 200), by: meW.name }, meW.name, rq)
+          return res.status(cr.ok ? 200 : 409).json(cr.ok ? { ok: true, cardId: cr.cardId, noop: !!cr.noop, text: cr.noop ? cr.text : '' } : { ok: false, error: '合併結果還沒確認（' + cr.text + '），請再按一次（同一個操作不會合併兩次）' })
         }
-        if (String(bM.op || '') === 'merge') return res.status(409).json({ ok: false, error: '物料卡正在切換到新版，請一分鐘後再按一次' }) // 成本待辦合併：使用者不在物料卡頁，「從側欄重新點」會誤導
+        if (String(bM.op || '') === 'merge') { if (owMC === 'unknown') console.log('[matcard] 讀不到資料域鎖表，合併先擋'); return res.status(409).json({ ok: false, error: owMC === 'unknown' ? '暫時無法確認物料卡在哪一版，請稍後再試' : '物料卡正在切換到新版，請一分鐘後再按一次' }) } // 成本待辦合併：使用者不在物料卡頁，「從側欄重新點」會誤導
         return res.status(409).json({ ok: false, error: ABGD_MOVED })
       }
       const { uploadPrivate } = await import('./_onboard.js')

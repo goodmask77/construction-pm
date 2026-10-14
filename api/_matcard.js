@@ -55,22 +55,23 @@ export async function buildCards ({ kvGet, months }) {
   const [master, serA, serG, doc0] = await Promise.all([loadMaster(kvGet, snap), loadSeries(kvGet, months), loadSeries(kvGet, months, 'gordi', 'GROUN:D'), kvGet(CARD_KEY)])
   const doc = doc0 || { cards: {}, supplyCard: {}, conv: {}, quotes: [], splits: {}, log: [] }
   // 價格紀錄：供應品鍵 → [{d, p, q, src, supplier}]
-  const recs = {}
+  const ownOf = (o, k) => (o && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined) // 讀取防護（v4.71.62）：只認自有屬性，怪代碼（isPrototypeOf 之類）不會讓整頁讀取壞掉
+  const recs = Object.create(null)
   for (const s of [...serA.series, ...serG.series]) {
     if (!s.code) continue
     const k = supplyKeyOf(s.sys, s.code)
-    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order', _t: p.t || 0 })))
+    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order', _t: p.t || 0, _o: s.supplier + '|' + p.oid })))
   }
-  for (const q of (doc.quotes || [])) (recs[q.supplyKey] = recs[q.supplyKey] || []).push({ d: q.date, p: q.price, src: q.src || 'quote', by: q.by, note: q.note, _t: Infinity })
+  for (const q of (doc.quotes || [])) if (q && typeof q.supplyKey === 'string') (recs[q.supplyKey] = recs[q.supplyKey] || []).push({ d: q.date, p: q.price, src: q.src || 'quote', by: q.by, note: q.note, _t: Infinity, _o: '' })
   // 同日：跨廠商依下單時間排、手動紀錄排在叫貨後（v4.71.61，與新殼 abgd 同算法）
-  for (const k of Object.keys(recs)) { recs[k].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : ((a._t - b._t) || 0))); for (const r of recs[k]) delete r._t }
+  for (const k of Object.keys(recs)) { recs[k].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : ((a._t - b._t) || 0) || (a._o < b._o ? -1 : a._o > b._o ? 1 : 0))); for (const r of recs[k]) { delete r._t; delete r._o } } // 同日同時間依「廠商|單號」（穩定，v4.71.62）
   // 供應品（即時主檔）＋拆分出來的虛擬供應品
-  const supplies = {}
+  const supplies = Object.create(null)
   for (const p of master.products) {
     const k = supplyKeyOf(p.sys, p.code)
     const snapConv = parseConvText(p.conv)
     const sugg = parseSpec(p.spec)
-    const confirmed = (doc.conv[k] || []).filter(c => !c.off)
+    const confirmed = (ownOf(doc.conv, k) || []).filter(c => !c.off)
     const mu = METRIC[String(p.unit || '').toLowerCase()]
     const convs = confirmed.map(c => ({ ...c, status: c.status || 'confirmed' }))
     const has = to => convs.some(x => x.to === to)
@@ -78,7 +79,7 @@ export async function buildCards ({ kvGet, months }) {
     for (const c of snapConv) if (!has(c.to)) convs.push({ to: c.to, factor: c.factor, status: 'snapshot', why: '阿桑系統 item_convs（10-06 快照）' })
     for (const c of sugg) if (!has(c.to)) convs.push({ ...c, status: 'suggested' })
     const rs = recs[k] || []
-    const split = doc.splits[k]
+    const split = ownOf(doc.splits, k)
     const own = split ? rs.filter(r => r.src !== 'order' || !(r.p >= split.minPrice)) : rs
     const lastOrder = own.filter(r => r.src === 'order').slice(-1)[0] || null
     const lastConfirmed = own.filter(r => r.src === 'confirmed').slice(-1)[0] || null
@@ -86,15 +87,15 @@ export async function buildCards ({ kvGet, months }) {
     if (split) {
       const vk = k + '~2'
       const vr = rs.filter(r => r.src === 'order' && r.p >= split.minPrice)
-      const vconf = (doc.conv[vk] || []).filter(c => !c.off).map(c => ({ ...c, status: c.status || 'confirmed' }))
+      const vconf = (ownOf(doc.conv, vk) || []).filter(c => !c.off).map(c => ({ ...c, status: c.status || 'confirmed' }))
       supplies[vk] = { key: vk, sys: p.sys, code: p.code + '（' + (split.label || '大單位') + '）', sku: p.sku || '', name: p.name, supplier: p.supplier, spec: p.spec || '', unit: split.unit || p.unit || '', price: null, tax: p.tax || '', status: p.status, cat: p.cat || '', dept: p.dept || '', store: p.store || '', virtual: true, splitOf: k, convs: vconf, recs: vr.slice(-24), nRecs: vr.length, lastOrder: vr.slice(-1)[0] || null, lastConfirmed: null }
     }
   }
   // 卡：供應品 → cardId（沒指定＝自己一張 auto 卡）
-  const cards = {}
+  const cards = Object.create(null)
   for (const sup of Object.values(supplies)) {
-    const cid = doc.supplyCard[sup.key] || ('auto:' + sup.key)
-    const c = cards[cid] || (cards[cid] = { id: cid, ...(doc.cards[cid] || {}), supplies: [] })
+    const cid = ownOf(doc.supplyCard, sup.key) || ('auto:' + sup.key)
+    const c = cards[cid] || (cards[cid] = { id: cid, ...(ownOf(doc.cards, cid) || {}), supplies: [] })
     c.supplies.push(sup.key)
   }
   // 卡屬性補預設＋算成本基準

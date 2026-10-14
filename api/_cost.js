@@ -71,7 +71,7 @@ async function loadSeries (kvGet, months, slug = 'ordi', sys = 'A Beach') {
   }
   const series = Object.values(per).map(o => {
     // 同一天多張單依完整下單時間排（v4.71.61；原本只按日期＝照阿桑 API 回傳順序，新單在前→「最後叫貨」取到當天較早那張；與新殼 abgd 同算法）
-    const pts = Object.entries(o.orders).map(([oid, x]) => ({ oid, d: x.d, p: r2(x.amt / x.qty), q: r2(x.qty), lines: x.lines, t: x.t })).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.t - b.t)))
+    const pts = Object.entries(o.orders).map(([oid, x]) => ({ oid, d: x.d, p: r2(x.amt / x.qty), q: r2(x.qty), lines: x.lines, t: x.t })).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : ((a.t - b.t) || (a.oid < b.oid ? -1 : a.oid > b.oid ? 1 : 0)))) // 同時間依單號（穩定，v4.71.62）
     return { ...o, orders: undefined, pts }
   })
   return { series, firstDay }
