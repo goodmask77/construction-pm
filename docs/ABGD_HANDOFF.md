@@ -14,12 +14,13 @@
 | 班表 F15 第 A 段（班表主檔） | ✅ 已切 21:50（epoch 1；3 輪） | shift（只有 sp_finance_pm_shift_g） |
 | 物料卡 F11 | ✅ 10-14 23:47 已切（epoch 1，關卡 3 四輪；GD 成本待辦合併經命令轉新殼，必帶操作編號） | matcard |
 | 耗損 F09 | ✅ 10-15 01:26 已切（epoch 1，關卡 3 兩輪；當班驗收 15 項全過） | waste |
+| 成本總覽 F13 | ✅ 10-15 03:22 已切（epoch 1，關卡 3 六輪；冒煙 24 項全過；03:27 拆驗收閘門） | cost |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.50（main）、GD v4.71.58（main，已部署）。
+版本：新殼 v0.4.77（main）、GD v4.71.73（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
- 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -61,3 +62,11 @@
 - 子代理（獨立 Claude）可能整個卡住沒產出：連 2 次就改用 model: sonnet 的子代理，只給「一份含完整程式的送審檔」、不准跑指令。
 - 檢查 GD 端所有 kvPut 有沒有看回傳值：切換後資料庫閘門會擋，沒檢查就會「假成功」。新搬的功能開工先 grep 該模組的 kvPut。
 - 送 AI 的照片：上傳前就擋總量、壞照片不上傳不問 AI；代發口量實際位元組。
+
+## 10-15 成本總覽學到的（下一個功能照做）
+- 大模組可以「GD 算法原檔逐字搬＋只換 kvGet／kvPut 轉接層」，讀取口逐欄比對差 0 就證明算法一致；轉接層要測：新鍵同時建立、拿舊版本寫、同操作讀到兩版、寫後沒重讀再寫。
+- 切換驗收閘門（core.settings <域>_smoke_only＝{user}）：切換前上、冒煙全過才拆；閘門要三態（沒有／有效／壞掉），壞掉一律拒寫，任何例外旗標都不能放行。維護口、排程、GET 都要受管。
+- 排程判斷寫入者用白名單：影子期狀態是 gd/shadow（不是 gd/gd）——先查兩個庫的 core.domains 實際值再寫。
+- 測試期間改測試庫的域狀態要「先記原值、finally 還原、讀回比對」，還原失敗要非零退出。
+- 提交前確認 git user 是 goodmask77（暫存區複本沒設會被 Vercel 擋：GitHub couldn't verify an account）。
+- iCloud 主資料夾的 git 推送會卡住：文件改動也在暫存區複本做。
