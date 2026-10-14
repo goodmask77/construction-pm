@@ -2423,7 +2423,9 @@ export default async function handler(req, res) {
               if (itP.pub === 'ok') { await repP(`✅ 這筆已經發布過了：${headP}`); continue } // 一案只發布一次（與新殼一致）
               itP.pub = 'ok'
               if (!(await kvSet('sp_finance_pm_sop_issues', docP))) { await repP('⚠️ 沒存進去（可能正在搬家），請稍後再按一次。'); continue } // 存不進去就不發群
-              try { const { prepLink } = await import('./_webpush.js'); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) }) } catch (_) {}
+              let sentP = false
+              try { const { prepLink } = await import('./_webpush.js'); const rP = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN, 'X-Line-Retry-Key': crypto.randomUUID() }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }), signal: AbortSignal.timeout(15000) }); sentP = rP.ok || rP.status === 409 } catch (_) {}
+              if (!sentP) { itP.pub = 'pending'; await kvSet('sp_finance_pm_sop_issues', docP); await repP('⚠️ 群組沒發出去（已改回待發布），請稍後再按一次。'); continue } // abgd 關卡 3 SOP 第三輪：沒發成功不能永久標成已發布
               try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: `⚠️ 問題回報【${itP.st}】`, body: `${(itP.text || '（附件）').slice(0, 60)} — ${itP.by}`, url: '/prep' }) } catch (_) {} // v4.33.0 GD推播
               await repP(`✅ 已發布到內部群：${headP}`)
             } else if (piOp === 'hold') {
