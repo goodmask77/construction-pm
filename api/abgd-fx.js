@@ -255,6 +255,14 @@ const ACTIONS = {
     const ok = await linePush(gidI, [{ type: 'text', text: ddFill(cfgI.text, { st: it.st, content: (it.text || '（見附件）') + ((it.media || []).length ? `・附件${it.media.length}` : ''), by: it.by }) + await quotaFoot(mem) }])
     return ok ? { ok: true, sent: true } : { ok: false, retry: true }
   },
+  async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
+    const it = a.it || {}
+    if (!TK()) return { ok: true, skipped: true }
+    const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TK() }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }] }) })
+    if (!r.ok) return { ok: false, retry: r.status >= 500 || r.status === 429 }
+    try { await wpPush(null, { title: `⚠️ 問題回報【${it.st}】`, body: `${(it.text || '（附件）').slice(0, 60)} — ${it.by}`, url: '/prep' }) } catch (_) {}
+    return { ok: true, sent: true }
+  },
   async issue_own_dm(a) { // 指派負責人 → DD 私訊被指派者（原 sopissue own）
     const rosterO = (await kvGet('sp_crew_kb_roster')) || {}
     const po = (rosterO.people || []).find(p2 => p2.name === a.nm && p2.lineUserId)

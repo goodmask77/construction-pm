@@ -91,11 +91,11 @@ async function abgdOwner(key) {
     return hit ? { owner: hit.owner, domain: hit.domain, epoch: hit.epoch } : { owner: 'gd', domain: null, epoch: 0 }
   } catch (_) { return { owner: 'gd', domain: null, epoch: 0 } }
 }
-async function abgdCommand(domain, action, args, operator) {
+async function abgdCommand(domain, action, args, operator, idemKey) { // idemKey：有就用（例如 LINE webhookEventId，LINE 重送同一事件不會做兩次）
   const base = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '')
   const sec = (process.env.BRIDGE_SECRET || '').trim()
   if (!sec) return { ok: false, text: '新版命令金鑰未設定' }
-  const body = JSON.stringify({ idem: 'dd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), domain, action, args, operator })
+  const body = JSON.stringify({ idem: idemKey ? String(idemKey) : ('dd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)), domain, action, args, operator })
   const sig = crypto.createHmac('sha256', sec).update(body).digest('base64url')
   try {
     const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body })
@@ -2398,6 +2398,10 @@ export default async function handler(req, res) {
             const aprP = (((kvP['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
             const meP = ((kvP['sp_crew_kb_roster'] || {}).people || []).find(p2 => p2.lineUserId === uidP)
             if (!meP || !aprP.includes(meP.name)) { await repP('這按鈕只有審核人能用喔。'); continue }
+            // abgd 搬家：SOP（問題回報）已切新殼 → 轉給新殼處理（回覆文字由新殼回，跟原本一樣）；凍結中先擋
+            const owP = await abgdOwner('sp_finance_pm_sop_issues')
+            if (owP.owner === 'abgd') { const cr = await abgdCommand('sop', 'pi', { id: piId, op: piOp }, meP.name, 'pi-' + (ev.webhookEventId || (piId + '-' + piOp + '-' + ev.timestamp))); await repP(cr.text); continue }
+            if (owP.owner === 'frozen') { await repP('⚠️ 問題回報正在搬家中（暫時凍結），幾分鐘後再按一次。'); continue }
             const docP = kvP['sp_finance_pm_sop_issues'] || { list: [] }
             const itP = (docP.list || []).find(x => x.id === piId)
             if (!itP) { await repP('找不到這筆回報（可能已處理或刪除）。'); continue }
