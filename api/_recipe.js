@@ -183,13 +183,14 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
   const doc = (await kvGet(RB_KEY)) || { r: {}, log: [] }
   doc.r = doc.r || {}; doc.log = doc.log || []
   const key = String(body.key || ''); if (!key) return { ok: false, error: '缺食譜 key' }
+  if (key.length > 120 || /[\u0000-\u001f\u007f]/.test(key) || key === '__proto__' || Object.prototype.hasOwnProperty.call(Object.prototype, key)) return { ok: false, error: '食譜 key 格式不對' } // v4.71.76 擋物件原型名稱與控制字元（abgd 食譜關卡 3 第一輪）
   const R = doc.r[key] = doc.r[key] || { versions: [] }
   R.versions = R.versions || []
   const at = nowIso(), op = String(body.op || '')
   const log = o => { doc.log.push({ at, by: who.name, op, key, ...o }); if (doc.log.length > 800) doc.log = doc.log.slice(-800) }
   const NOSAVE = { ok: false, error: '沒存進去（可能剛有人改過，或食譜已搬到新版），請重新整理再試一次' } // v4.71.74 存檔一定檢查成功與否（abgd 食譜搬家：切換後舊版會假成功）
   const save = async msg => (await kvPut(RB_KEY, doc, msg + '(' + who.name + ')')) ? { ok: true } : NOSAVE
-  const cleanSteps = steps => (Array.isArray(steps) ? steps : []).slice(0, 60).map((s, i) => ({ seq: i + 1, title: String(s.title || '').slice(0, 80), desc: String(s.desc || '').slice(0, 1500), media: (Array.isArray(s.media) ? s.media : []).slice(0, 6).map(m => String(m).slice(0, 300)), timerSec: Math.max(0, Math.min(86400, Number(s.timerSec) || 0)), itemCodes: (Array.isArray(s.itemCodes) ? s.itemCodes : []).slice(0, 30).map(x => String(x).slice(0, 40)) }))
+  const cleanSteps = steps => (Array.isArray(steps) ? steps : []).slice(0, 60).map((s, i) => ({ seq: i + 1, title: String(s.title || '').slice(0, 80), desc: String(s.desc || '').slice(0, 1500), media: (Array.isArray(s.media) ? s.media : []).slice(0, 6).map(m => String(m).slice(0, 300)).filter(m => /^recipe\/[\w:|~-]+\/[a-z0-9]+\.jpg$/i.test(m) || /^https?:\/\/[^\s]+$/i.test(m)) /* v4.71.76 只收私有桶路徑或 http(s) 連結（擋 javascript: 等） */, timerSec: Math.max(0, Math.min(86400, Number(s.timerSec) || 0)), itemCodes: (Array.isArray(s.itemCodes) ? s.itemCodes : []).slice(0, 30).map(x => String(x).slice(0, 40)) }))
   const cleanItems = items => (Array.isArray(items) ? items : []).slice(0, 80).map((i, n) => ({ seq: n, code: String(i.code || '').slice(0, 40), name: String(i.name || '').slice(0, 80), qty: Number(i.qty) || 0, unit: String(i.unit || '').slice(0, 10), match: i.match || (i.code ? 'matched' : (isWhite(i.name) ? 'nonstock' : 'unmatched')) }))
   if (op === 'create') { // 自建食譜（批次 4：GD 五款代表餐點／新品）；不生成假配方，材料由人填
     const name = String(body.name || '').trim().slice(0, 80); if (!name) return { ok: false, error: '要填名稱' }
