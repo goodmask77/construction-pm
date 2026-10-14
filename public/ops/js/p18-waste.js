@@ -22,6 +22,10 @@
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373', m: '#8C98A8' }
   let WD = null, wSub = 'list', wF = { from: '', to: '', st: 'all', rs: 'all', by: 'all', q: '' }, wCfgOpen = false
   let M = null // 進行中的拍耗損／手打表單狀態
+  // abgd 搬家（F09）：耗損切新殼後舊頁（?legacy=1／沒登入走舊頁）唯讀；側欄導新版由 p09 applyTabs 依 routes 自動處理
+  const W_MOVED_TX = '耗損已經搬到新版：這裡只能看。要記耗損請從側欄點「耗損」（會自動登入新版）'
+  window.wMoved = () => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.waste)
+  const wBlock = () => { if (wMoved()) { alert(W_MOVED_TX); return true } return false }
 
   const meQ = () => TK() ? '&me=' + encodeURIComponent(TK()) : ''
   const imgUrl = p => '/api/mail-sync?wasteimg=' + encodeURIComponent(K) + meQ() + '&path=' + encodeURIComponent(p)
@@ -41,6 +45,7 @@
     const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const todayN = (WD.rows || []).filter(r => r.date === today && !r.voidOf).length
     let h = `<h1 style="display:flex;align-items:center;gap:10px">${IC.trash} 耗損紀錄 ${aiTag('waste')}</h1><div class="sub">拍照 → AI 讀秤＋認物料 → 你確認才入帳；只用來解釋盤差，不扣庫存（庫存以盤點為準）</div>`
+    if (wMoved()) h += '<div class="hint" style="margin:8px 0;padding:8px 12px;border:1px solid var(--line);border-radius:8px">已搬到新版，這裡只能看。</div>'
     h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">`
       + `<button class="mini on" style="padding:10px 16px;font-size:15px" onclick="wasteShot()">${IC.cam} 拍耗損</button>`
       + `<button class="mini" style="padding:10px 14px" onclick="wasteManual()">${IC.pen} 手打一筆</button>`
@@ -64,7 +69,7 @@
   }
   const kpi = (l, v, sub, c) => `<div class="kpi" style="text-align:left"><div class="v" style="color:${c};font-size:24px">${v}</div><div class="l">${l}</div><div class="sub2">${sub}</div></div>`
   window._wSub = t => { wSub = t; const el = document.getElementById('wBody'); if (el) el.innerHTML = body(); try { permScan(el) } catch (_) {} }
-  window._wCfgTog = () => { wCfgOpen = !wCfgOpen; render() }
+  window._wCfgTog = () => { if (!wCfgOpen && wBlock()) return; wCfgOpen = !wCfgOpen; render() }
   function body () { return wSub === 'stat' ? statView() : (wSub === 'ai' ? aiView() : listView()) }
 
   // ── 紀錄清單 ──
@@ -120,7 +125,7 @@
     return h
   }
   window._wPhoto = p => { const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px'; ov.onclick = () => ov.remove(); ov.innerHTML = `<img src="${imgUrl(p)}" style="max-width:100%;max-height:100%;border-radius:10px">`; document.body.appendChild(ov) }
-  window.wasteVoid = async (id, ym) => { if (!confirm('沖銷這筆耗損？會另寫一筆負數紀錄，原紀錄保留。')) return; if (await post({ op: 'void', id, ym })) wasteLoad() }
+  window.wasteVoid = async (id, ym) => { if (wBlock()) return; if (!confirm('沖銷這筆耗損？會另寫一筆負數紀錄，原紀錄保留。')) return; if (await post({ op: 'void', id, ym })) wasteLoad() }
 
   // ── 統計 ──
   function bars (list, c) { if (!list.length) return '<div class="hint">沒有資料</div>'; const mx = Math.max(1, ...list.map(x => x.amount)); return list.slice(0, 12).map(x => `<div style="display:flex;align-items:center;gap:8px;margin:5px 0"><div style="width:96px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(x.k)}">${esc(x.k)}</div><div style="flex:1;height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="width:${Math.round(x.amount / mx * 100)}%;height:100%;background:${c}"></div></div><div style="width:120px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums">${money(x.amount)} <span class="hint">${x.n}筆</span></div></div>`).join('') }
@@ -155,12 +160,14 @@
   const contRow = (x, i) => `<div class="wCrow" style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input class="wCn" value="${esc(x.name)}" placeholder="容器名" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 8px"><input class="wCg" type="number" value="${x.g}" placeholder="g" style="width:90px;border:1px solid var(--line);border-radius:8px;padding:6px 8px"><span class="hint">g</span><button class="mini" onclick="this.closest('.wCrow').remove()">${IC.x}</button></div>`
   window._wContAdd = () => { const el = document.getElementById('wCont'); if (el) el.insertAdjacentHTML('beforeend', contRow({ name: '', g: '' }, 0)) }
   window.wasteCfgSave = async () => {
+    if (wBlock()) return
     const containers = [...document.querySelectorAll('#wCont .wCrow')].map(r => ({ name: r.querySelector('.wCn').value.trim(), g: Number(r.querySelector('.wCg').value) || 0 })).filter(x => x.name)
     const reasons = (document.getElementById('wReasons').value || '').split(/[、,，]/).map(x => x.trim()).filter(Boolean)
     if (await post({ op: 'cfg', containers, reasons, bigAmt: document.getElementById('wBig').value, est: { minPairs: document.getElementById('wEstN').value, maxErr: document.getElementById('wEstE').value } })) { wCfgOpen = false; wasteLoad() }
   }
 
   async function post (body) {
+    if (wBlock()) return null
     let j = null
     try { const r = await fetch('/api/mail-sync?waste=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }); j = await r.json() } catch (_) { j = { ok: false, error: '連線問題' } }
     if (!j.ok) alert(j.error || '沒成功')
@@ -168,8 +175,8 @@
   }
 
   // ── 拍耗損／手打：全螢幕表單 ──
-  window.wasteShot = () => openForm(true)
-  window.wasteManual = () => openForm(false)
+  window.wasteShot = () => { if (wBlock()) return; openForm(true) }
+  window.wasteManual = () => { if (wBlock()) return; openForm(false) }
   function openForm (withPhoto) {
     if (!WD) return
     M = { withPhoto, store: 'ground', station: (WD.stations || [])[0] || '', photos: {}, ai: null, draft: null, code: '', name: '', mode: 'g', grossG: '', tareG: 0, container: '', qty: '', qtyUnit: '', reason: '', note: '', staffMeal: false, q: '', busy: false, sanityOk: false }
@@ -246,6 +253,7 @@
 
   window.wasteAi = async () => {
     if (!M || M.busy) return
+    if (wBlock()) return
     M.busy = true; paintForm()
     const photos = ['scale', 'wide'].filter(t => M.photos[t]).map(t => ({ type: t, dataUrl: M.photos[t].dataUrl }))
     const q = M.q.trim().toLowerCase()
@@ -260,6 +268,7 @@
   }
   window.wasteSend = async () => {
     if (!M || M.busy) return
+    if (wBlock()) return
     const p = prodsOf().find(x => x.code === M.code)
     if (!p && !M.name) { alert('要先選物料'); return }
     if (!M.staffMeal && !M.reason) { alert('要選原因'); return }
