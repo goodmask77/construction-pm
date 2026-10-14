@@ -1,4 +1,5 @@
 import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
+import crypto from 'node:crypto'
 // 後端：自動收信入庫（cron-daily 每天呼叫；也可手動 /api/mail-sync?days=N）
 // ① 中信 e-Cash「帳務處理結果」通知（goodmask77@gmail.com）→ sp_finance_pm_ctbc（只增不改，dedupe by 交易序號）
 // ② Eats365 POS 日結報表 xlsx 附件（money@gumgum.club）→ sp_finance_pm_pos（設好 MAIL_USER2/MAIL_PASS2 後自動啟用）
@@ -87,12 +88,24 @@ export async function invStatus(kind) {
 }
 
 export async function kvPut(id, obj, editor) {
-  await fetch(`${SB_URL}/rest/v1/pm_documents`, {
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor, updated_at: new Date().toISOString() }),
   })
+  // abgd 搬家（2026-10-14）：資料域切到新殼後，GD 端寫入會被資料庫閘門擋下（ABGD_LOCKED）。不能假存檔：記可見紀錄並回 false，呼叫端照 r.ok 判斷
+  if (!r.ok) { const tx = await r.text().catch(() => ''); console.log('[kvPut] 失敗', id, r.status, tx.slice(0, 160)); if (/ABGD_LOCKED/.test(tx)) { try { await abgdLockedLog(id, editor, tx) } catch (_) {} } return false }
   CHANGED.add(id)
+  return true
+}
+// 被閘門擋下的寫入紀錄（鍵前綴 pm_abgd_ 不在任何域，永遠寫得進去）：設定頁「新版入口」會顯示，DD 每小時彙整私訊張良
+async function abgdLockedLog(id, editor, msg) {
+  const k = 'pm_abgd_locked_' + new Date().toISOString().slice(0, 10)
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+  const rows = r.ok ? await r.json() : []
+  let doc = { rows: [] }; try { if (rows[0]?.data?.v) doc = JSON.parse(rows[0].data.v) } catch (_) {}
+  doc.rows = (doc.rows || []).slice(-199); doc.rows.push({ ts: new Date().toISOString(), id, editor: editor || '', msg: String(msg).slice(0, 120) })
+  await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id: k, data: { v: JSON.stringify(doc) }, editor: 'abgd-gate', updated_at: new Date().toISOString() }) })
 }
 
 // 🏦 積分中樞（行為分流水帳/規則/給分）抽到 _points.js 共用（punch 等端點也 import 同一套，不必拉整包 mail-sync）
@@ -2243,7 +2256,39 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.tabcfg) !== ok2) return res.status(403).json({ ok: false })
     const cfg = (await kvGet('sp_finance_pm_prep_tabs')) || {}
-    return res.status(200).json({ ok: true, order: cfg.order || null, names: cfg.names || {} })
+    // abgd 搬家（2026-10-14）：routes={分頁key: 新殼網址}＝入口切到新殼；一律 no-store（不經 CDN／SW），切回時 1 分鐘內全員生效
+    const rt = (await kvGet('sp_finance_pm_prep_routes')) || {}
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({ ok: true, order: cfg.order || null, names: cfg.names || {}, routes: rt.routes || {} })
+  }
+  // abgd 入口切換（只有新殼的切換控制器寫；body={routes:{key:url}, by, reason}）：GET 帶 OPS_BOARD_KEY 看現況
+  if (req.query?.routesset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.routesset) !== ok2) return res.status(403).json({ ok: false })
+    res.setHeader('Cache-Control', 'private, no-store')
+    if (req.method !== 'POST') { const rt = (await kvGet('sp_finance_pm_prep_routes')) || {}; return res.status(200).json({ ok: true, routes: rt.routes || {}, log: (rt.log || []).slice(-20) }) }
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const routes = {}
+    for (const [k, u] of Object.entries(b.routes || {})) { if (/^[a-z0-9_]{1,24}$/i.test(k) && /^https:\/\/[a-z0-9.-]+\.vercel\.app\//.test(String(u))) routes[k] = String(u).slice(0, 200) }
+    const rt = (await kvGet('sp_finance_pm_prep_routes')) || {}
+    rt.routes = routes; rt.log = (rt.log || []).slice(-49); rt.log.push({ ts: new Date().toISOString(), by: String(b.by || 'abgd').slice(0, 40), reason: String(b.reason || '').slice(0, 120), keys: Object.keys(routes) })
+    await kvPut('sp_finance_pm_prep_routes', rt, 'abgd-switch')
+    return res.status(200).json({ ok: true, routes })
+  }
+  // abgd 橋接票（2026-10-14）：GD 已登入的人點到切過去的分頁 → 前端 POST 這裡拿 60 秒一次性 HMAC 票 → 貼給新殼 /api/core/auth/bridge 換 session
+  if (req.query?.bridge) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.bridge) !== ok2 || req.method !== 'POST') return res.status(403).json({ ok: false })
+    res.setHeader('Cache-Control', 'private, no-store')
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const w = await sopWho(b.token)
+    if (!w || !w.rid) return res.status(401).json({ ok: false, error: permDeny() })
+    const sec = (process.env.BRIDGE_SECRET || '').trim()
+    if (!sec) return res.status(500).json({ ok: false, error: 'BRIDGE_SECRET 未設定' })
+    const now = Math.floor(Date.now() / 1000)
+    const payload = Buffer.from(JSON.stringify({ jti: crypto.randomUUID(), rid: w.rid, name: w.name, iss: 'gd', aud: 'abgd', iat: now, exp: now + 60 })).toString('base64url')
+    const sig = crypto.createHmac('sha256', sec).update(payload).digest('base64url')
+    return res.status(200).json({ ok: true, ticket: payload + '.' + sig })
   }
   if (req.method === 'POST' && req.query?.tabset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
