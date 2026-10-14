@@ -107,7 +107,12 @@
     mBody()
   }
 
-  window._mSub = function (t) { mSub = t; mBody() }
+  window._mSubGo = function (t) { mSub = t; mBody() }
+  window._mSub = function (t) { // abgd：物料卡已搬新版→開新版（沒登入／登入失敗照舊開這裡的唯讀頁）
+    const u = (window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.matcard) || ''
+    if (t === 'card' && u && !/[?&]legacy=1\b/.test(location.search) && typeof abgdOpen === 'function') { abgdOpen('matcard', u, "_mSubGo('card')"); return }
+    _mSubGo(t)
+  }
   window._mSubIs = function (t) { return mSub === t && curStore === 'matlib' } // p17 待處理重畫前確認還在這個子分頁
   window._mCatMngTog = function () { mCatMng = !mCatMng; mRender() }
 

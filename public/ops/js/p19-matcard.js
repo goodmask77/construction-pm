@@ -23,7 +23,10 @@
     })()
     return fetchP
   }
-  window.matcardView = function () { if (!MC) { matcardFetch(); return '<section><div class="hint" style="padding:22px">載入物料卡中…</div></section>' } return render() }
+  // abgd 搬家（F11）：物料卡切新殼後（入口 routes.matcard 存在）這裡只能看；從物料庫點「物料卡」會自動登入新版
+  window.mcMoved = () => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.matcard)
+  const MC_MOVED_TX = '物料卡已經搬到新版：這裡只能看。要編輯請從「物料庫 → 物料卡」重新點進去（會自動登入新版）。'
+  window.matcardView = function () { if (!MC) { matcardFetch(); return '<section><div class="hint" style="padding:22px">載入物料卡中…</div></section>' } return (mcMoved() ? '<div class="hint" style="margin:8px 0;padding:8px 12px;border:1px solid var(--line);border-radius:8px">物料卡已搬到新版，這裡只能看（資料每分鐘同步）。</div>' : '') + render() }
   function paint () { const el = document.getElementById('matBody'); if (el && window._mSubIs && _mSubIs('card')) el.innerHTML = render(); if (openId) { const c = card(openId); if (c) { drawer(c, true); loadDetail(openId) } } }
   window.matcardRefresh = function () { MC = null; matcardFetch() }
   const card = id => ((MC && MC.cards) || []).find(c => c.id === id)
@@ -226,7 +229,7 @@
     svg += `<div style="display:flex;gap:10px;flex-wrap:wrap" class="hint">` + lines.map(l => `<span><span style="display:inline-block;width:10px;height:10px;background:${l.col};border-radius:2px"></span> ${esc(l.s.code)}・${esc(l.s.supplier)}</span>`).join('') + `</div>`
     return svg
   }
-  window._mcBatchConv = async function (which) { if (!confirm(which === 'snapshot' ? '把阿桑 10-06 換算表（item_convs）全部當作已確認？（g=ml 1:1 的不含；每筆留紀錄、可逐筆取消）' : '把規格文字解析的建議換算全部當作已確認？（每筆留紀錄、可逐筆取消）')) return; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'convBatchAccept', which, token: TK() }) }); const j = await r.json().catch(() => ({})); alert(j.ok ? '完成：接受了 ' + j.n + ' 條換算' : (j.error || '沒成功')); if (j.ok) await matcardFetch() }
+  window._mcBatchConv = async function (which) { if (mcMoved()) { alert(MC_MOVED_TX); return } if (!confirm(which === 'snapshot' ? '把阿桑 10-06 換算表（item_convs）全部當作已確認？（g=ml 1:1 的不含；每筆留紀錄、可逐筆取消）' : '把規格文字解析的建議換算全部當作已確認？（每筆留紀錄、可逐筆取消）')) return; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'convBatchAccept', which, token: TK() }) }); const j = await r.json().catch(() => ({})); alert(j.ok ? '完成：接受了 ' + j.n + ' 條換算' : (j.error || '沒成功')); if (j.ok) await matcardFetch() }
   window._mcPrimary = async function (id, key) { if (await post({ op: 'edit', cardId: id, fields: { primary: key } })) await matcardFetch() }
   window._mcUnmerge = async function (key) { if (!confirm('把這個代碼從這張卡拆出去（變回自己一張卡）？歷史不會變。')) return; if (await post({ op: 'unmerge', supplyKey: key })) await matcardFetch() }
   window._mcUnsplit = async function (key) { if (await post({ op: 'unsplit', supplyKey: key })) await matcardFetch() }
@@ -311,6 +314,7 @@
   }
 
   async function post (body) {
+    if (mcMoved() && body.op !== 'merge') { alert(MC_MOVED_TX); return false } // 成本待辦合併建議例外：伺服器轉新版
     const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) })
     const j = await r.json().catch(() => ({ ok: false, error: '連線問題' }))
     if (!j.ok) alert(j.error || '沒成功')

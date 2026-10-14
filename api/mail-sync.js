@@ -5614,6 +5614,15 @@ export default async function handler(req, res) {
     const canEditM = !probeM && !!(await permWho(meTk, 'buy'))
     if (req.method === 'POST') {
       if (!canEditM) return res.status(403).json({ ok: false, error: '沒有編輯物料卡的權限（採購權限）' })
+      // abgd 搬家（F11）：物料卡切新殼後 GD 寫入一律擋；唯一例外＝成本待辦「合併建議」（成本還在 GD）轉新殼命令（GD 已驗採購權限）
+      const owMC = await abgdOwnerOf('sp_finance_pm_matcard')
+      if (owMC !== 'gd') {
+        if (owMC === 'abgd' && String(bM.op || '') === 'merge') {
+          const cr = await abgdCmd('matcard', 'merge', { supplyKeys: Array.isArray(bM.supplyKeys) ? bM.supplyKeys.map(String).slice(0, 50) : [], targetCardId: bM.targetCardId ? String(bM.targetCardId) : '', name: String(bM.name || '').slice(0, 80), primary: bM.primary ? String(bM.primary) : '', reason: String(bM.reason || '').slice(0, 200), by: meW.name }, meW.name)
+          return res.status(cr.ok ? 200 : 409).json(cr.ok ? { ok: true, cardId: cr.cardId } : { ok: false, error: '合併沒完成（' + cr.text + '）' })
+        }
+        return res.status(409).json({ ok: false, error: ABGD_MOVED })
+      }
       const { uploadPrivate } = await import('./_onboard.js')
       const r = await mcApply({ kvGet, kvPut, who: meW, body: bM, uploadPrivate })
       if (r.ok) await announceChanged()
