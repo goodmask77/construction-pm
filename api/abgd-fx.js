@@ -9,6 +9,7 @@ import { logPush, groupMembers, quotaFoot } from './push.js'
 import { wpPush, wpPushUids, prepLink } from './_webpush.js'
 import { awardPtsStrict } from './_points.js'
 import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
+import { aiCall } from './_ai.js'
 
 const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 // 冪等：每個事件（含逐收件人的子事件）一個鍵 pm_abgd_fxk_<sha1>，用「insert 不覆寫」原子佔位（pm_abgd_ 前綴不屬於任何資料域）
@@ -65,7 +66,16 @@ const gdNames = (rosterDoc) => {
   return gd.length ? gd : alive.map(p2 => p2.name).filter(Boolean)
 }
 
+// 新殼借用 GD 的 AI 出口（唯讀動作，2026-10-14 第 2 波耗損 F09 起）：金鑰、路由（AI 中樞設定）、用量紀錄都留在 GD；
+// 只允許登記過的路由，避免新殼任意呼叫；回 { text, provider, model }
+const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr'])
 const ACTIONS = {
+  async ai_call(a) {
+    const route = String(a.route || '')
+    if (!AI_ROUTES_OK.has(route)) throw new Error('這個 AI 路由沒開放給新殼：' + route)
+    const r = await aiCall(route, { system: a.system || '', messages: Array.isArray(a.messages) ? a.messages : [], maxTokens: Math.min(4000, Number(a.maxTokens) || 600), ...(a.override ? { override: a.override, noFallback: true } : {}) })
+    return { text: r.text || '', provider: r.provider || '', model: r.model || '' }
+  },
   // 讀：會議頁需要的名單（與 GD ?meet 同算法）
   async meet_meta() {
     const [rosM, shM, defM, bindM] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_shift_g'), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_bind')])
@@ -301,7 +311,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta'
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call'
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
