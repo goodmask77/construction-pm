@@ -506,7 +506,8 @@ async function abgdOpen(k, url){
 function applyTabs(cfg){
   cfg = cfg || {}
   window._tabCfg = cfg
-  try { const rt = cfg.routes || {}; document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (rt[k]) { b.setAttribute('onclick', ''); b.onclick = (ev) => { ev.preventDefault(); abgdOpen(k, rt[k]) }; b.dataset.abgd = '1' } }) } catch(_) {}
+  // abgd：網址帶 ?legacy=1（新殼「到舊版處理」連結）＝這次不導去新殼，留在舊頁用還沒搬的功能（例：班表頁的人力配置、法規薪資）
+  try { const rt = /[?&]legacy=1\b/.test(location.search) ? {} : (cfg.routes || {}); document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (rt[k]) { b.setAttribute('onclick', ''); b.onclick = (ev) => { ev.preventDefault(); abgdOpen(k, rt[k]) }; b.dataset.abgd = '1' } }) } catch(_) {}
   const bar = document.querySelector('.tabs'), gear = document.getElementById('tab-gear')
   const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
   Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) }) // v4.39.1 新分頁排最後=設定上面（張良 2026-10-04 inline 指定位置；要移前面去設定拖）
