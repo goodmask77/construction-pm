@@ -5585,14 +5585,14 @@ export default async function handler(req, res) {
       if (!canEditR) return res.status(403).json({ ok: false, error: '沒有編輯食譜的權限（食譜分頁權限）' })
       if ((await abgdOwnerOf('sp_finance_pm_recipebook')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F10）：食譜切新殼後 GD 寫入一律擋（含 AI 匯入：匯入後的建立／編輯也在新殼）
       if (bR.op === 'import') { // v4.70.66 AI 匯入：截圖／文字／連結 → 結構＋對應（只讀不寫；確認後前端再走 create／edit）
-        try { const { importRecipe } = await import('./_rcpimport.js'); return res.status(200).json(await importRecipe({ kvGet, months: mosR, body: bR, who: meW })) } catch (e) { return res.status(400).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+        try { const { importRecipe } = await import('./_rcpimport.js'); return res.status(200).json(await importRecipe({ kvGet: orderedKvGet(kvGet), months: mosR, body: bR, who: meW })) } catch (e) { return res.status(400).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
       }
       const { uploadPrivate } = await import('./_onboard.js')
-      const r = await rcpApply({ kvGet, kvPut, who: meW, body: bR, uploadPrivate, months: mosR })
+      const r = await rcpApply({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, body: bR, uploadPrivate, months: mosR }) // abgd 食譜 F10：鍵順序與新殼一致
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
     }
-    const t = await rcpBuild({ kvGet, months: mosR, light: !!req.query.light })
+    const t = await rcpBuild({ kvGet: orderedKvGet(kvGet), months: mosR, light: !!req.query.light }) // abgd 食譜 F10：鍵順序與新殼一致
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditR }, ...t })
   }
   // ── 🗂 產品與成本模組｜批次 2 物料卡（v4.70.33，規格 §3）──
