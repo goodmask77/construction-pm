@@ -43,6 +43,7 @@ export async function buildPricing ({ kvGet, months }) {
   }
   // 自建但菜單還沒有的 GD 餐點（批次 4 的五款）也列出
   for (const r of rc.dishes) if (r.src === 'own' && !items.some(x => x.recipeKey === r.key)) { const key = 'G|own:' + r.key; const ov = doc.items[key] || { recipeKey: r.key }; items.push(buildItem({ key, brand: 'GROUN:D', name: r.name, category: r.category || '代表餐點', active: true, basePrice: null, ov: { ...ov, recipeKey: r.key }, linked: r, packCost, ratioCap, recipeBy })) }
+  { const gen = doc.gen || {}; for (const i of items) i.ver = Number(Object.prototype.hasOwnProperty.call(gen, i.key) ? gen[i.key] : 0) || 0 } // v4.71.79 品項版本號
   const cats = { 'A Beach': [...new Set(items.filter(i => i.brand === 'A Beach').map(i => i.category).filter(Boolean))], 'GROUN:D': [...new Set(items.filter(i => i.brand === 'GROUN:D').map(i => i.category).filter(Boolean))] }
   const recipesPick = [...rc.dishes, ...rc.recipes].map(r => ({ key: r.key, name: r.name, type: r.type, brand: r.brand || 'A Beach', ok: r.ok, cost: r.cost, yieldQty: r.yieldQty, yieldUnit: r.yieldUnit }))
   return { items, cats, packCards, recipesPick, ratioCap, versions: (doc.versions || []).slice(-100).reverse(), log: (doc.log || []).slice(-60).reverse(), masterUpdatedAt: rc.masterUpdatedAt }
@@ -99,6 +100,12 @@ export async function applyPricingOp ({ kvGet, kvPut, who, body }) {
   const it = doc.items[key] = doc.items[key] || {}
   const at = nowIso(), op = String(body.op || '')
   const log = o => { doc.log.push({ at, by: who.name, op, key, ...o }); if (doc.log.length > 800) doc.log = doc.log.slice(-800) }
+  // v4.71.79 數字驗證：售價／倍率／用量／加價要是有限數字（空白＝沿用預設）；不合格整筆不寫（原本 NaN／Infinity 會變 null 默默存進去）
+  const fin = (v, lo, hi, emptyOk) => (emptyOk && (v === '' || v == null)) || ((typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v)) && Number(v) >= lo && Number(v) <= hi)
+  const packOk = p => p == null || (typeof p === 'object' && !Array.isArray(p) && CH.every(ch => p[ch] == null || (Array.isArray(p[ch]) && p[ch].every(x => x && typeof x === 'object' && fin(x.qty, 0, 10000, false)))))
+  if (op === 'specs' && !(Array.isArray(body.specs) && body.specs.every(sp => sp && typeof sp === 'object' && fin(sp.mult, 0.01, 100, true) && (sp.prices == null || (typeof sp.prices === 'object' && CH.every(ch => fin(sp.prices[ch], 0, 1e6, true)))) && packOk(sp.pack)))) return { ok: false, error: '規格的售價、倍率要是 0 以上的數字（空白＝沿用菜單價）' }
+  if (op === 'pack' && !packOk(body.pack)) return { ok: false, error: '包材數量要是 0 以上的數字' }
+  if (op === 'combo' && !(fin(body.upcharge, -1e6, 1e6, true) && (body.extraPack == null || (Array.isArray(body.extraPack) && body.extraPack.every(x => x && typeof x === 'object' && fin(x.qty, 0, 10000, false)))) && [body.sides, body.drinks].every(a => a == null || Array.isArray(a)))) return { ok: false, error: '套餐的加價、包材數量要是數字' }
   const cleanPack = p => { const out = {}; for (const ch of CH) out[ch] = (Array.isArray((p || {})[ch]) ? p[ch] : []).slice(0, 12).map(x => ({ cardId: String(x.cardId || '').slice(0, 80), qty: Math.max(0, Number(x.qty) || 0) })).filter(x => x.cardId && x.qty > 0); return out }
   if (op === 'link') { const before = it.recipeKey; it.recipeKey = String(body.recipeKey || '').slice(0, 80); it.at = at; log({ before, after: it.recipeKey }) } else if (op === 'specs') { // 規格：各自售價（三通路）與用量倍率；改售價＝新增一筆版本紀錄（只新增）
     const specs = (Array.isArray(body.specs) ? body.specs : []).slice(0, 8).map((s, i) => ({ id: String(s.id || ('s' + (i + 1))).slice(0, 20), name: String(s.name || '規格' + (i + 1)).slice(0, 30), mult: Math.max(0.01, Number(s.mult) || 1), prices: Object.fromEntries(CH.map(ch => [ch, s.prices && s.prices[ch] !== '' && s.prices[ch] != null ? Number(s.prices[ch]) : null])), pack: s.pack ? cleanPack(s.pack) : undefined }))
@@ -113,6 +120,7 @@ export async function applyPricingOp ({ kvGet, kvPut, who, body }) {
     it.combo = { sides: (Array.isArray(body.sides) ? body.sides : []).slice(0, 12).map(String), drinks: (Array.isArray(body.drinks) ? body.drinks : []).slice(0, 12).map(String), extraPack: (Array.isArray(body.extraPack) ? body.extraPack : []).slice(0, 8).map(x => ({ cardId: String(x.cardId || ''), qty: Number(x.qty) || 0 })).filter(x => x.cardId && x.qty > 0), upcharge: Number(body.upcharge) || 0 }
     it.at = at; log({ before, after: it.combo })
   } else if (op === 'clear') { delete doc.items[key]; log({}) } else return { ok: false, error: '不認得的操作' }
+  doc.gen = doc.gen || {}; doc.gen[key] = (Number(Object.prototype.hasOwnProperty.call(doc.gen, key) ? doc.gen[key] : 0) || 0) + 1 // v4.71.79 品項版本號（只增不減、清除也加；畫面送出時帶，舊畫面不能蓋掉別人）
   if (!(await kvPut(PRICING_KEY, doc, '菜單定價(' + who.name + ')'))) return { ok: false, error: '沒存進去（可能剛有人改過，或菜單成本已搬到新版），請重新整理再試一次' } // v4.71.77 存檔一定檢查成功與否
   return { ok: true }
 }
