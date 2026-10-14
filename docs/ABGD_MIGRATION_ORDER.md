@@ -45,10 +45,11 @@ OpenAI、Gemini 用 api/_ai.js 的 aiCall（timeoutMs 540000、maxTokens 12000�
 - 全部完成給總表：每功能新舊對照、對帳結果、速度、三家關卡紀錄位置。
 - Belle、阿桑、小夏權限金鑰到了就排進順序，一樣過三家關卡。
 
-## 目前進度（2026-10-14 08:30，另一視窗 Opus 5.5 已做）
+## 目前進度（2026-10-14 10:50，Fable 5.1 視窗）
 | 步驟 | 狀態 |
 |---|---|
-| 1 盤點 FEATURE_MAP＋關卡 1 | ❌ 未做 |
-| 2 地基 | 🟡 部分：repo goodmask77/abgd（main 上鎖＋CI）、Vercel abgd（hnd1、ab-gd.vercel.app）、Supabase abgd-prod／abgd-test（東京，core schema＋RLS）、分區側欄雛形 v0.1.3 已上線。**未做**：登入、角色／開通清單、側欄重新規劃、關卡 2 三家審（資料表設計要補審） |
-| 3~5 | ❌ 未開始 |
-| 協作 | docs/COLLAB_RULES.md v4；DD 已私訊三位要 GitHub 帳號 |
+| 1 盤點 FEATURE_MAP＋關卡 1 | ✅ v4；關卡 1 三家兩輪有條件通過，條件已補（docs/ABGD_DOMAINS.md、ABGD_WRITERS.gen.md、ABGD_DATA_DICT.md） |
+| 2 地基＋關卡 2 | ✅ 設計 abgd/docs/ABGD_FOUNDATION.md v2.2；關卡 2 三家兩輪有條件通過，SQL 以最小驗證程式 18/18 證明；程式已上線 ab-gd.vercel.app v0.2.x（登入、同步鏡像層、切換控制器、備份）。細項見 FEATURE_MAP 5.1 |
+| 3 逐功能 | 🔄 下一步：主檔唯讀影子 → 0.5 波文件庫演練 → 第 1 波 |
+| 4~5 | ❌ 未開始 |
+| 紀錄 | docs/ABGD_3AI_LOG.md；GD 大表＋檔案桶本機備份（scratchpad，不進 git） |

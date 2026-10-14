@@ -54,12 +54,12 @@
 | F31 | 設定（分頁名稱排序、權限矩陣、DD 自動訊息、DD 群、AI 路由、通知、安靜時段、AB 帳） | p09、p10 | tabcfg、tabset、prepperm、preppermset、prepapply、ddmsg、ddmsgset、ddgrpset、aicfg、aicfgset、aimodels、aitest、aiab、notifycfg、notifyset、webpushcfg、abmod | pm_prep_tabs、pm_prep_perm、pm_ddmsg、pm_ddgrp、pm_ai_cfg、pm_notify、pm_ai_usage_、pm_push_subs | — | DD（prep_perm／prep_bind／logincode） | **高（權限）** | app/(shell)/settings；core.settings／core.permissions | 待搬（地基一起） |
 | F32 | 通知中心（鈴鐺、歷史、Web Push、App 角標） | p09 | ntf、ntfread、ntfseen、ntfpin、ntfping、pushsub；api/_webpush.js | pm_prep_ntf、pm_push_subs | Web Push | 全站 wpPush、_qpatch | 中（跨網域重訂閱） | app/(shell)/notifications；core.notifications | 待搬（地基一起） |
 | F33 | 問題回報（審核發布） | p10 | errs、errlog、issuecat | pm_issues、pm_errlog | — | — | 低 | app/ops/issues | 待搬 |
-| F34 | 登入／身分（4 位數登入碼、個人連結 ?me=、LIFF 認人、模擬檢視 &as=、個人化 manifest） | p01、liff/index.html | bind、bindcode、bindcard、liffauth、whoami、manifest | pm_prep_bind、pm_prep_logincode、名冊 lineUserId | LINE Login／LIFF | DD 發登入碼、LIFF | **高（地基）** | proxy.ts＋app/api/core/auth；core.users／core.sessions／core.line_identities | 待搬（第 2 步地基） |
+| F34 | 登入／身分（4 位數登入碼、個人連結 ?me=、LIFF 認人、模擬檢視 &as=、個人化 manifest） | p01、liff/index.html | bind、bindcode、bindcard、liffauth、whoami、manifest | pm_prep_bind、pm_prep_logincode、名冊 lineUserId | LINE Login／LIFF | DD 發登入碼、LIFF | **高（地基）** | proxy.ts＋app/api/core/auth；core.users／core.sessions／core.line_identities | ✅ 第 0 波已上線 2026-10-14（Supabase 原生 session＋GD 橋接票 e2e 驗過；LINE Login 下一步） |
 | F35 | 工作日誌／打卡站／積分 7 動作 | p04／p10／tasks | punchme、punchstat、punchadmin；日誌走 DD | pm_worklog、sp_crew_pch、pm_points | DD | — | **高（點數／打卡）** | 併入 F26／F04 | 待搬 |
 | F36 | 零用金、財務 ledger、對帳中心（舊主 App 遺留，DD 動作仍寫） | （主 App） | ledger、sheet-sync.js | pm_petty、pm_fin_*、pm_bank、pm_ctbc、pm_sheet | Google 試算表 | DD（add_finance_tx／add_petty_spend）、sheet-sync、舊主 App 直寫 pm_petty | **高（錢）** | app/finance（Belle 財務到了一起規劃） | 待搬（最後一波） |
 | F37 | 舊主 App（src/App.jsx 工程專案管理） | src/ | api/ai.js、admin-users.js | pm_data、pm_tasks、projects／tasks 真表 | — | 瀏覽器寫 pm_bot_context、打卡站前端、零用金／日誌直寫 | **高** | 拆三段：①工程專案資料＝不搬，新殼 app/(shell)/archive 唯讀查閱；②**pm_bot_context 改由伺服器端產生**（abgd 投影層算好寫回 GD，第 0 波）；③打卡站（iPad QR）、零用金、日誌→排進 F35／F36 的波次 | 待搬（①不搬） |
 
-| F38 | 檔案搬家（過渡期雙向存取：GD 新上傳仍進舊桶，abgd 正向同步看到新檔路徑就背景抄到新桶；abgd 讀不到就回舊桶取並快取；敏感檔（簽名／證件）先分類、立即移私桶撤公開）（三套檔案庫：文件庫／入職 hrmLib／DD pm_photos＋pm_photo_folders；桶 photos 公開 516 檔、ground-private 27 檔） | — | 上傳走 storage/v1/object/upload/sign/photos | pm_library、pm_photos、pm_photo_folders、hrdoc | Storage | 全站上傳口 | **高（簽名／證件在公開桶）** | 新殼一律私桶＋簽名網址；舊公開檔過渡期保留，引用驗證後才撤 | 第 0 波 |
+| F38 | 檔案搬家（過渡期雙向存取：GD 新上傳仍進舊桶，abgd 正向同步看到新檔路徑就背景抄到新桶；abgd 讀不到就回舊桶取並快取；敏感檔（簽名／證件）先分類、立即移私桶撤公開）（三套檔案庫：文件庫／入職 hrmLib／DD pm_photos＋pm_photo_folders；桶 photos 公開 516 檔、ground-private 27 檔） | — | 上傳走 storage/v1/object/upload/sign/photos | pm_library、pm_photos、pm_photo_folders、hrdoc | Storage | 全站上傳口 | **高（簽名／證件在公開桶）** | 新殼一律私桶＋簽名網址；舊公開檔過渡期保留，引用驗證後才撤 | 🟡 本機備份完成（543 檔 391 MB＋sha256）；搬新桶與中繼待做 |
 | F39 | 短網址 /v/:code | vercel.json rewrite | vgo | pm_shortlinks | 已發出去的 LINE 訊息 | — | 中 | 舊網域永久保留轉址到新殼 | 第 7 波 |
 | F40 | 反向 partner-api（給阿桑 12 端點：hr/schedule、hr/staff、orders、orders/prices、ping、reservations、reservations/summary、revenue/daily、revenue/items、sop/daily、sop/defs、sop/issues） | api/partner-api.js | /partner/v1/* | 讀 GD 大表 | 阿桑系統 | — | **高（阿桑拿到停更資料）** | 過渡期靠反向同步保證 GD 大表是最新；新殼開同款 app/api/ops/partner；阿桑進 abgd 後退役 | 隨資料域 |
 | F41 | 公開靜態頁：public/salary（A Beach 360 分潤制度）、public/menu-ground.html（客人菜單 3.6 MB）、public/sw.js（Service Worker，scope 蓋 /prep） | public/ | — | — | — | — | 中（舊 SW 殘留） | salary／menu-ground 照搬 app/(public)；SW 換網域要重做＋舊訂閱失效 | 第 5 波 |
@@ -141,6 +141,24 @@ Meta OAuth 重新授權、綠界特約商店申請、LINE Pay 回呼白名單、
 | 5 客人面 | 會員 F25（照表搬；點數影子）、團體訂餐 F24（金流影子、舊回呼保留到交易結清）、公開頁 F41 | LIFF／金流回呼一起驗（關卡 4） |
 | 6 錢與點數轉正 | 排行榜／積分 F04、法規薪資 F30、零用金／財務 F36、團訂金流、會員點數：**影子計算在第 2 波資料到齊就起跑（只算不發）**，連續差 0 跑完一個完整月結才轉正 | OpenAI：起跑太晚月底驗不到 |
 | 7 收尾 | DD 主程式代查改讀新表；剩餘排程；關同步橋 → 關卡 5 | DD 讀全部資料域，最後 |
+
+## 5.1 第 0 波進度（2026-10-14 10:50）
+| 項目 | 狀態 |
+|---|---|
+| GD 大表同步橋（rev／outbox／閘門／RPC） | ✅ 正式庫已套 0004；現場寫入正常；18/18 驗證 |
+| 鏡像層 legacy.pm_documents | ✅ 3,097 筆對齊；每分鐘增量；0 錯誤 |
+| 登入（橋接票／登入碼→Supabase session） | ✅ e2e 驗過；未登入導 /login |
+| 身分匯入 | ✅ 14 人＋28 身分對照＋59 權限例外＋perm mode |
+| GD 端：tabcfg.routes（no-store）／routesset／bridge／kvPut 可見錯誤 | ✅ v4.71.27 上線 |
+| GD 端：DD 寫入 adapter 骨架、kvSet 不假存檔 | ✅ v4.71.28 上線 |
+| 切換控制器（切／切回／凍結）＋命令路由骨架 | ✅ 程式上線（未切任何域） |
+| 資料域種子（30 域）／功能路由（31，全關） | ✅ 兩庫已套 |
+| 每小時備份排程 | 🟡 PR 6 |
+| 側欄分組第 2 版＋登入者 | 🟡 PR 6 |
+| 主檔唯讀影子（名冊人資欄／物料／商品） | ❌ 下一步 |
+| 投影層框架＋文件庫 F21 演練（0.5 波） | ❌ 下一步 |
+| LINE Login／LIFF 登入 | ❌ 之後 |
+| Storage 搬新桶＋/f/ 中繼 | ❌ 之後 |
 
 ## 6. 三家關卡紀錄
 
