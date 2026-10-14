@@ -41,6 +41,8 @@ export const AI_ROUTES = {
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   inbox:     { label: '收件匣 AI 助手', where: 'GD 收件匣對話「問 AI」：看這段對話＋備忘錄回答同事、擬回覆草稿（一鍵放進回覆框，不會自動發；v4.71.11）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
+  mediaread: { label: '收件匣讀照片／檔案', where: 'GD 收件匣：客人或我們傳的照片、PDF 自動讀成文字，給「問 AI」和訂位偵測用（每張只讀一次；Word／Excel 不用 AI，直接取文字；v4.71.26）', kind: 'text',
+               def: { provider: 'gemini', model: 'gemini-3.8-flash' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
   grporder:  { label: '團體訂餐拆單', where: '客人點餐頁／GD 團體訂餐：把「姓名：餐點」整段文字拆成每人一列、對到最新菜單（v4.70.78）', kind: 'text',
                def: { provider: 'openai', model: 'gpt-6.1-sol' }, fb: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
 }
@@ -81,7 +83,7 @@ const toArr = (c) => typeof c === 'string' ? [{ type: 'text', text: c }] : (Arra
 const sysText = (s) => Array.isArray(s) ? s.map(x => x.text || '').join('\n') : String(s || '')
 
 function toAnthropic(system, messages, cache) {
-  const msgs = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toArr(m.content).map(b => b.type === 'image' ? { type: 'image', source: { type: 'base64', media_type: b.media_type, data: b.data } } : { type: 'text', text: b.text || '' }) }))
+  const msgs = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toArr(m.content).map(b => b.type === 'image' ? (b.media_type === 'application/pdf' ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b.data } } : { type: 'image', source: { type: 'base64', media_type: b.media_type, data: b.data } }) : { type: 'text', text: b.text || '' }) })) // v4.71.26 PDF 走 document
   const st = sysText(system)
   const sys = st ? (cache ? [{ type: 'text', text: st, cache_control: { type: 'ephemeral' } }] : st) : undefined
   return { sys, msgs }
@@ -92,7 +94,7 @@ function toOpenAI(system, messages) {
   for (const m of messages) {
     const arr = toArr(m.content)
     const simple = arr.every(b => b.type === 'text')
-    out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: simple ? arr.map(b => b.text || '').join('') : arr.map(b => b.type === 'image' ? { type: 'image_url', image_url: { url: `data:${b.media_type};base64,${b.data}` } } : { type: 'text', text: b.text || '' }) })
+    out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: simple ? arr.map(b => b.text || '').join('') : arr.map(b => b.type === 'image' ? (b.media_type === 'application/pdf' ? { type: 'file', file: { filename: 'file.pdf', file_data: `data:application/pdf;base64,${b.data}` } } : { type: 'image_url', image_url: { url: `data:${b.media_type};base64,${b.data}` } }) : { type: 'text', text: b.text || '' }) })
   }
   return out
 }

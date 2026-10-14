@@ -528,6 +528,7 @@ export default async function handler(req, res) {
     if (b.op === 'ai') return res.status(200).json(await IB.inboxAi({ who, mgr: true, cfg, id: String(b.id || ''), q: b.q, hist: [] })) // v4.71.22 驗證問 AI 讀訂位檔期
     if (b.op === 'resv') { const tdy = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); const pk = IB.pickDates(String(b.q || ''), tdy); return res.status(200).json({ ok: true, pk, text: await IB.resvBrief(pk) }) }
     if (b.op === 'bkdetect') return res.status(200).json(await IB.bkDetect({ limit: Math.min(60, +b.limit || 15), force: !!b.force })) // v4.71.23 驗證訂位偵測
+    if (b.op === 'mediaread') return res.status(200).json(await IB.inboxMediaRead({ force: !!b.force, limit: Math.min(80, +b.limit || 12) })) // v4.71.26 補讀照片／檔案
     if (b.op === 'bkwatch') return res.status(200).json(await IB.bkWatch({ dry: true }))
     if (b.op === 'bkset') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'bkset', id: String(b.id || ''), value: b.value }))
     if (b.op === 'memo') return res.status(200).json(await IB.convOp({ who, mgr: true, cfg, op: 'memo', id: String(b.id || ''), value: b.value }))
