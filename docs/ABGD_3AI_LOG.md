@@ -116,3 +116,14 @@ JWT 直讀 401／直寫 401；切換 epoch 2；DD 壞路徑拒；新增→改名
 **文件庫 F21 正式切到新殼（epoch 4）**：GD 側欄「文件庫」→ ab-gd.vercel.app/ops/library 自動登入；切後對帳差 0；30 分鐘監看中（看門狗每分鐘、GD 看門狗每 5 分鐘）。
 
 
+
+## 關卡 3：會議 F14（2026-10-14 下午～晚上，Opus 5.5）
+| 輪 | OpenAI | Gemini | Claude（獨立） | CC 處理 |
+|---|---|---|---|---|
+| 1 | 不可切：併發簽收覆蓋、worker 先標 sent、代發口 LINE 失敗當成功、冪等非原子、多副作用半成功、回寫不可靠、名字非穩定身分、fencing、setfield 權限、投影非原子、權限錯誤當放行 | 不可切：併發覆蓋（ack/view/ask 無樂觀鎖）、代發口冪等 race、提醒批量塞車 | 有條件：發群下拉讀錯欄位、通知從沒真送、GD 歸屬查不到當 GD、標 sent 太早 | v0.4.1＋GD v4.71.33/34：meeting_mutate 欄位級交易、effects_claim 租約、逐人子事件、每事件原子佔位、失敗可重試、提醒送達才計次、fail closed、下拉 label＋預設 Family |
+| 2 | 不可切：fence 沒鎖、投影可倒退、回寫失敗卡住、舊版提醒污染、租約無 token、GD 重領非原子、busy 當成功、guard 錯誤當取消、edit 可不帶 rev | **可切**（下拉已修） | **可切**；中項：簽收擋編輯、失敗提醒卡後續、回切重複提醒 | v0.4.2＋GD v4.71.35：for share fence＋domain_set、meet_project_v rev 守門、meet_apply_result 交易防重比版本、claim token、條件重領、X-Line-Retry-Key、三態 guard、點名重算、content_rev 必帶、回切取消提醒；演練 3 真送全過 |
+| 3 | 不可切：GD finish/release 未驗 token、失去租約仍釋放鍵、投影 rev 0 可繞過 | **可切**；中：重試鍵模組變數並發互蓋 | （已判可切） | v0.4.3＋GD v4.71.36：token 存 editor 條件更新、effects_finish 同交易釋放、拒無效 rev、AsyncLocalStorage |
+| 4 | 只剩：writer NULL 判斷 | — | — | 改 is distinct from（欄位本來 not null） |
+### 結案：**會議 F14 正式切到新殼（2026-10-14 晚，epoch 5）**；切換前後對帳差 0；SIDE_EFFECTS=live；30 分鐘監看中。
+- 有意差異：新殼一律要登入（GD 未綁定可看）；Web Push 照 GD best-effort；通知改為交易提交後由 worker 送（延遲數秒，可靠性更高）。
+- 自我紀錄：PR 19 曾在 CI 失敗下合併（腳本未判斷結果）→ 已改成 CI success 才合併，寫進記憶 abgd-merge-discipline。
