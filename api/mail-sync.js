@@ -108,6 +108,8 @@ async function abgdCmd(domain, action, args, operator) {
   try { const r = await fetch(base + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sig }, body }); const j = await r.json().catch(() => ({})); return { ...j, ok: !!j.ok, text: j.text || j.error || ('新版回應 ' + r.status) } } catch (e) { return { ok: false, text: '新版連不上：' + (e.message || e) } }
 }
 // SOP（F02＋問題回報 F33）寫入端點：SOP 切新殼後一律 409（GD 側欄已導去新版；舊頁快取還開著的人看到提示）
+// 班表 F15（shift 域＝sp_finance_pm_shift_g）寫入端點：切新殼後一律 409（不分方法：shiftoff／shiftdedup 是 GET 也會寫）
+const SHIFT_WRITE_QS = ['shiftset', 'shiftcolor', 'shiftfill', 'shiftdedup', 'shiftoff']
 const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
@@ -422,6 +424,7 @@ async function syncJoya(daysBack) {
 }
 
 export default async function handler(req, res) {
+  if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if ((req.method === 'POST' || (req.query && req.query.sopstamp)) && req.query && SOP_WRITE_QS.some(k => req.query[k]) && !(req.query.sopissue && SOP_WRITE_QS.filter(k => req.query[k]).length === 1 && (() => { try { const b0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); return b0.op === 'pub' } catch (_) { return false } })()) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // sopissue op=pub（GD 首頁「N 筆回報等確認發布」）例外：下面轉新殼
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
@@ -2042,7 +2045,9 @@ export default async function handler(req, res) {
     // 人被移出 GD 再加回來舊標記還在→未排/快選都不列他）：加人＝一律恢復常態排班，不留舊標記
     if (gb.op === 'add') {
       const shG = await kvGet('sp_finance_pm_shift_g')
-      if (shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) {
+      const owS = await abgdOwnerOf('sp_finance_pm_shift_g')
+      if (owS === 'abgd') { if (shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) { try { await abgdCmd('shift', 'unoff', { name: pG.name, by: whoG.name }, whoG.name) } catch (_) {} } } // abgd：班表在新殼＝轉新殼恢復常態
+      else if (owS === 'gd' && shG && Array.isArray(shG.offStaff) && shG.offStaff.includes(pG.name)) {
         shG.offStaff = shG.offStaff.filter(n9 => n9 !== pG.name)
         shG.hist = [...(shG.hist || []).slice(-499), { ts: new Date().toISOString(), by: whoG.name, d: '↺ ' + pG.name + ' 加入 GD 人員，恢復常態排班' }]
         await kvPut('sp_finance_pm_shift_g', shG, 'GD加人恢復常態(' + pG.name + ')')
@@ -3295,7 +3300,7 @@ export default async function handler(req, res) {
     let colDirty = false
     const usedC = new Set(Object.values(colMap))
     for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 16) ci++; colMap[s3.n] = ci % 16; usedC.add(colMap[s3.n]); colDirty = true } }
-    if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
+    if (colDirty && sd && (await abgdOwnerOf('sp_finance_pm_shift_g')) === 'gd') { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') } // abgd：班表在新殼時讀取不寫回
     // v4.9.0 崗位熟練度（張良 2026-10-02：訓練/排班安排）：每人×崗位排過幾次（只算今天含以前；被帶訓另計 🎓 前綴鍵）
     const todayS9 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const posStats = {}
