@@ -252,6 +252,7 @@ const ACTIONS = {
     return { ok: true }
   },
   async issue_pub_group(a) { // 審核發布 go → 發到 DD 自動訊息 issue 設定的群（原 sopissue pub）
+    if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' } // 超過 23 小時不再送（同上）
     const cfgI = await ddGet('issue')
     if (!TK() || !cfgI.on) return { ok: true, skipped: true }
     const it = a.it || {}
@@ -262,6 +263,8 @@ const ACTIONS = {
   },
   async pi_pub_group(a) { // LINE 審核按鈕「發布到群」（原 line-webhook pi|go：固定發內部群＋全員推播，文字照抄）
     const it = a.it || {}
+    // 超過 23 小時（LINE 去重期限前）的發布嘗試不再送（關卡 3 SOP 第七輪）：避免期限過後重送變重複
+    if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     if (!TK()) return { ok: false, retry: true } // 缺金鑰＝等設定修好重試（不當成已發；關卡 3 SOP 第二輪）
     // 固定重試鍵＝問題編號（與 GD 舊路徑同一把）：切換前後兩邊、重試幾次，LINE 都只收一次
     const ok = await linePush('Cf7940efc6517b0c084ad2ad496b45f30', [{ type: 'text', text: `⚠️ 看板問題回報【${it.st}】\n${it.text || '（見附件）'}\n— ${it.by}${(it.media || []).length ? `・附 ${it.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\n${prepLink('')}` }], 'pi-pub:' + (a.id || it.id || ''))
