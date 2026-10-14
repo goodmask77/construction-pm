@@ -175,6 +175,14 @@ const ACTIONS = {
     try { await logPush(u, 1, '會議全員簽收(' + a.by + ')') } catch (_) {}
     return { ok: true }
   },
+  async boss_dm(a) { // 私訊老闆（固定收件人 LINE_BOSS_USER，不收任意 userId）：新殼排程摘要（例：每日菜商報價同步）用；有 idem＝重試不重發
+    const to = String(process.env.LINE_BOSS_USER || 'Uf7ce4fb9191cd3055247204e0cb6b4fc').trim()
+    const text = String(a.text || '').slice(0, 4800); if (!text) return { ok: true, skipped: true }
+    const ok = await linePush(to, [{ type: 'text', text }])
+    if (!ok) return { ok: false, retry: true }
+    try { await logPush(to, 1, String(a.tag || '新殼私訊老闆').slice(0, 40)) } catch (_) {}
+    return { ok: true }
+  },
   async award(a) { const r = await awardPtsStrict(a.person, a.act, a.ref); return { ok: true, awarded: r.awarded, reason: r.reason } }, // 規則關閉／已給過／達上限＝完成；讀寫失敗丟錯＝新殼重試（關卡 3 回饋第一輪）
   async meet_ask(a) { // 發問→DD 私訊老闆群操作者＋收件匣任務
     const ops = (await kvGet('pm_bot_operators')) || {}

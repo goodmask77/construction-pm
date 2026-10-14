@@ -220,7 +220,10 @@
   }
   window._ctScope = function (s) { if (cForm) cForm.scope = s; const el = document.getElementById('ctList'); if (el) el.innerHTML = list() }
 
+  window.costMoved = window.costMoved || (() => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.costdash)) // abgd 搬家（F13）：成本模組切新殼後（入口 routes.costdash）舊頁只能看
+  const COST_MOVED_TX = '成本總覽已經搬到新版：這裡只能看。要處理請從側欄點「成本總覽」（會自動登入新版）。'
   async function post (body) {
+    if (costMoved()) { alert(COST_MOVED_TX); return false }
     const r = await fetch('/api/mail-sync?costtodo=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) })
     const j = await r.json().catch(() => ({ ok: false, error: '連線問題' }))
     if (!j.ok) { try { toast(j.error || '沒成功') } catch (_) { alert(j.error || '沒成功') } }

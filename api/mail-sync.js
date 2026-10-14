@@ -5660,6 +5660,7 @@ export default async function handler(req, res) {
     const canD = !probeD && !!(await permWho(meTk, 'buy'))
     if (req.method === 'POST') {
       if (!canD) return res.status(403).json({ ok: false, error: '沒有設定的權限（採購權限）' })
+      if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
       const r = await cdApply({ kvGet, kvPut, who: meW, body: bD })
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
@@ -5726,6 +5727,7 @@ export default async function handler(req, res) {
     const canDecide = !probeC && !!(await permWho(meTk, 'buy'))
     if (req.method === 'POST') {
       if (!canDecide) return res.status(403).json({ ok: false, error: '沒有處理待處理的權限（採購權限）' })
+      if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
       const r = await costDecide({ kvGet, kvPut, who: meW, body: bC })
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
@@ -5796,6 +5798,7 @@ export default async function handler(req, res) {
     if (req.query?.vegimport) {
       const mkV = (process.env.MENU_PROBE_KEY || '').trim(), pkV = (process.env.PARTNER_API_KEY || '').trim(), kV = String(req.query.vegimport)
       if (!((mkV && kV === mkV) || (pkV && kV === pkV))) return res.status(403).json({ ok: false })
+      if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
       const whoV = { name: 'CC（菜商報價）' }
       try {
         if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: whoV, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
@@ -5814,6 +5817,7 @@ export default async function handler(req, res) {
     try {
       if (req.method === 'POST') {
         if (!canV) return res.status(403).json({ ok: false, error: '沒有採購權限' })
+        if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
         if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: meW, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
         if (bV.op === 'sync') { const r = await syncFromSheets({ kvGet, kvPut, who: meW, vendors: bV.vendors, srcOverride: bV.src }); return res.status(200).json(r) } // v4.70.68 直接讀試算表更新
         if (bV.op === 'pin') return res.status(200).json(await togglePin({ kvGet, kvPut, who: meW, key: bV.key, on: !!bV.on })) // v4.70.69 釘選
@@ -5832,6 +5836,7 @@ export default async function handler(req, res) {
     if (!((mkC && kC === mkC) || (pkC && kC === pkC))) return res.status(403).json({ ok: false })
     let bS = {}
     try { bS = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
     const r = await costPutSnap({ kvPut, sheet: String(bS.sheet || ''), rows: bS.rows, asOf: bS.asOf })
     return res.status(r.ok ? 200 : 400).json(r)
   }

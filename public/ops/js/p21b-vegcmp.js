@@ -30,7 +30,9 @@
   }
   window._vgPin = async (k, ev) => { if (ev) ev.stopPropagation(); const on = !pins.has(k); if (on) pins.add(k); else pins.delete(k); paint(); if (D.me && D.me.canDecide) { const j = await post({ op: 'pin', key: k, on }); if (j.ok) pins = new Set(j.pins) } else { try { localStorage.setItem('vegPins', JSON.stringify([...pins])) } catch (_) {} } }
   window._vgSort = k => { if (f.sort === k) f.dir = f.dir === 'desc' ? 'asc' : 'desc'; else { f.sort = k; f.dir = k === 'name' ? 'asc' : 'desc' } paint() }
-  async function post (body) { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) }); return r.json().catch(() => ({ ok: false, error: '連線問題' })) }
+  window.costMoved = window.costMoved || (() => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.costdash)) // abgd 搬家（F13）：成本模組切新殼後（入口 routes.costdash）舊頁只能看
+  const COST_MOVED_TX = '成本總覽已經搬到新版：這裡只能看。要處理請從側欄點「成本總覽」（會自動登入新版）。'
+  async function post (body) { if (costMoved()) return { ok: false, error: COST_MOVED_TX }; const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) }); return r.json().catch(() => ({ ok: false, error: '連線問題' })) }
   const paint = () => { const el = document.getElementById('cdBody'); if (el) el.innerHTML = render() }
 
   async function loadChk () { if (chkLoading || (D && D.chkLoaded)) return; chkLoading = true; await load(true, true); chkLoading = false; paint() }
