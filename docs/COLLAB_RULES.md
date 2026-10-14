@@ -1,4 +1,4 @@
-# 協作鐵則：四人分區共編新殼 abgd（張良 2026-10-14 定，試行版 v3）
+# 協作鐵則：四人分區共編新殼 abgd（張良 2026-10-14 定，試行版 v4）
 
 適用：新殼 abgd（Next.js＋TypeScript，一個 GitHub 私有 repo、一個 Vercel 專案、Supabase，全部在 goodmask77 名下）。
 參與：張良（外框／共用）、Belle（財務）、阿桑（營運）、小夏（包場 EM）；每人用自己的 AI（Claude Code／Codex）寫程式。
@@ -106,15 +106,21 @@
 - 金鑰只放 Vercel 環境變數，不進 repo、不貼在對話裡給 AI。
 - **goodmask77 是全部系統的唯一擁有者**：GitHub、Vercel、Supabase 都開兩步驟驗證，備援碼印出來放保險箱；之後評估加一位備援擁有者。
 
-## 十、開工前要準備（一次性）
+## 十、開工狀態（2026-10-14 建置完成）
 
-| 項目 | 誰 | 費用 |
-|---|---|---|
-| GitHub Pro（私有 repo 才能主線上鎖、強制負責人核准；10-14 查證目前是 Free） | 張良付款 | US$4/月 |
-| 新 GitHub 私有 repo `abgd`，邀請三位為協作者 | CC 建、張良確認 | 0 |
-| 新 Vercel 專案（函式地區東京 hnd1，Node 24），只從 main 正式部署 | CC 建、張良確認 | 沿用現有 Pro |
-| Supabase 正式專案（東京，建在已是 Pro 的 goodmask77's Org） | CC 建、張良確認 | 依 Pro 組織加開專案的運算費（未核對） |
-| Supabase 測試專案（假資料） | CC 建 | 約 US$10/月（未核對） |
-| 三位夥伴預覽網址實測（第四節） | CC＋一位夥伴 | 不行則每人 US$20/月 |
-| 三位的 GitHub 帳號名稱（填 CODEOWNERS） | 10-14 已由 DD 私訊三位詢問 | 0 |
-| goodmask77 三個平台都開兩步驟驗證 | 張良 | 0 |
+| 項目 | 狀態 |
+|---|---|
+| GitHub Pro | ✅ 張良 10-14 已升級（US$48/年） |
+| 私有 repo `goodmask77/abgd` | ✅ 已建；main 已上鎖：必須 PR、必要檢查 `check`、負責人核准、新推送作廢舊核准、最後推送須他人核准、禁止強推與刪除；管理員（goodmask77）可略過核准 |
+| 自動檢查（GitHub Actions `check`） | ✅ 語法、型別、分區檢查（跨區 import／破壞性 migration）、建置、gitleaks 機密掃描 |
+| Vercel 專案 `abgd` | ✅ 函式東京 hnd1、Node 24、接 GitHub、只從 main 正式部署；正式網址 abgd-gamma.vercel.app |
+| Supabase 正式 `abgd-prod`（東京，Pro 組織） | ✅ 已套 core schema＋RLS；只接 Vercel 正式環境 |
+| Supabase 測試 `abgd-test`（東京） | ✅ 已套同一份 migration；接預覽與本機開發；只放假資料 |
+| 金鑰 | 正式庫管理金鑰只在 Vercel 正式環境（敏感）；兩庫密碼與金鑰只存張良電腦 `abgd/.env.local`（不進 git） |
+| Claude Code 分區提醒 | ✅ `.claude/settings.json`＋`scripts/zone-guard.mjs`（已實測：財務寫營運被擋、張良不擋） |
+| 速度（10-14 實測） | 頁面首位元組 0.10~0.15 秒（GD 0.22）；資料庫往返 23~36 毫秒（冷啟動首次 0.59 秒） |
+| 三位的 GitHub 帳號 | ⏳ 10-14 已由 DD 私訊詢問，收到後邀請＋補 CODEOWNERS |
+| 夥伴預覽網址實測 | ⏳ 等第一位夥伴推程式時測（第四節） |
+| goodmask77 三平台兩步驟驗證 | ⏳ 張良自己開 |
+
+- **注意**：新 repo 的 git 作者要設成 goodmask77＜goodmask77@gmail.com＞，否則 Vercel 認不出作者會擋預覽（10-14 踩過）。
