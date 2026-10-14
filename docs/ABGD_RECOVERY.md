@@ -1,9 +1,10 @@
-# ABGD 切換／回切 人工恢復手冊（一頁）v7
+# ABGD 切換／回切 人工恢復手冊（一頁）v8
 
 > 2026-10-14 立；v2 依回饋 F17 關卡 3 第七輪三家意見改：每一步都是切換口的一個指令＋要讀回確認的結果，不手寫 SQL。
 > v5（第十輪）：清旗標後立刻 align、B 收尾等 dirty=0 且 dead=0、GD 探測帶 domain、freeze 回應列出全部未結案操作、接管瞬間 GD 可能被舊程序動過的說法改準確；入口發布有版本圍欄（舊快照晚到 GD 回 409）。
 > v6（第十一輪）：補投影改用 `op=reproject`（只在 GD 正本 gd/gd 時跑，凍結中不能補）；新增 D 入口隔離；B 第 1 步驗收不過就停；`reproject_required=true` 超過 10 分鐘看門狗會私訊。
 > v7（第十二輪）：C 第 1 步與 B 第 1 步用同一份 freeze 驗收；控制器「控制權查不到」不再當成被接管（會隔離、留 unknown、私訊）；**正式環境的演練一律在演練專用資料域 `drill`（鍵 sp_finance_pm_zzdrill，沒有功能使用）做，不拿真功能試**。
+> v8（第十三輪）：restore_gd 回應多 `reproject`（控制面恢復 vs 影子補投影分開看）；B 收尾要看 reproject_required=false；新增 E「演練守則」。
 > 指令：`POST https://ab-gd.vercel.app/api/core/switch?key=<CRON_SECRET>`，body 見各步（`by` 填你的名字）。
 > **看狀態（只讀）**：`GET 同網址&domain=<域>` → `abgd`（writer／state／epoch／manual_required）、`gd_locks`（每個前綴 owner／epoch，`missing` 要是空的）、`open_ops`（全部 running／unknown）、`sync`（dirty／dead／oldestDirty）、`routes`。任一欄是 `unavailable`＝那項查不到，不要當正常。
 > **GD 連得上嗎**：`GET /api/core/health?gd=1&domain=<域>`（標頭 Authorization: Bearer CRON_SECRET）回 `gd:true`——這支真的去查 GD 該域的鎖列；`/api/core/health?domain=` 只驗新殼自己。
@@ -34,7 +35,7 @@
 5. `{"op":"align","domain":"<域>","by":"…"}` → writer=abgd 時 GD 前綴回 abgd（新世代，反推恢復）；writer=gd 時 GD 前綴維持 frozen。
 6. 收尾：
    - writer=abgd（新殼曾是正本）→ 等 `sync.dirty=0` **且 `sync.dead=0`**（dead>0 → 照 A 第 2 步 replay 再等）→ 再對帳一次差 0 → `{"op":"rollback",…}`（或要續留新殼找 CC）。
-   - writer=gd（新殼從沒開寫）→ `{"op":"restore_gd","domain":"…","by":"…","note":"<結論>"}` → 回 ok；GD 前綴全 gd、新殼 gd/gd。
+   - writer=gd（新殼從沒開寫）→ `{"op":"restore_gd","domain":"…","by":"…","note":"<結論>"}` → 回 ok；GD 前綴全 gd、新殼 gd/gd。**ok 只代表控制面已安全恢復**；再看回應的 `reproject.ok`：false（或狀態口 reproject_required=true）→ `{"op":"reproject",…}` 補到 ok，再對帳。
 
 ## C：操作卡住／結果不明（含平台中止）
 **不要假設已經隔離**（平台中止時程式的隔離步驟可能沒跑）。
@@ -49,6 +50,13 @@
 1. 先確認新殼恢復：`GET /api/core/health` 回 ok，且該域狀態口沒有 open_ops、sync dirty／dead 都是 0。
 2. 解除：`{"op":"routes_unquarantine","keys":["<功能代碼，例 fb>"],"by":"…","reason":"<確認了什麼，至少 10 字>"}` → 回 `routes`（實際入口）與剩下的 `quarantine`。
 3. 如果該域當時是新殼正本（writer=abgd），解除後入口會回到新殼；如果要改回 GD，走一般 rollback。
+
+## E：演練守則（正式環境）
+- 只在演練專用資料域 `drill`（鍵 sp_finance_pm_zzdrill）做；「不修改真功能資料」，但仍共用同步租約、入口序號、資料庫與 API——長時間、網路故障、租約失效類測試先在測試庫做。
+- 演練前：drill 狀態口 gd/gd、open_ops 空、dirty／dead 0、reproject_required false；`core.settings` 沒有殘留 `fault_inject`。
+- 故障注入：`core.settings` key=`fault_inject`（store_id 空），只對 drill 生效：`ctl_unavailable`（控制權一律查不到）、`fail_after_gd_frozen`（GD 凍結後丟錯）、`take_over`（丟錯前模擬人工接管）、`unavailable_after`（故障觸發後才查不到）。
+- 演練後：刪 fault_inject；照 C→B 收尾到 gd/gd；手動用過假 rev 的投影版本要校回 GD 真值（legacy.projection_state）；三功能對帳 0。
+- 注意：drill 的隔離／凍結一樣會私訊張良（看門狗與控制器不分域），演練前先告知。
 
 ## 永遠不要做
 - 不要手寫 SQL 改 `pm_domain_lock`、`core.domains`、`switch_ops`；舊的非 CAS 函式（pm_domain_set、core.domain_set）已停用。
