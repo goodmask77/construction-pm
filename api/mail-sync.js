@@ -422,7 +422,7 @@ async function syncJoya(daysBack) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'POST' && req.query && SOP_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
+  if (req.method === 'POST' && req.query && SOP_WRITE_QS.some(k => req.query[k]) && !(req.query.sopissue && (() => { try { const b0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); return b0.op === 'pub' } catch (_) { return false } })()) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // sopissue op=pub（GD 首頁「N 筆回報等確認發布」）例外：下面轉新殼
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
   let _lastBound = false // v4.31.0（張良：擋下來的訊息要分「沒登入」跟「沒權限」）：sopWho 每次順手記「這個 token 有沒有綁定」
@@ -6146,6 +6146,7 @@ export default async function handler(req, res) {
     try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoI = await permWho(bi.token, 'task')
     if (!whoI) return res.status(403).json({ ok: false, error: permDeny() })
+    if (bi.op === 'pub') { const ow = await abgdOwnerOf('sp_finance_pm_sop_issues'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'pub', { id: bi.id, val: bi.val }, whoI.name); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true } : { ok: false, error: cr.text }) } } // abgd：首頁發布按鈕轉新殼（審核資格由正本判斷）
     const [docI, defI] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def')])
     const dI = docI || { list: [] }
     const itI = (dI.list || []).find(x => x.id === bi.id)
