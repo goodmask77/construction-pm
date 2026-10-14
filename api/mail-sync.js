@@ -13,7 +13,7 @@ import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS�
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { VOID_KEY, voidsFromSnapshots, negHoursFromSheetRows, recordVoidDay } from './_voids.js' // ⚠️ GD 退單／作廢偵測（v4.71.6 張良 2026-10-12）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
-import { awardPts, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
+import { awardPts, pointsCas, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
 import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33）
 import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34）
@@ -3971,10 +3971,10 @@ export default async function handler(req, res) {
       const person = String(bP.person || '').trim().slice(0, 20)
       const pts = Math.round(Number(bP.pts) || 0)
       if (!person || !pts) return res.status(400).json({ ok: false, error: '要選人＋填加扣分數' })
-      const doc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
-      doc.list = doc.list || []
-      doc.list.push({ id: 'pt' + Date.now().toString(36) + '_adj', person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'adjust', act: 'adjust', pts, ref: '', by: whoP.name, note: String(bP.note || '').slice(0, 80) })
-      await kvPut('sp_finance_pm_points', doc, '積分抽查調整(' + whoP.name + '→' + person + ' ' + (pts > 0 ? '+' : '') + pts + ')')
+      // abgd 關卡 3 回饋（Claude B1）：改原子寫入，不再整份覆蓋（避免蓋掉同時進來的給分）
+      try {
+        await pointsCas(doc => { doc.list = doc.list || []; doc.list.push({ id: 'pt' + Date.now().toString(36) + '_adj', person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'adjust', act: 'adjust', pts, ref: '', by: whoP.name, note: String(bP.note || '').slice(0, 80) }); return { write: true, value: true } }, '積分抽查調整(' + whoP.name + '→' + person + ' ' + (pts > 0 ? '+' : '') + pts + ')')
+      } catch (e) { return res.status(503).json({ ok: false, error: '積分存檔失敗，請再按一次：' + String(e && e.message || e).slice(0, 80) }) }
     } else return res.status(400).json({ ok: false })
     return res.status(200).json({ ok: true, rules: pointsRules(cfg) })
   }
@@ -4075,11 +4075,18 @@ export default async function handler(req, res) {
     if (bR.op === 'decide') {
       if (it.status !== 'pending') return res.status(400).json({ ok: false, error: '這筆已經處理過了' })
       if (bR.pass) {
-        const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
-        ptsDoc.list = ptsDoc.list || []
-        if (balOf(it.person, ptsDoc) < it.cost) return res.status(400).json({ ok: false, error: '對方點數不足（可能剛被扣），無法核准' })
-        ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: whoR.name, note: it.rewardName })
-        await kvPut('sp_finance_pm_points', ptsDoc, '兌換扣點(' + it.person + ' -' + it.cost + ')')
+        // abgd 關卡 3 回饋（Claude B1）：餘額檢查＋扣點在同一次原子寫入內（不再整份覆蓋；同 ref 不重扣）
+        let rdOk
+        try {
+          rdOk = await pointsCas(ptsDoc => {
+            ptsDoc.list = ptsDoc.list || []
+            if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }
+            if (balOf(it.person, ptsDoc) < it.cost) return { write: false, value: 'short' }
+            ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: whoR.name, note: it.rewardName })
+            return { write: true, value: 'ok' }
+          }, '兌換扣點(' + it.person + ' -' + it.cost + ')')
+        } catch (e) { return res.status(503).json({ ok: false, error: '積分存檔失敗，請再按一次：' + String(e && e.message || e).slice(0, 80) }) }
+        if (rdOk === 'short') return res.status(400).json({ ok: false, error: '對方點數不足（可能剛被扣），無法核准' })
         it.status = 'approved'; it.decBy = whoR.name; it.decTs = nowR; if (bR.note) it.note = String(bR.note).slice(0, 80)
         it.code = genCode(new Set((rdDoc.list || []).filter(x => x.code).map(x => x.code))) // 🎟 產生核銷碼＝一張可用券
         // 扣庫存

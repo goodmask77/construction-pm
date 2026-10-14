@@ -35,7 +35,9 @@ export async function pointsCas(mutate, editor = 'onboard-bot') {
     if (row && row.data && row.data.v != null) doc = JSON.parse(row.data.v)
     const res = mutate(doc)
     if (!res.write) return res.value
-    const body = { data: { v: JSON.stringify(doc) }, editor, updated_at: new Date().toISOString() }
+    // 新的 updated_at 一定比讀到的大（同毫秒連寫時 +1ms），否則別人用舊值做條件更新會誤判沒被改過
+    const prevMs = row && row.updated_at ? Date.parse(row.updated_at) : 0
+    const body = { data: { v: JSON.stringify(doc) }, editor, updated_at: new Date(Math.max(Date.now(), prevMs + 1)).toISOString() }
     const w = row
       ? await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${PTS_KEY}&updated_at=eq.${encodeURIComponent(row.updated_at)}`, { method: 'PATCH', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(body) })
       : await fetch(`${SB_URL}/rest/v1/pm_documents?on_conflict=id`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=representation,resolution=ignore-duplicates' }, body: JSON.stringify({ id: PTS_KEY, ...body }) })
