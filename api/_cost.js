@@ -65,11 +65,13 @@ async function loadSeries (kvGet, months, slug = 'ordi', sys = 'A Beach') {
     const key = (sys === 'A Beach' ? '' : 'G|') + supplier + '|' + (code ? 'c:' + code : 'n:' + norm(nm))
     const o = per[key] || (per[key] = { key, sys, supplier, code, sku: r.sku || '', name: nm, unit: r.unit || '', orders: {} })
     if (r.unit) o.unit = r.unit
-    const od = o.orders[r.order_id || (d + '#' + p)] || (o.orders[r.order_id || (d + '#' + p)] = { d, amt: 0, qty: 0, lines: [] })
+    const od = o.orders[r.order_id || (d + '#' + p)] || (o.orders[r.order_id || (d + '#' + p)] = { d, amt: 0, qty: 0, lines: [], t: 0 })
     od.amt += p * q; od.qty += q; od.lines.push({ p, q, u: r.unit || '' })
+    const t = Date.parse(r.ordered_at || r.created_at) || 0; if (t > od.t) od.t = t
   }
   const series = Object.values(per).map(o => {
-    const pts = Object.entries(o.orders).map(([oid, x]) => ({ oid, d: x.d, p: r2(x.amt / x.qty), q: r2(x.qty), lines: x.lines })).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0))
+    // 同一天多張單依完整下單時間排（v4.71.61；原本只按日期＝照阿桑 API 回傳順序，新單在前→「最後叫貨」取到當天較早那張；與新殼 abgd 同算法）
+    const pts = Object.entries(o.orders).map(([oid, x]) => ({ oid, d: x.d, p: r2(x.amt / x.qty), q: r2(x.qty), lines: x.lines, t: x.t })).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.t - b.t)))
     return { ...o, orders: undefined, pts }
   })
   return { series, firstDay }

@@ -225,7 +225,7 @@ export default async function handler(req, res) {
   }
   let rcpSnap = null
   try { // 成本快照（規格：價格、換算、配方任一變動 → 重算受影響對象、各寫一筆、永不改寫）；失敗不影響同步
-    const mos = (() => { const out = []; const d = new Date(today + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const mos = (() => { const out = []; const d = new Date(today.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     rcpSnap = await snapshotRecipeCosts({ kvGet, kvPut, months: mos })
   } catch (e) { rcpSnap = { err: e.message } }
   state.lastRun = new Date().toISOString()
