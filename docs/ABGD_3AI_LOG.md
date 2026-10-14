@@ -50,11 +50,15 @@
 |---|---|---|
 | OpenAI | 不通過 | A（自管＋set_config）有條件可行、B 也合法；完整接管的文件採 D 整包投影、C 只作例外；不同意假 uuid 店、依年份不同步；擋關：editor 當通行證、pm_kv_patch 版本比對非原子、快照又用 max-id、租約與同鍵順序、提交級 fencing、RLS 功能讀取、租戶撞名、副作用／會員／備份閉環。要用最小驗證程式證明越權、併發、晚提交、刪後重建、切換中斷 |
 | Gemini | 有條件通過 | 條件：改 Supabase 原生 session、反向整包投影、event_id 冪等。另：業務交易只寫 dirty、鏡像層可省、冷資料進 archive 無外鍵 |
-| Claude | （待補） | |
+| Claude | 有條件通過 | 改口採 A（自管＋set_config）但要四硬條件（nobypassrls 專用角色、force RLS、完整 claims、CI 證據）；C vs D 採 D；SQL v3 三題：editor 確定可繞、pm_kv_patch 非原子、領取制有重複 done／同鍵死信跳過／跨庫 done 不原子；另：GD 主 App src/supa.js 寫入失敗只 console.warn＝假存檔，ABGD_LOCKED 要有可見錯誤 |
 
 ### CC 的裁決（關卡 2：採多數＋較安全）
 - 登入：**B Supabase 原生 session**（Gemini、Claude 主張；OpenAI 認可合法）。反向：**D 整包投影＋event_id＋epoch**（三家一致）。閘門：可信上下文（RPC 內 set_config）取代 editor。outbox：lease token＋CAS＋同鍵序列化＋一致讀取；快照不截斷。settings：NULL＋部分唯一索引（OpenAI）而非假 uuid（Gemini）。冷資料：archive schema 無外鍵（Gemini）但以「封存狀態」而非年份判定（OpenAI）。鏡像層保留（OpenAI／Claude 要重播層；Gemini 認為多餘→18 MB 不構成負擔）。
-- 寫程式前先做 OpenAI 要求的最小驗證程式（越權、併發 rev、晚提交、刪後重建、切換中斷），結果附在關卡 2 結案。
+- 登入 A vs B 最終：Gemini B、Claude 改 A、OpenAI 兩者皆可 → **選 B（Supabase 原生 session）**：少一套自訂角色／RLS 注入程式＝攻擊面較小，兩庫已設 autoconfirm／disable_signup／jwt 15 分。
+- **最小驗證程式已跑過（2026-10-14 09:50，abgd-test 東京庫，scripts/test-abgd-bridge.mjs）18/18 通過**：rev 自增、outbox、鎖住後一般角色偽造 editor 被擋、自設 abgd.sync 但 epoch 錯被擋、投影成功／同 event_id 重送 dup 不改資料／錯 epoch 例外回滾不留 applied、領取每鍵一筆、同鍵序列化、錯 token 標不了 done、晚提交事件仍領得到、刪後重建 rev 連續、併發同 event_id 一成功一 dup 無例外。
+- SQL 定稿：construction-pm/supabase/migrations/0004_abgd_sync_bridge.sql（v4：可信上下文、owner/epoch fencing、lease token、CAS done、pm_read_current、pm_snapshot、pm_kv_project 先佔 event_id）。
+- 待辦（寫進第 0 波）：GD 共用層 kvSet 遇 ABGD_LOCKED 要回可見錯誤並記 errlog（獨立 Claude ②）；worker 單例用租約列。
+- **關卡 2 結案：有條件通過，條件已落實（SQL＋測試）；開始寫地基程式。**
 
 
 ## 關卡 2：資料表設計／登入／同步橋／入口切換（2026-10-14）
