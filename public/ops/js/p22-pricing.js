@@ -24,7 +24,8 @@
     if (curStore === 'pricing') { app.innerHTML = render(); if (openKey) { const it = item(openKey); if (it) drawer(it) } }
   }
   const item = k => (PD.items || []).find(i => i.key === k)
-  const can = () => PD && PD.me && PD.me.canEdit
+  window.pricingMoved = window.pricingMoved || (() => !!(window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.pricing)) // abgd 搬家（F12）：菜單成本切新殼後（入口 routes.pricing）舊頁只能看
+  const can = () => PD && PD.me && PD.me.canEdit && !window.pricingMoved()
   const imgUrl = p => p ? '/api/mail-sync?mcphoto=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&path=' + encodeURIComponent(p) : ''
 
   function filt () {
@@ -162,6 +163,7 @@
   }
 
   async function post (body) {
+    if (window.pricingMoved && window.pricingMoved()) return { ok: false, error: '菜單成本已經搬到新版：這裡只能看。要改請從側欄點「菜單成本」（會自動登入新版）。' }
     const r = await fetch('/api/mail-sync?pricing=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) })
     const j = await r.json().catch(() => ({ ok: false, error: '連線問題' }))
     if (!j.ok) alert(j.error || '沒成功')
