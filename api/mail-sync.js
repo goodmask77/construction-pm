@@ -19,6 +19,7 @@ import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' //
 import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34）
 import { buildPricing as prBuild, applyPricingOp as prApply, seedGdFive } from './_menu.js' // 💲 成本模組 批次5 菜單與定價＋批次4 GD 五款（v4.70.35） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 import * as WASTE from './_waste.js' // 🧪 耗損紀錄 v1（批次 1b，v4.70.32） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import { orderedKvGet } from './_jsonborder.js' // abgd 成本模組 F13：成本算法讀到的鍵順序與新殼一致（jsonb 順序）
 import { buildDash as cdDash, buildVendors as cdVendors, applyDashOp as cdApply } from './_costdash.js' // 📊 成本模組 批次5a 成本總覽＋廠商月帳（v4.70.34）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -5661,15 +5662,15 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       if (!canD) return res.status(403).json({ ok: false, error: '沒有設定的權限（採購權限）' })
       if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
-      const r = await cdApply({ kvGet, kvPut, who: meW, body: bD })
+      const r = await cdApply({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, body: bD })
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
     }
     const todayD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosD = (() => { const out = []; const d = new Date(todayD.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const view = String(req.query.view || 'dash')
-    if (view === 'vendors') { const t = await cdVendors({ kvGet, months: mosD, ym: String(req.query.ym || ''), detail: String(req.query.vendor || '') }); return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t }) }
-    const t = await cdDash({ kvGet, months: mosD })
+    if (view === 'vendors') { const t = await cdVendors({ kvGet: orderedKvGet(kvGet), months: mosD, ym: String(req.query.ym || ''), detail: String(req.query.vendor || '') }); return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t }) }
+    const t = await cdDash({ kvGet: orderedKvGet(kvGet), months: mosD })
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t })
   }
   // ── 🧪 耗損紀錄 v1（批次 1b）──（v4.70.32，規格 docs/COST_MODULE_SPEC.md「耗損紀錄(AI 拍照)」；規則在 api/_waste.js）
@@ -5728,13 +5729,13 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       if (!canDecide) return res.status(403).json({ ok: false, error: '沒有處理待處理的權限（採購權限）' })
       if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
-      const r = await costDecide({ kvGet, kvPut, who: meW, body: bC })
+      const r = await costDecide({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, body: bC })
       if (r.ok) await announceChanged()
       return res.status(r.ok ? 200 : 400).json(r)
     }
     const todayC = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosC = (() => { const out = []; const d = new Date(todayC.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
-    const t = await costBuildTodo({ kvGet, months: mosC })
+    const t = await costBuildTodo({ kvGet: orderedKvGet(kvGet), months: mosC })
     if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
     return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
   }
@@ -5801,9 +5802,9 @@ export default async function handler(req, res) {
       if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
       const whoV = { name: 'CC（菜商報價）' }
       try {
-        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: whoV, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
-        if (bV.op === 'sync') return res.status(200).json(await syncFromSheets({ kvGet, kvPut, who: whoV, vendors: bV.vendors, srcOverride: bV.src }))
-        const r = await importQuotes({ kvGet, kvPut, body: bV, who: whoV }); return res.status(r.ok ? 200 : 400).json(r)
+        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet: orderedKvGet(kvGet), kvPut, who: whoV, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        if (bV.op === 'sync') return res.status(200).json(await syncFromSheets({ kvGet: orderedKvGet(kvGet), kvPut, who: whoV, vendors: bV.vendors, srcOverride: bV.src }))
+        const r = await importQuotes({ kvGet: orderedKvGet(kvGet), kvPut, body: bV, who: whoV }); return res.status(r.ok ? 200 : 400).json(r)
       } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
     }
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -5818,15 +5819,15 @@ export default async function handler(req, res) {
       if (req.method === 'POST') {
         if (!canV) return res.status(403).json({ ok: false, error: '沒有採購權限' })
         if ((await abgdOwnerOf('sp_finance_pm_cost_todo')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // abgd 搬家（F13）：成本模組切新殼後 GD 寫入一律擋
-        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: meW, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
-        if (bV.op === 'sync') { const r = await syncFromSheets({ kvGet, kvPut, who: meW, vendors: bV.vendors, srcOverride: bV.src }); return res.status(200).json(r) } // v4.70.68 直接讀試算表更新
-        if (bV.op === 'pin') return res.status(200).json(await togglePin({ kvGet, kvPut, who: meW, key: bV.key, on: !!bV.on })) // v4.70.69 釘選
-        if (bV.op === 'refreshMarket') { const m = await marketSeries({ kvGet, kvPut, force: true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, errs: m.errs }) }
+        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        if (bV.op === 'sync') { const r = await syncFromSheets({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, vendors: bV.vendors, srcOverride: bV.src }); return res.status(200).json(r) } // v4.70.68 直接讀試算表更新
+        if (bV.op === 'pin') return res.status(200).json(await togglePin({ kvGet: orderedKvGet(kvGet), kvPut, who: meW, key: bV.key, on: !!bV.on })) // v4.70.69 釘選
+        if (bV.op === 'refreshMarket') { const m = await marketSeries({ kvGet: orderedKvGet(kvGet), kvPut, force: true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, errs: m.errs }) }
         return res.status(400).json({ ok: false, error: '不認得的操作' })
       }
-      if (req.query.view === 'meal') return res.status(200).json({ ...(await mealStats({ kvGet, months: mosV })), me: { name: meW.name, canDecide: canV } }) // v4.70.75 員餐分析
-      if (req.query.market === 'refresh' && (probeV || canV)) { const m = await marketSeries({ kvGet, kvPut, force: req.query.all ? 'all' : true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, nDone: m.nDone, nSkip: m.nSkip, ms: m.ms, errs: m.errs }) }
-      const t = await buildVegCmp({ kvGet, kvPut, months: mosV, withChk: req.query.chk === '1' }) // v4.70.70 預設不算偵錯那包（快），核對頁帶 chk=1
+      if (req.query.view === 'meal') return res.status(200).json({ ...(await mealStats({ kvGet: orderedKvGet(kvGet), months: mosV })), me: { name: meW.name, canDecide: canV } }) // v4.70.75 員餐分析
+      if (req.query.market === 'refresh' && (probeV || canV)) { const m = await marketSeries({ kvGet: orderedKvGet(kvGet), kvPut, force: req.query.all ? 'all' : true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, nDone: m.nDone, nSkip: m.nSkip, ms: m.ms, errs: m.errs }) }
+      const t = await buildVegCmp({ kvGet: orderedKvGet(kvGet), kvPut, months: mosV, withChk: req.query.chk === '1' }) // v4.70.70 預設不算偵錯那包（快），核對頁帶 chk=1
       return res.status(200).json({ ...t, me: { name: meW.name, canDecide: canV } })
     } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
   }
