@@ -12,13 +12,14 @@
 | 回饋 F17 | ✅ 已切 17:30（epoch 38；關卡 3 共 14 輪） | feedback |
 | SOP F02＋問題回報 F33 | ✅ 已切 20:45（epoch 1；9 輪） | sop（sp_finance_pm_sop_） |
 | 班表 F15 第 A 段（班表主檔） | ✅ 已切 21:50（epoch 1；3 輪） | shift（只有 sp_finance_pm_shift_g） |
-| 物料卡 F11 | 🔧 子代理在 abgd 分支 ops/matcard 寫後端＋畫面（拆域已做、已套兩庫） | matcard |
+| 物料卡 F11 | ✅ 10-14 23:47 已切（epoch 1，關卡 3 四輪；GD 成本待辦合併經命令轉新殼，必帶操作編號） | matcard |
+| 耗損 F09 | 🟡 影子已上線（新殼 v0.4.62、GD v4.71.64；ops.waste_view 已套兩庫；GD 對照 54 項）；下一步：正式讀取對帳、速度、AI 讀秤實打、關卡 3 | waste |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
 版本：新殼 v0.4.50（main）、GD v4.71.58（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
-物料卡 → 耗損（要 AI 讀秤：新殼還沒接 AI，要先做「AI 走 GD 代發口唯讀動作」或新殼 AI 出口）→ 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+耗損（AI 讀秤走 GD 代發口 ai_call，已上線 v4.71.59）→ 成本總覽（cost 域；cron-daily 08:00 菜商報價段要拆；scripts/cost-snap-ingest.py 網址要改）→ 食譜＋菜單成本（recipe 域；boss-sync 每小時寫 recipecost_snap 要先處理；?gdfive 同時寫兩鍵）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -44,3 +45,14 @@
 - 回饋切換後第一筆真實給分還沒核對。
 - 命名待回：core.memberships、sp_finance_pm_prep_routes、「abgd 集團（暫名）」、sp_finance_pm_sopsum_outbox、sp_finance_pm_pipub_log（已不用）。
 - GD repo 改私有。
+
+## 10-14 物料卡學到的（下一個功能照做）
+- 速度看 PERF_RULES 原文：API 是「伺服器端」P95 ≤ 0.5 秒（看 server-timing），台灣端到端另一個門檻 ≤ 1 秒，冷啟動另記不算。scratchpad perf3.mjs 兩種一起量。
+- 列表只帶畫面真的用到的欄位；明細點開再抓。
+- 寫入要防物件原型名稱（constructor、isPrototypeOf…）：鍵驗真實格式＋查詢只認自有屬性；GD 讀反推文件也要防。
+- 會建立東西的操作（合併）要「操作編號必帶＋收據綁內容雜湊＋不改資料的成功也留收據」，只看「現在狀態一樣」不算冪等（OpenAI 第二、三輪抓到）。
+- 同類 bug 要全庫掃：月份往回推 setUTCMonth 從「今天」推，29～31 號溢位，GD 共 12 處（已全修）。
+- 切換當班在正式環境實測：GD 所有寫入 op 409、命令轉發同編號重送、網頁收據各情境，用主檔沒有的測試代碼、結束拆回。
+
+## 待張良（10-15 新增）
+- **新殼自動檢查設定（.github/workflows/ci.yml）要改**：main 推送時的機密掃描放在建置之後，會掃到 node_modules／.next 快取 → 每次都誤報 8 筆（repo 檔案本身掃描 0 筆，已在本機用同版 gitleaks 確認）。修法已寫好（掃描移到最前面），但 CC 用的 GitHub 金鑰沒有 workflow 權限、推不上去。要張良把金鑰加 workflow 權限，或照修法在 GitHub 網頁改。
