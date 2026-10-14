@@ -499,7 +499,7 @@ async function abgdOpen(k, url){
     if (!j.ok || !j.ticket) { alert(j.error || '新版入口暫時打不開，先用舊版'); return }
     const u = new URL(url); const f = document.createElement('form'); f.method = 'POST'; f.action = u.origin + '/api/core/auth/bridge'; f.style.display = 'none'
     const add = (n, v) => { const i = document.createElement('input'); i.name = n; i.value = v; f.appendChild(i) }
-    add('ticket', j.ticket); add('to', u.pathname + u.search)
+    add('ticket', j.ticket); add('to', u.pathname + u.search + u.hash)
     document.body.appendChild(f); f.submit()
   } catch(e) { alert('新版入口打不開：' + (e && e.message || e)) }
 }

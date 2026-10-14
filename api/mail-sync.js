@@ -87,6 +87,16 @@ export async function invStatus(kind) {
   return { items: out, cats: kd.cats || [] }
 }
 
+// abgd 搬家：這個鍵現在誰在寫（gd／abgd／frozen）；寫入端點開頭先擋，避免副作用（發訊）先做、存檔才失敗
+export async function abgdOwnerOf(key) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_domain_lock?select=prefix,owner`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const rows = r.ok ? await r.json() : []
+    const hit = rows.filter(l => key.startsWith(l.prefix)).sort((a, b) => b.prefix.length - a.prefix.length)[0]
+    return hit ? hit.owner : 'gd'
+  } catch (_) { return 'gd' }
+}
+const ABGD_MOVED = '這個功能已搬到新版，請從側欄重新點進去（會自動登入新版）'
 export async function kvPut(id, obj, editor) {
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
@@ -2839,6 +2849,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.meetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.meetset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_meet')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
     let mb = {}
     try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoM = ['ack','view','ask'].includes(String(mb.op)) ? await sopWho(mb.token) : await permWho(mb.token, 'meet') // v4.34.0 簽收/看過/發問=人人可；增改刪/類型/回覆才要會議編輯權
@@ -4905,6 +4916,7 @@ export default async function handler(req, res) {
     const mgrL = libIsMgr(whoL, aprL, pmL)
     const lib = (await kvGet(LIB_KEY)) || { folders: [], files: {}, log: [] }
     lib.folders = lib.folders || []; lib.files = lib.files || {}
+    if (req.method === 'POST' && (await abgdOwnerOf(LIB_KEY)) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
 
     // 讀：回傳「這個人看得到的」資料夾＋檔案（看不到的連同檔案都不回傳＝伺服器端就過濾）
     if (req.query?.libget) {
