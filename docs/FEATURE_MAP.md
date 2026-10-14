@@ -34,7 +34,7 @@
 | F11 | 物料卡 | p19-matcard | matcard、mcard、mcphoto；api/_matcard.js | pm_matcard、pm_inv | — | — | 中 | app/ops/matcard；ops.material_cards | 待搬 |
 | F12 | 菜單成本（定價） | p22-pricing | pricing、priceset；api/_menu.js | pm_pricing、pm_pos_prices、pm_pos_costs、pm_menu | — | — | 中 | app/ops/pricing；ops.menu_items／menu_prices | 待搬 |
 | F13 | 成本總覽（含廠商月帳、菜商比價、員餐分析、偵錯待辦） | p21-costdash、p21b-vegcmp、p17-costtodo | costdash、costsnap、costtodo、vendor、vegcmp、vegimport；api/_costdash.js、_cost.js、_vegquote.js | pm_cost_snap_*、pm_cost_todo、pm_cost_cfg、pm_veg_quotes、pm_veg_market、pm_vendor_recon_ | 農業部行情、Google 試算表 | mail-sync 排程（菜商報價／試算表） | **高（月帳對帳）** | app/ops/cost；ops.cost_snapshots／veg_quotes／veg_market | 待搬 |
-| F14 | 會議（宣達簽收） | p04-inv-meet | meet、meetset、meetping | pm_meet | LINE 提醒 | joya-intraday（宣達追提醒） | 低 | app/ops/meetings；ops.meetings／meeting_acks | 待搬 |
+| F14 | 會議（宣達簽收） | p04-inv-meet | meet、meetset、meetping | pm_meet | LINE 提醒 | joya-intraday（宣達追提醒） | 低 | app/ops/meetings；ops.meetings／meeting_acks | ✅ **已切入口 2026-10-14 晚**（epoch 5；關卡 3 四輪；通知走 GD 代發口 api/abgd-fx.js；追提醒改新殼排程）→ 只改新殼 |
 | F15 | 班表（整月網格＋AB 班表＋訂位網格＋人力時數配置） | p05-shift、p06-shift2、p07-labor | shift、shiftset、shiftcolor、shiftfill、shiftoff、shiftdedup、labor、laborset | pm_shift_g、sp_crew_pm_hr_sched_、pm_labor | NUEiP | hr 排程（NUEiP） | **高（人力／薪資連動）** | app/ops/shifts；ops.shifts／shift_plans／labor_plans | 待搬 |
 | F16 | 異常通知（boss 異常＋AB 停售） | p10-perm-init（inc 段） | absinc、abmod、abmodset | pm_boss_inc_、pm_absoldout、pm_abmod | 阿桑 boss-api | boss-sync | 中 | app/ops/alerts；ops.incidents | 待搬 |
 | F17 | 回饋（指派制互評） | p08-menu-misc（fb 段） | fb、fbset、fbassign、fbdims、fbj | pm_fb、pm_fb_assign、pm_fb_dims、pm_fbj | — | — | 低 | app/ops/feedback；ops.feedback／feedback_assign | 待搬 |
