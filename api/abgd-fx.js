@@ -75,6 +75,15 @@ const ACTIONS = {
     let sendGroups = []; try { sendGroups = (await ddAll()).groups } catch (_) {}
     return { regNames, allNames, boundNames, sendGroups, approvers }
   },
+  // 讀：回饋頁需要的名單（與 GD ?fb 同算法：當天打卡者、名冊、審核人、站長、站別）
+  async fb_meta(a) {
+    const dt = /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || '')) ? String(a.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const [rosterF, defFb] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_sop_def')])
+    const pjF = await import('./punch.js')
+    let pch = []; try { pch = await pjF.listPunches('sp_crew_pch_' + dt.replace(/-/g, '')) } catch (_) {}
+    const g = (defFb || {}).ground || {}
+    return { date: dt, workers: [...new Set(pch.map(p2 => p2.name))].filter(Boolean), names: gdNames(rosterF), approvers: g.approvers || ['張良瑋'], stOwner: g.stOwner || {}, stations: g.stations || [] }
+  },
   async meet_group(a) { // 新會議發大群（DD 自動訊息 meet_new）
     const cfgG = await ddGet('meet_new')
     if (!TK() || !cfgG.on) return { ok: true, skipped: true }
@@ -202,7 +211,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta'
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta'
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
