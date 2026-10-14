@@ -5,7 +5,10 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 前端用：POST ?sopsummary=<OPS_BOARD_KEY> {token, mode:'preview'|'send', date?} 預覽／手動測試發送。
 import { kvGet, kvPut } from './mail-sync.js'
 
-const OUTBOX_KEY = 'sp_finance_pm_sop_outbox'
+// abgd 搬家（2026-10-14）：發送紀錄搬到 SOP 資料域以外的鍵（SOP 切新殼後 GD 不能再寫 sp_finance_pm_sop_ 開頭的鍵）；
+// 讀的時候舊鍵當底（歷史紀錄延續），寫只寫新鍵
+const OUTBOX_KEY = 'sp_finance_pm_sopsum_outbox'
+const OUTBOX_OLD = 'sp_finance_pm_sop_outbox'
 const taipei = () => new Date(Date.now() + 8 * 3600e3)
 const tpeDate = () => taipei().toISOString().slice(0, 10)
 const tpeStamp = () => taipei().toISOString().slice(5, 16).replace('T', ' ')
@@ -16,7 +19,7 @@ async function buildSummary(dateStr) {
   const def = ((await kvGet('sp_finance_pm_sop_def')) || {}).ground || {}
   const items = Array.isArray(def.items) ? def.items : []
   const strict = !!def.strictMode
-  const log = ((await kvGet('sp_finance_pm_sop_g_' + dateStr.replace(/-/g, ''))) || {}).items || {}
+  const log = ((await kvGet('sp_finance_pm_sop_g_' + dateStr)) || {}).items || {} // 日檔鍵有連字號（YYYY-MM-DD）；原本去掉連字號＝永遠讀不到（2026-10-14 修）
   const isDone = i => log[i.id] && log[i.id].done
   const req = items.filter(i => i.req !== false) // 必做總數只計葉端動作（選做另計，不重複加總階段/父子）
   const doneN = req.filter(isDone).length
@@ -59,8 +62,9 @@ async function runSummary(mode, dateStr) {
   const text = summaryText(cfg.text, snap, link)
   if (mode === 'preview') return { ok: true, mode: 'preview', text, snap, willSend: !!cfg.on }
   // send / cron：冪等（唯一鍵＝營業日）
-  const ob = (await kvGet(OUTBOX_KEY)) || { sent: {} }
-  ob.sent = ob.sent || {}
+  const [obNew, obOld] = await Promise.all([kvGet(OUTBOX_KEY), kvGet(OUTBOX_OLD)])
+  const ob = obNew || { sent: {} }
+  ob.sent = { ...(((obOld || {}).sent) || {}), ...(ob.sent || {}) }
   const prev = ob.sent[dateStr]
   if (prev && prev.status === 'sent') return { ok: true, already: true, status: 'sent', ts: prev.ts, text } // 已成功送出→不重送（防排程重跑/盲重送）
   // 預設關＝dry-run：記錄但不真發（spec：當前不發真實群組訊息）
