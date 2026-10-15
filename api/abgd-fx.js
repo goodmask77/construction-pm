@@ -50,6 +50,21 @@ async function linePush(to, messages, key) { // key：指定固定重試鍵（�
   const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: h, body: JSON.stringify({ to, messages }), signal: AbortSignal.timeout(15000) })
   return r.ok || r.status === 409 // 409＝同一重試鍵 LINE 已收過（先前其實送出了）
 }
+// 版本比對寫入（GD 0012 pm_doc_get／pm_doc_cas：同一交易鎖版本列、比對、寫入，搬家閘門照樣擋）；衝突重讀重做 5 次
+async function kvCas(id, fn) {
+  const rpc = (f, b) => fetch(`${SB_URL}/rest/v1/rpc/${f}`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json' }, body: JSON.stringify(b) })
+  for (let i = 0; i < 5; i++) {
+    const r = await rpc('pm_doc_get', { p_id: id }); if (!r.ok) throw new Error('讀 ' + id + ' 失敗')
+    const g = await r.json()
+    if (!g || !g.data) return kvSet(id, fn({})) // 還不存在：直接建（極少發生）
+    const next = fn(JSON.parse(g.data.v || '{}'))
+    const u = await rpc('pm_doc_cas', { p_id: id, p_rev: g.rev, p_data: { v: JSON.stringify(next) }, p_editor: 'abgd-fx' })
+    if (!u.ok) return false
+    const j = await u.json(); if (j && j.ok) return true; if (!j || !j.conflict) return false
+    await new Promise(res => setTimeout(res, 120 + Math.random() * 300))
+  }
+  return false
+}
 async function bindMaps() {
   const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
   const ids = {}, uid = {}, tok = {}
@@ -347,10 +362,16 @@ const ACTIONS = {
     if (!items9.length) return { ok: true, skipped: 'no-items' }
     if (!TK()) return { ok: false, retry: false, error: '缺 LINE token' }
     // 短網址：代碼由事件編號＋序號固定推出（重試不會多生新代碼）
-    const slDoc9 = (await kvGet('pm_shortlinks')) || { map: {} }; slDoc9.map = slDoc9.map || {}
-    const withShort = items9.map((it, i) => { const c9 = crypto.createHash('sha1').update(String(idem) + '|' + i).digest('hex').slice(0, 6); if (!slDoc9.map[c9]) slDoc9.map[c9] = { u: String(it.link || ''), ts: Date.now() }; return { ...it, short: 'https://ground-pm.vercel.app/v/' + c9 } })
-    { const es9 = Object.entries(slDoc9.map); if (es9.length > 500) { es9.sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0)); es9.slice(0, es9.length - 500).forEach(([k9]) => delete slDoc9.map[k9]) } }
-    if (!(await kvSet('pm_shortlinks', slDoc9))) throw new Error('短網址存不進去，稍後重試')
+    // 短網址用版本比對寫入（不會跟同時寫短網址的其他功能互蓋；關卡 3 payroll 第二輪 Gemini）
+    const withShort = items9.map((it, i) => ({ ...it, c9: crypto.createHash('sha1').update(String(idem) + '|' + i).digest('hex').slice(0, 6), short: '' }))
+    withShort.forEach(it => { it.short = 'https://ground-pm.vercel.app/v/' + it.c9 })
+    const okSl = await kvCas('pm_shortlinks', (sl) => {
+      sl.map = sl.map || {}
+      for (const it of withShort) if (!sl.map[it.c9]) sl.map[it.c9] = { u: String(it.link || ''), ts: Date.now() }
+      const es9 = Object.entries(sl.map); if (es9.length > 500) { es9.sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0)); es9.slice(0, es9.length - 500).forEach(([k9]) => delete sl.map[k9]) }
+      return sl
+    })
+    if (!okSl) throw new Error('短網址存不進去，稍後重試')
     const txt9 = `⚠️ 班表違規清單（${String(a.by || '').slice(0, 30)} 發送）\n` + withShort.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${it.short}`).join('\n') + `\n\n處理完點上面連結（會開新版「法規薪資」）按 ✅ 填處理內容 → 張良審核通過才銷案。`
     const quota9 = async () => { try { const H9 = { authorization: 'Bearer ' + TK() }; const [q9, c9] = await Promise.all([fetch('https://api.line.me/v2/bot/message/quota', { headers: H9 }).then(x => x.json()), fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H9 }).then(x => x.json())]); return { used: (c9 && c9.totalUsage != null) ? c9.totalUsage : -1, total: (q9 && q9.type === 'limited') ? q9.value : -1 } } catch (_) { return { used: -1, total: -1 } } }
     const qv9 = await quota9()
