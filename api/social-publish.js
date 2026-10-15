@@ -2,7 +2,7 @@
 // 規則：status='approved' 且（無排程時間 或 排程時間已到）→ 發到貼文指定的目的地 dests
 // dests 格式：['fb:<pageId>', 'ig:<igUserId>']。FB 有圖走 /photos、純文字走 /feed；IG 兩步驟(建container→輪詢→publish)，IG 一定要有圖
 // 安全：人工核可才會到 approved（審核即人工閘門）；DRY_RUN=true 只記 log 不真發
-import { getPosts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady, pubSnapshot } from './_social.js'
+import { getPosts, graphGet, graphPost, DRY_RUN, metaReady, pubSnapshot } from './_social.js'
 import { socTx, socGate } from './_socialkv.js'
 const P_KEY = 'sp_finance_pm_social_posts'
 
@@ -10,7 +10,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 // 發一則到它指定的 dests（FB／IG）。更新 p.pub，回傳是否全部成功。不負責存檔（caller 存）＝立即發與 cron 共用
 export async function publishPost(p, pages, snap) { // snap：同代快照（有就只用快照裡的權杖，不中途重讀；第八輪 A1）
-  const tokOf = async (pid) => snap ? (pid ? (snap.tokens[pid] || '') : (Object.values(snap.tokens)[0] || snap.legacy || '')) : fbPageToken(pid)
+  if (!snap || !snap.tokens) throw new Error('發文要帶同代快照') // 強制必傳快照，不再有中途重讀權杖的退路（第九輪 A1）
+  const tokOf = async (pid) => (pid ? (snap.tokens[pid] || '') : (Object.values(snap.tokens)[0] || snap.legacy || ''))
   p.pub = p.pub || {}
   const dests = (p.dests && p.dests.length) ? p.dests : []
   let allOk = dests.length > 0
