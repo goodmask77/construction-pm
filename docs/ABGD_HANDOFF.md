@@ -121,4 +121,5 @@
 - 命令橋的閘門擋下要「丟例外」＝暫時錯誤，不能存成永久收據（否則同一命令編號永遠失敗）。
 - 外部輸入的數字要明確：Number(null)／Number('')＝0，0 在牌價代表「不顯示價格」→ 只收數字或數字字串。
 - 證明切換沒有在途舊交易：控制器紀錄（凍結時間）＋GD 連線 statement_timeout＋pm_outbox（同交易寫入紀錄）＋pg_stat_activity＋pg_prepared_xacts；之後做成控制器硬檢查。
+- **10-15 起切換控制器第 3 步有在途交易硬檢查**（GD 0014 pm_inflight_before）：之後切換的紀錄第 3 步會寫「GD 凍結前開始的交易 0、預備交易 0」，送審時直接附這行即可，不用再人工查 pg_stat_activity／pm_outbox。
 
