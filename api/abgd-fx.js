@@ -476,6 +476,10 @@ const ACTIONS = {
   async points_read(a) { return pointsRun(a, 'GET') }, // 排行榜／積分規則／兌換紀錄／存摺讀：唯讀，不佔事件位
   async points_op(a) { return pointsRun(a, 'POST') }, // 積分規則／獎勵／兌換寫（新殼畫面 → 這裡執行；通知在 GD）：走事件佔位（同一個 idem 只執行一次）
   async points_drain(a) { const { ptsDrain } = await import('./_points.js'); return { ok: true, ...(await ptsDrain({ limit: Math.min(300, Number(a.limit) || 100) })) } }, // 積分補分佇列立即排空（拆閘門後呼叫）；唯讀路徑（重給本身依 ref 去重）
+  async social_meta() { // 新殼行銷大師原生讀取用：GD 環境設定類旗標（不含任何金鑰）——Meta 有沒有設、AI 有沒有設、Graph 版本、哪幾個官方帳號有金鑰；唯讀
+    const S = await import('./_social.js'); const IB = await import('./_inbox.js')
+    return { ok: true, metaReady: S.metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: S.GV, configured: IB.ACCOUNTS.filter(IB.configured).map(a => a.key) }
+  },
   async social_read(a) { return socialRun(a, 'GET') }, // 行銷大師讀（社群總覽／LINE 官方統計；統計 run=1 會順便抓一次，寫入本身版本比對）：唯讀路徑
   async social_op(a) { return socialRun(a, 'POST') }, // 行銷大師寫（草稿／審核／立即發布／素材／AI…；發文、AI、上傳在 GD）：走事件佔位（同一個 idem 只執行一次）
   async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）
@@ -561,7 +565,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
