@@ -420,7 +420,7 @@ const ACTIONS = {
     const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
     if (!who.name) return { ok: false, error: '缺操作者' }
     const { inboxDispatch } = await import('./_inboxop.js')
-    try { return await inboxDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || 'list'), q: a.q || {}, body: a.body || {}, who, origin: 'https://ground-pm.vercel.app' }) }
+    try { return await inboxDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || 'list'), q: a.q || {}, body: a.body || {}, who, origin: 'https://ground-pm.vercel.app', fromShell: true }) }
     catch (e) { return { ok: false, error: '收件匣暫時出錯：' + String(e && e.message || e).slice(0, 120) } }
   },
   async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）

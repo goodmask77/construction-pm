@@ -70,7 +70,7 @@ const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.strin
 // before＝讀到時的對話（沒有＝新對話）、after＝改完的；t＝事件時間（沒有＝現在）
 export function convPatch(before, after, t) {
   const st = ibStore(); const force = !!(st && st.force) // 店員手動操作（convOp）：負責人／分類等直接設定，不套「空白才填」
-  const b = before || {}, p = { set: {}, unset: [], last: {}, t: t || new Date().toISOString(), inc: 0, reopen: false, ifEmpty: {} }
+  const b = before || {}, p = { set: {}, unset: [], last: {}, lastUnset: [], t: t || new Date().toISOString(), inc: 0, reopen: false, ifEmpty: {} }
   const keys = new Set([...Object.keys(b), ...Object.keys(after)])
   const companion = new Set(Object.values(IFEMPTY).flat())
   // 自動重開＝原本完成／等待中、改成新、人工改狀態時間（statusT）沒變（＝客人訊息觸發）；交給套用端依事件時間判斷
@@ -79,13 +79,15 @@ export function convPatch(before, after, t) {
   for (const k of keys) {
     if (autoReopen && (k === 'status' || k === 'waitUntil')) continue
     if (same(b[k], after[k]) || companion.has(k)) continue
-    if (NEWEST.includes(k)) { if (after[k] === undefined) p.unset.push(k); else p.last[k] = after[k]; continue }
+    if (k === 'replyUsed' && b.replyToken && same(b.replyToken, after.replyToken)) { p.ifTok = { tok: b.replyToken, set: { replyUsed: after.replyUsed } }; continue } // 只在憑證沒換時標（第二輪 A4）
+    if (NEWEST.includes(k)) { if (after[k] === undefined) p.lastUnset.push(k); else p.last[k] = after[k]; continue } // 拿掉也要比時間（第二輪 A4）
     if (k === 'unread') { const d = (Number(after.unread) || 0) - (Number(b.unread) || 0); if ((Number(after.unread) || 0) === 0) p.set.unread = 0; else p.inc += d; continue }
     if (IFEMPTY[k] && !force && (b[k] == null || b[k] === '') && after[k] != null && after[k] !== '') { const g = { [k]: after[k] }; for (const c of IFEMPTY[k]) if (after[c] !== undefined) g[c] = after[c]; p.ifEmpty[k] = g; continue }
     if (after[k] === undefined) p.unset.push(k); else p.set[k] = after[k]
   }
   for (const [k, cs] of Object.entries(IFEMPTY)) for (const c of cs) if (!p.ifEmpty[k] && !same(b[c], after[c]) && !(c in p.set)) { if (after[c] === undefined) p.unset.push(c); else p.set[c] = after[c] } // 伴隨欄位單獨改（例：人工改分類來源）
   if (!Object.keys(p.last).length) delete p.last
+  if (!p.lastUnset.length) delete p.lastUnset
   return p
 }
 // 沒有本次讀到的快照（例：別的流程直接拿整份來存）：整份欄位照設、未讀用絕對值、最後訊息那組照「較新才推進」
@@ -100,7 +102,8 @@ export function convApplyJs(cur, conv0, p) {
   let c = cur ? { ...cur } : { ...(conv0 || {}) }
   Object.assign(c, p.set || {}); for (const k of p.unset || []) delete c[k]
   for (const [k, g] of Object.entries(p.ifEmpty || {})) if (c[k] == null || c[k] === '') Object.assign(c, g)
-  if (p.last && String(p.t || '') >= String(c.lastT || '')) Object.assign(c, p.last)
+  if (String(p.t || '') >= String(c.lastT || '')) { if (p.last) Object.assign(c, p.last); for (const k of p.lastUnset || []) delete c[k] }
+  if (p.ifTok && String(c.replyToken || '') === String(p.ifTok.tok || '')) Object.assign(c, p.ifTok.set || {})
   if (p.inc) c.unread = Math.max(0, (Number(c.unread) || 0) + p.inc)
   if (p.reopen && ['done', 'wait'].includes(c.status) && String(p.t || '') > String(c.statusT || '')) { c.status = 'new'; c.waitUntil = '' }
   return c
@@ -110,13 +113,20 @@ export async function ibApply(ck, mk, msg, before, after, full) {
   const kv = await ibKv(); const patch = full ? convPatchFull(after) : convPatch(before, after, msg ? msg.t : undefined) // 新對話（before＝null）：規則本身從空白建出完整內容（起點空白，未讀不會算兩次）
   if (kv.mode === 'abgd') { const j = await kv.cmdRaw('apply', { convKey: ck, msgKey: mk || null, msg: mk ? msg : null, conv0: {}, patch }); return { dup: !!j.dup, conv: j.conv || after } }
   if (kv.mode !== 'gd') throw new Error('收件匣正在切換，請稍後再試')
-  if (mk && !(await kv.kvInsert(mk, msg, '收件匣'))) return { dup: true, conv: before || after }
-  const cur = await kv.kvGet(ck); const next = convApplyJs(cur, {}, patch)
-  await kv.kvPut(ck, next, '收件匣'); return { dup: false, conv: next }
+  // GD 原表：同規則的資料庫函式 pm_inbox_apply（一個交易；第二輪 A2）
+  const st = ibStore()
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_inbox_apply`, { method: 'POST', headers: H(), body: JSON.stringify({ p_conv_key: ck, p_msg_key: mk || null, p_msg: mk ? msg : null, p_conv0: {}, p_patch: patch, p_editor: (st && st.op) || '收件匣' }), signal: AbortSignal.timeout(15000) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error('收件匣存不進去：' + String((j && (j.message || j.hint)) || r.status).slice(0, 120))
+  return { dup: !!j.dup, conv: j.conv || after }
 }
 async function kvSet(id, obj, editor) {
   if (id.startsWith(IBC)) { // 對話：只送改了的欄位（沒有本次讀到的快照＝當新對話／整份欄位）
     const st = ibStore(); const before = st ? st.snaps.get(id) : undefined
+    if (before === undefined) { // 沒有本次讀到的快照（程式漏讀）：新殼模式不准整份覆蓋既有對話（第二輪 A1）；GD 原表照舊並留紀錄
+      const kv0 = await ibKv(); console.log('[inbox] 對話存檔沒有快照', id, kv0.mode)
+      if (kv0.mode !== 'gd') throw new Error('收件匣存檔缺讀取快照，請重新整理再試一次')
+    }
     const r = before === undefined ? await ibApply(id, null, null, null, obj, true) : await ibApply(id, null, null, before, obj)
     if (st) st.snaps.set(id, clone(r.conv)); return
   }
@@ -304,34 +314,40 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
   const rows0 = r.ok ? await r.json() : []; let ok = 0, bad = 0, dead = 0
   const rows = rows0.map(row => { try { return { id: row.id, q: JSON.parse(row.data.v) } } catch (_) { return { id: row.id, q: null } } })
   rows.sort((x, y) => String((x.q || {}).t || '').localeCompare(String((y.q || {}).t || ''))) // 照事件時間先後補（先客人訊息、後回覆）
+  const toDead = async (id, q, why) => { dead++; await qPut('pm_ibqdead_' + id.slice(IBQ.length), { ...(q || {}), dead: why, deadAt: nowIso() }).catch(() => {}); await qDel(id).catch(() => {}); console.log('[inbox] 待補存移到死信', id, why) } // 壞資料不卡在最前面（第二輪 B）
   for (const { id, q } of rows.slice(0, limit)) {
-    if (!q) { dead++; continue }
-    const a = acctOf(q.acct); if (!a) { dead++; continue }
+    if (!q) { await toDead(id, null, '內容壞掉'); continue }
+    const a = acctOf(q.acct); if (!a) { await toDead(id, q, '沒有這個帳號'); continue }
+    if ((q.tries || 0) >= 30) { await toDead(id, q, '重試 30 次仍失敗：' + (q.err || '')); continue }
     try {
       if (q.kind === 'out') { const m = await noteOut(a, q.uid, q.text, q.by, q.mode, { t: q.ms }); if (!m) throw new Error('對話還沒建好') }
       else await ingestEvent(a, q.ev, q.destination, { retry: true })
-      await qDel(id); ok++
+      if (await qDel(id)) ok++; else bad++ // 刪不掉＝下一輪再判斷重複後刪
     } catch (e) { bad++; q.tries = (q.tries || 0) + 1; q.err = String(e && e.message || e).slice(0, 200); await qPut(id, q).catch(() => {}) }
   }
-  return { ok, bad, dead, seen: Math.min(rows.length, limit), left: rows0.length }
+  const cr = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(IBQ))}*&select=id`, { headers: { ...H(), Prefer: 'count=exact', Range: '0-0' } }).catch(() => null)
+  const left = cr ? Number(String(cr.headers.get('content-range') || '').split('/')[1]) : NaN
+  return { ok, bad, dead, seen: Math.min(rows.length, limit), left: Number.isFinite(left) ? left : null } // left＝現在實際還剩幾筆
 }
 // 店員送出 LINE 前：收件匣在新殼且正在做切換驗收、不是驗收者＝不准送（關卡 3 inbox 第一輪 A5）；回 null＝放行
 export async function ibGate() { const kv = await ibKv(); if (kv.mode === 'gd') return null; if (kv.mode !== 'abgd') return '收件匣正在切換，請稍後再送'; return kv.gate() }
 // 同一個送出動作只送一次（頁面每次按送出產生 cid）：pm_ibsend_<cid> 記狀態（GD 原表，不屬收件匣域）；結果不確定＝不自動重送
-export async function ibSendOnce(cid, fn) {
-  const c = String(cid || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40); if (!c) return fn()
-  const key = 'pm_ibsend_' + c
-  const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id: key, data: { v: JSON.stringify({ st: 'sending', at: nowIso() }) }, editor: '收件匣送出', updated_at: nowIso() }) })
+export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內容摘要}：同一個編號只認同一則；need＝必須帶編號（新殼頁）
+  const c = String(cid || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
+  if (!c) { if (need) return { ok: false, error: '缺送出編號，請重新整理再送' }; return fn() }
+  const key = 'pm_ibsend_' + c, h = djb(JSON.stringify(bind || {}))
+  const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id: key, data: { v: JSON.stringify({ st: 'sending', at: nowIso(), h }) }, editor: '收件匣送出', updated_at: nowIso() }) })
   if (!ins.ok) {
     const prev = await kvGetManyRaw([key]); const p = prev[key]
+    if (p && p.h && p.h !== h) return { ok: false, error: '送出編號重複（對到別則訊息），請重新整理再送' }
     if (p && p.st === 'sent') return { ...(p.res || { ok: true }), dup: true }
     return { ok: false, error: '這則剛剛送過，結果還不確定——請重新整理看有沒有送出，沒有再送一次' }
   }
   let res
-  try { res = await fn() } catch (e) { res = { ok: false, error: String(e && e.message || e).slice(0, 120), thrown: true } }
-  if (res && res.ok) await qPut(key, { st: 'sent', at: nowIso(), res: { ok: true, msg: res.msg, mode: res.mode, conv: res.conv } }).catch(() => {})
-  else if (res && res.sentUnknown) { /* LINE 已送、存檔失敗：保留 sending 標記（不准重送） */ }
-  else await qDel(key).catch(() => {}) // LINE 沒送出＝可以重送
+  try { res = await fn() } catch (e) { res = { ok: false, sentUnknown: true, error: '送出結果不確定：' + String(e && e.message || e).slice(0, 100) + '——請重新整理看有沒有送出' } } // 例外＝不確定（第二輪 A3）
+  if (res && res.ok) await qPut(key, { st: 'sent', at: nowIso(), h, res: { ok: true, msg: res.msg, mode: res.mode, conv: res.conv } }).catch(() => {})
+  else if (res && res.sentUnknown) await qPut(key, { st: 'unknown', at: nowIso(), h }).catch(() => {}) // 不確定＝保留標記（同編號不准重送）
+  else await qDel(key).catch(() => {}) // 確定沒送出（LINE 4xx、權限、內容錯）＝可以重送
   return res
 }
 
@@ -452,11 +468,13 @@ async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastTe
   const before = clone(conv)
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
   let mode = fresh ? 'reply' : 'push', r
+  const unknown = (x) => !x.ok && (x.status === 0 || x.status >= 500) // 連不上／LINE 伺服器錯＝不確定有沒有送到（第二輪 A3）
   if (fresh) {
     r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: conv.replyToken, messages }) })
-    if (!r.ok) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) }) } // reply 過期就退 push
+    if (!r.ok && !unknown(r)) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) }) } // reply 憑證過期（4xx）才退 push；不確定時不再推一次
   } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) })
-  if (!r.ok) return { ok: false, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
+  if (unknown(r)) return { ok: false, sentUnknown: true, error: `送出結果不確定（LINE ${r.status || '連不上'}）——請到 LINE 官方帳號後台確認客人有沒有收到，沒有再送` }
+  if (!r.ok) return { ok: false, notSent: true, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
   const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
   conv.replyUsed = true; conv.last = { text: String(lastText || '').slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
