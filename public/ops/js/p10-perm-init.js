@@ -440,7 +440,7 @@ async function abgdTry(tab, hash) {
     const mI9 = hs.match(/(?:^|#|&)inbox(?:=([^&]+))?/) // v4.70.47 收件匣深層連結（通知點進來直接開那個對話）
     if (mI9) { inboxLoad(mI9[1] ? decodeURIComponent(mI9[1]) : null); return true }
     const mC9 = hs.match(/chat=([A-Za-z0-9_-]+)/) // v4.70.45 聊天室深層連結（通知點進來直接開那一室）
-    if (mC9) { chatLoad(mC9[1]); return true }
+    if (mC9) { abgdTry('chat', '#chat=' + mC9[1]).then(ok => { if (!ok) chatLoad(mC9[1]) }); return true } // abgd 搬家（F22）：聊天室切新殼後通知連結轉新版
     const mK9 = hs.match(/task=([A-Za-z0-9_-]+)/) // v4.41.6 任務卡深層連結（張良「通知跟訊息直接帶過去看那張卡片閃金光」）
     if (mK9) { window.tnFocusId = mK9[1]; taskEmbed(); return true }
     if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
