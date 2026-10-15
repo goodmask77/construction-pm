@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       const who = await whoSocial(String(req.query.start || ''))
       if (!canEditSocial(who)) return res.status(200).send(page('沒有權限', '只有管理者能連接粉專。請先用你的帳號登入 /prep，再按一次「連接 Facebook」。'))
       const state = 'st' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-      await kvPut('sp_finance_pm_social_oauth', { state, ts: Date.now(), by: who.name }, 'oauth-state')
+      await socTx('sp_finance_pm_social_oauth', (cur) => ({ write: true, doc: { state, ts: Date.now(), by: who.name, gen: (Number(cur && cur.gen) || 0) + 1 } }), 'oauth-state') // 授權世代：每次按「連接」在同一筆交易內 +1（嚴格遞增，不靠時間；第五輪 A5）
       const url = `https://www.facebook.com/${GV}/dialog/oauth?` + new URLSearchParams({ client_id: APP_ID, redirect_uri: REDIRECT_URI, state, scope: SCOPES, response_type: 'code' }).toString()
       res.writeHead(302, { Location: url }); return res.end()
     }
@@ -70,8 +70,9 @@ export default async function handler(req, res) {
       if (lockR !== 'got') { const okGot = await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state && cur.holder === holder && cur.stage === 'exchanging') ? { write: true, doc: { ...cur, stage: 'got', got: { longUser, exp: t2.expires_in || null, list: list.map(p => ({ id: p.id, name: p.name, access_token: p.access_token, instagram_business_account: p.instagram_business_account || null })) }, gotAt: new Date().toISOString() }, value: true } : { write: false, value: false }, 'oauth-got'); if (!okGot) return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。')) } // state 不符＝立刻停，不寫權杖（第二輪 A5）
       // v4.71.146：授權碼只能用一次 → 換到權杖後的寫入一律 socTx（重讀最新、合併、只重做寫入），不整段重做
       const S_KEY = 'sp_finance_pm_social_secret', A_KEY = 'sp_finance_pm_social_accounts'
-      const gen = Number(saved.ts) || 0 // 授權世代＝這次按「連接」的時間（第四輪 A5）：帳號與權杖文件記 _oauthGen，同一筆交易內比較，較舊的授權寫不進去
-      const newer = (cur) => (Number(cur && cur._oauthGen) || 0) > gen
+      const gen = Number(saved.gen) // 授權世代＝這次按「連接」配到的遞增序號（第四、五輪 A5）：帳號與權杖文件記 _oauthGen，同一筆交易內比較，較舊（或同代）的授權寫不進去
+      if (!(Number.isInteger(gen) && gen > 0)) return res.status(200).send(page('連接逾時', '這次授權紀錄不完整。請回 App 重新按一次「連接 Facebook」。'))
+      const newer = (cur) => (Number(cur && cur._oauthGen) || 0) > gen // 同代＝自己（接續時重寫同樣內容）
       const stillMine = async () => (((await kvGet('sp_finance_pm_social_oauth')) || {}).state === state) // 每次寫權杖前再確認這次授權沒被新的連接取代
       const gone = () => res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。'))
       // 先存長效 user token（就算沒抓到粉專，之後也能用「粉專編號」手動加商家旗下粉專）
@@ -86,12 +87,7 @@ export default async function handler(req, res) {
         if (list.find(p => p.id === pid)) continue // /me/accounts 已處理過
         try { const pg = await graphGet('/' + pid, { fields: 'id,name,access_token,instagram_business_account' }, longUser); if (pg.access_token) extra[pid] = pg } catch (_) {}
       }
-      if (!(await stillMine())) return gone()
-      if ((await socTx(A_KEY, (cur) => { if (newer(cur)) return { write: false, value: 'newer' }; const acc = JSON.parse(JSON.stringify(cur || {})); acc._oauthGen = gen; acc.facebook = acc.facebook || {}; if (!acc.facebook.pages) acc.facebook.pages = {}
-        for (const pg of list) acc.facebook.pages[pg.id] = { pageId: pg.id, pageName: pg.name, igUserId: (pg.instagram_business_account || {}).id || null, tokenStatus: 'ok', tokenCheckedAt: now, connectedAt: (acc.facebook.pages[pg.id] || {}).connectedAt || now, connectedBy: saved.by || '' }
-        for (const [pid, pg] of Object.entries(extra)) if (acc.facebook.pages[pid]) { acc.facebook.pages[pid].igUserId = (pg.instagram_business_account || {}).id || acc.facebook.pages[pid].igUserId; acc.facebook.pages[pid].tokenStatus = 'ok'; acc.facebook.pages[pid].tokenCheckedAt = now }
-        if (!acc.facebook.defaultPageId) acc.facebook.defaultPageId = list[0].id
-        return { write: true, doc: acc } }, 'FB連接')) === 'newer') return gone()
+      // 順序：先寫粉專權杖、最後才把帳號標成功——中途失敗只會「權杖新、帳號清單還沒更新」，不會「帳號標成功卻配舊權杖」（第五輪 A5）；重新整理回調頁會接續做完
       if (!(await stillMine())) return gone()
       if ((await socTx(S_KEY, (cur) => { if (newer(cur)) return { write: false, value: 'newer' }; const sec = JSON.parse(JSON.stringify(cur || {})); sec._oauthGen = gen; sec.facebook = sec.facebook || {}; if (!sec.facebook.tokens) sec.facebook.tokens = {}
         for (const pg of list) sec.facebook.tokens[pg.id] = pg.access_token
@@ -99,6 +95,12 @@ export default async function handler(req, res) {
         sec.facebook.userToken = longUser // 存長效 user token：商家旗下粉專不列在 /me/accounts，用它＋粉專編號可直接拿 page token
         sec.facebook.userTokenExp = t2.expires_in || null
         return { write: true, doc: sec } }, 'FB token')) === 'newer') return gone()
+      if (!(await stillMine())) return gone()
+      if ((await socTx(A_KEY, (cur) => { if (newer(cur)) return { write: false, value: 'newer' }; const acc = JSON.parse(JSON.stringify(cur || {})); acc._oauthGen = gen; acc.facebook = acc.facebook || {}; if (!acc.facebook.pages) acc.facebook.pages = {}
+        for (const pg of list) acc.facebook.pages[pg.id] = { pageId: pg.id, pageName: pg.name, igUserId: (pg.instagram_business_account || {}).id || null, tokenStatus: 'ok', tokenCheckedAt: now, connectedAt: (acc.facebook.pages[pg.id] || {}).connectedAt || now, connectedBy: saved.by || '' }
+        for (const [pid, pg] of Object.entries(extra)) if (acc.facebook.pages[pid]) { acc.facebook.pages[pid].igUserId = (pg.instagram_business_account || {}).id || acc.facebook.pages[pid].igUserId; acc.facebook.pages[pid].tokenStatus = 'ok'; acc.facebook.pages[pid].tokenCheckedAt = now }
+        if (!acc.facebook.defaultPageId) acc.facebook.defaultPageId = list[0].id
+        return { write: true, doc: acc } }, 'FB連接')) === 'newer') return gone()
       await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: {} } : { write: false }, 'oauth-done') // 只清同一次授權的紀錄（第一輪 A5）
       const names = list.map(p => esc(p.name)).join('、')
       return res.status(200).send(page('連接成功', `已連上粉專：<b style="color:#4DA3FF">${names}</b><br><br>可以關掉這一頁，回 App 的「社群」分頁。<br>要加「別的帳號」管理的粉專（例如同事管的 GROUN:D），用那個帳號再連一次就好，不會蓋掉這個。`, true))
