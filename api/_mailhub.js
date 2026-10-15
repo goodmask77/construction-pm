@@ -246,7 +246,7 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
   if (!rules.some(r => r.action !== 'keep')) return { ok: true, box: id, n: 0, groups: [], note: '沒有已確認的規則' }
   if (!dry && guard) { const g0 = await guard(); if (g0) return { ok: false, box: id, error: g0 } } // 連信箱前先檢查（不記成連線失敗）
   days = Math.max(1, Math.min(60, parseInt(days, 10) || 7)) // 天數防呆（關卡 3 mailhub 第二輪 Gemini A2）
-  let client = null; const groups = {}; let scanned = 0, stopped = ''
+  let client = null; const groups = {}; let scanned = 0, stopped = '', aborted = ''
   try {
     client = await connectFn(box)
     const sp = await specials(client)
@@ -267,6 +267,7 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
       stopped = !dry && guard ? (await guard()) || '' : '' // 掃完、真的搬之前再檢查一次（期間切換或上了驗收閘門＝一封都不動）
       if (!dry && !stopped) {
         for (const g of Object.values(groups)) {
+          if (aborted) break // 中途被擋＝後面的規則也一律不動（第三輪 Gemini）
           if (!g.uids.length) continue
           try {
             let dest = ''
@@ -274,11 +275,11 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
             else if (g.action === 'archive') dest = sp.all || '' // Gmail：移到「所有郵件」＝拿掉收件匣標籤；非 Gmail 沒有 \All → 移到「封存」資料夾
             else if (g.action === 'label') dest = g.folder
             if (g.action === 'archive' && !dest) dest = '封存'
-            if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (_) {} }
+            if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (e) { g.err = '無法建立資料夾「' + dest + '」：' + errText(e); g.moved = 0; continue } } // 建不起來就不搬（第三輪 Gemini）
             g.moved = 0
             if (dest) for (let i9 = 0; i9 < g.uids.length; i9 += 500) {
               const gb = guard ? await guard() : null // 每批再查一次（縮小切換空隙；不取代切換前排空）
-              if (gb) { g.err = gb; break }
+              if (gb) { g.err = gb; aborted = gb; break }
               const part = g.uids.slice(i9, i9 + 500)
               try { await client.messageMove(part, dest, { uid: true }) } // 分批（IMAP 指令長度有限）
               catch (e) { throw Object.assign(new Error(errText(e) + `（失敗前已確認搬 ${g.moved} 封；失敗這批 ${part.length} 封結果未確認，請到信箱核對）`), { moveFail: true }) } // 第三輪 OpenAI A3：第一批就失敗也要寫未確認
@@ -293,9 +294,9 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
   const gs = Object.values(groups).map(g => ({ rule: g.rule, action: g.action, folder: g.folder, kw: g.kw, n: g.uids.length, moved: dry ? 0 : (g.moved || 0), samples: g.samples, err: g.err }))
   const hub2 = await loadHub(kvGet)
   for (const g of gs) if (g.n && !dry) pushLog(hub2, { box: id, rule: g.rule, action: g.action, n: g.n, moved: g.moved, samples: g.samples, dry: !!dry, by: (who && who.name) || '每日自動', err: g.err })
-  if (!dry) { const b2 = hub2.boxes.find(x => x.id === id); if (b2) { b2.lastApply = now(); b2.lastOk = now(); b2.lastErr = '' } }
+  if (!dry && !aborted) { const b2 = hub2.boxes.find(x => x.id === id); if (b2) { b2.lastApply = now(); b2.lastOk = now(); b2.lastErr = '' } } // 中途被擋＝不算完整成功
   await saveHub(kvPut, hub2, who)
-  return { ok: true, box: id, scanned, n: gs.reduce((t, g) => t + g.n, 0), groups: gs, dry: !!dry }
+  return { ok: !aborted, box: id, scanned, n: gs.reduce((t, g) => t + g.n, 0), groups: gs, dry: !!dry, ...(aborted ? { error: aborted + '（已搬的照紀錄，其餘這次沒動）' } : {}) }
 }
 export async function applyAll({ kvGet, kvPut, days = 7, dry = false, who = { name: '每日自動' }, guard = null }) {
   const hub = await loadHub(kvGet)
