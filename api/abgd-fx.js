@@ -343,14 +343,17 @@ const ACTIONS = {
   },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
-    if (!TK()) return { ok: true, skipped: true }
+    if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
     const it = a.it || {}
     const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
     const alive = ((rosterE || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+    const to = (((defE || {}).ground || {}).approvers || ['張良瑋']).map(an => alive.find(p2 => p2.name === an && p2.lineUserId)).filter(Boolean)
+    if (!to.length) return { ok: true, skipped: 'no-recipient' } // 沒有可私訊的審核人＝不重試（留原因）
     let n = 0
-    for (const an of (((defE || {}).ground || {}).approvers || ['張良瑋'])) {
-      const ap = alive.find(p2 => p2.name === an && p2.lineUserId)
-      if (ap && await linePush(ap.lineUserId, [{ type: 'text', text: `🐞 App 錯誤回報\n頁面：${String(it.page || '?').slice(0, 60)}（v${String(it.ver || '?').slice(0, 20)}）\n${String(it.msg || '').slice(0, 300)}\n— ${String(it.by || '訪客').slice(0, 30)}・累計 ${Number(it.n) || 1} 次\n（同錯誤今天不再通知；細節問 DD 或看 /prep 錯誤日誌）` }])) n++
+    // 逐人送；任一人送不出去＝丟錯讓新殼重試（LINE 重試鍵依事件＋收件人固定，已送到的人重試不會再收到一次）
+    for (const ap of to) {
+      if (await linePush(ap.lineUserId, [{ type: 'text', text: `🐞 App 錯誤回報\n頁面：${String(it.page || '?').slice(0, 60)}（v${String(it.ver || '?').slice(0, 20)}）\n${String(it.msg || '').slice(0, 300)}\n— ${String(it.by || '訪客').slice(0, 30)}・累計 ${Number(it.n) || 1} 次\n（同錯誤今天不再通知；細節問 DD 或看 /prep 錯誤日誌）` }])) n++
+      else throw new Error('錯誤回報通知送不出去（' + ap.name + '），稍後重試')
     }
     return { ok: true, n }
   },

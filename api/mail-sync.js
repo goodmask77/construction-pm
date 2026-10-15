@@ -2245,9 +2245,14 @@ export default async function handler(req, res) {
     }
     const notifyKey = fp + '|' + today3
     doc.notified = doc.notified || {}
-    if (!doc.notified[notifyKey]) { // 同錯誤一天通知一次
+    const needNtf = !doc.notified[notifyKey] // 同錯誤一天通知一次
+    if (needNtf) {
       doc.notified = Object.fromEntries(Object.entries(doc.notified).filter(([k2]) => k2.endsWith(today3))) // 只留今天的鍵
       doc.notified[notifyKey] = 1
+    }
+    // 先存再通知（關卡 3 issues 第一輪 OpenAI：切換凍結時存不進去就不發 LINE，不會有「通知了、日誌沒存」）
+    if (!(await kvPut('sp_finance_pm_errlog', doc, 'App錯誤回報'))) return res.status(200).json({ ok: false, skipped: 'switching' })
+    if (needNtf) {
       try {
         const tkE = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
         const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
@@ -2257,7 +2262,6 @@ export default async function handler(req, res) {
         }
       } catch (_) {}
     }
-    if (!(await kvPut('sp_finance_pm_errlog', doc, 'App錯誤回報'))) return res.status(200).json({ ok: false, skipped: 'switching' })
     return res.status(200).json({ ok: true })
   }
   if (req.query?.errs) { // 檢視（主管/審核人）
