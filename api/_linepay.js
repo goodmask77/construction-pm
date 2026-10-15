@@ -37,5 +37,15 @@ export async function confirm ({ transactionId, amount }) {
   const info = d.info || {}
   return { ok: true, info: { transactionId: String(info.transactionId || transactionId), orderId: info.orderId, payType: (info.payInfo || [])[0] && info.payInfo[0].method, amount: (info.payInfo || []).reduce((t, p) => t + (Number(p.amount) || 0), 0) } }
 }
+// 查付款狀態（v4.71.133；關卡 3 團體訂餐第一輪 A：扣款成功但沒存進去、重新整理遇 1172 時用）：GET /v3/payments/requests/{id}/check
+//   0123＝付款已完成（已確認扣款）；0110＝已授權待確認；0000＝客人還沒授權；0121／0122＝取消／失敗。查不到或其他碼＝交給人工核對
+export async function checkStatus ({ transactionId }) {
+  if (!enabled()) return { ok: false, error: 'LINE Pay 尚未設定' }
+  const uri = `/v3/payments/requests/${encodeURIComponent(String(transactionId))}/check`; const nonce = crypto.randomUUID()
+  const r = await fetch(HOST() + uri, { headers: { 'X-LINE-ChannelId': ID(), 'X-LINE-Authorization-Nonce': nonce, 'X-LINE-Authorization': sign(uri, '', nonce) } })
+  let d = {}; try { d = await r.json() } catch (_) {}
+  if (!r.ok) return { ok: false, error: `LINE Pay 查詢 HTTP ${r.status}` }
+  return { ok: true, code: String(d.returnCode || ''), msg: String(d.returnMessage || '').slice(0, 80) }
+}
 // 給測試／自檢用：不打網路，只算簽章（scratchpad 驗證簽章公式）
 export const _sign = sign
