@@ -1,7 +1,7 @@
 // ── 🏦 積分中樞共用模組（張良 2026-10-06）──
 // 抽出來讓 mail-sync（排行榜/規則/回饋/SOP/簽收/回報）與 punch（打卡）等端點共用同一套給分邏輯，
 // 避免 punch 靜態 import 整包 mail-sync（含 imapflow 等）造成循環/冷啟負擔。KV 走 _onboard（與 mail-sync 同 data.v 格式）。
-import { kvGet, kvSet, SB_URL, svc } from './_onboard.js'
+import { abgdKv } from './_abgdkv.js'
 
 // 行為分規則預設（可被 sp_finance_pm_points_cfg.behavior 覆寫/增刪；cap=每人每天上限，0=不限只用 ref 去重）
 export const POINTS_DEFAULT = {
@@ -26,32 +26,32 @@ export function pointsRules(cfg) {
 // 讀 data＋updated_at → 改 → PATCH 條件 updated_at＝剛讀到的值；別人先寫了（0 列）就重讀重做，最多 12 次（退避加亂數）。
 // mutate(doc) 回 { write: boolean, value }：write=false＝不用寫（例如已給過），直接回 value。
 const PTS_KEY = 'sp_finance_pm_points'
-export async function pointsCas(mutate, editor = 'onboard-bot') {
+// ── 讀寫層（v4.71.136 abgd 搬家 B 模式）：積分四份文件（流水帳 sp_finance_pm_points、規則 _points_cfg、獎勵 sp_finance_pm_rewards、兌換 sp_finance_pm_redeem）
+//   依資料歸屬走 GD 或新殼，一律版本比對寫（GD 正本＝pm_doc_get／pm_doc_cas；新殼正本＝gdread＋命令橋 points/put）；撞版本重讀重做
+export const PTS_KEYS = { points: PTS_KEY, cfg: 'sp_finance_pm_points_cfg', rewards: 'sp_finance_pm_rewards', redeem: 'sp_finance_pm_redeem' }
+const ptsKv = (op) => abgdKv({ domain: 'points', lockKey: PTS_KEY, operator: String(op || '積分').slice(0, 30), label: '積分', versioned: true })
+// 一份文件的讀改寫：mutate(cur) 回 { write, doc, value }（write=false＝不用寫，直接回 value）；每次重試都新開讀寫物件重讀；最多 12 次
+export async function ptsTx(key, mutate, editor = '積分', op) {
   for (let i = 0; i < 12; i++) {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${PTS_KEY}&select=data,updated_at`, { headers: svc })
-    if (!r.ok) throw new Error('讀積分失敗 HTTP ' + r.status)
-    const row = (await r.json())[0]
-    let doc = { list: [], carry: {} }
-    if (row && row.data && row.data.v != null) doc = JSON.parse(row.data.v)
-    const res = mutate(doc)
-    if (!res.write) return res.value
-    // 新的 updated_at 一定比讀到的大（同毫秒連寫時 +1ms），否則別人用舊值做條件更新會誤判沒被改過
-    const prevMs = row && row.updated_at ? Date.parse(row.updated_at) : 0
-    const body = { data: { v: JSON.stringify(doc) }, editor, updated_at: new Date(Math.max(Date.now(), prevMs + 1)).toISOString() }
-    const w = row
-      ? await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${PTS_KEY}&updated_at=eq.${encodeURIComponent(row.updated_at)}`, { method: 'PATCH', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(body) })
-      : await fetch(`${SB_URL}/rest/v1/pm_documents?on_conflict=id`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=representation,resolution=ignore-duplicates' }, body: JSON.stringify({ id: PTS_KEY, ...body }) })
-    if (!w.ok) throw new Error('寫積分失敗 HTTP ' + w.status + ' ' + (await w.text().catch(() => '')).slice(0, 120))
-    const out = await w.json().catch(() => [])
-    if (Array.isArray(out) && out.length) return res.value
+    const kv = await ptsKv(op)
+    const cur = await kv.kvGet(key)
+    const res = mutate(cur)
+    if (!res || !res.write) return res ? res.value : undefined
+    try { await kv.kvPut(key, res.doc, editor); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
     await new Promise(rs => setTimeout(rs, Math.floor(Math.random() * (60 + 60 * i)))) // 退避加亂數，避免大家同時重來
   }
-  throw new Error('積分寫入一直衝突（12 次），稍後重試')
+  const e = new Error('積分寫入一直衝突（12 次），稍後重試'); e.code = 'commitfail'; throw e
+}
+// 讀多份（依歸屬；讀失敗丟錯，不當成「沒有」）
+export async function ptsRead(keys, op) { const kv = await ptsKv(op); const vals = await Promise.all(keys.map(k => kv.kvGet(k))); const out = {}; keys.forEach((k, i) => { out[k] = vals[i] }); return out }
+// 積分大表原子改（原介面）：mutate(doc) 直接改 doc、回 { write, value }
+export async function pointsCas(mutate, editor = 'onboard-bot', op) {
+  return ptsTx(PTS_KEY, (cur) => { const doc = cur || { list: [], carry: {} }; const r = mutate(doc) || {}; return { write: !!r.write, doc, value: r.value } }, editor, op)
 }
 // 嚴格版：回 { awarded, reason }；讀寫失敗直接丟錯（給新殼代發口用，失敗會重試）
 export async function awardPtsStrict(person, act, ref) {
   if (!person || person === '匿名') return { awarded: false, reason: 'no-person' }
-  const cfg = await kvGet('sp_finance_pm_points_cfg')
+  const cfg = (await ptsRead([PTS_KEYS.cfg], person))[PTS_KEYS.cfg]
   const rule = pointsRules(cfg)[act]
   if (!rule || rule.off || !(Number(rule.pts) > 0)) return { awarded: false, reason: 'rule-off' }
   return pointsCas(doc => {
@@ -63,7 +63,7 @@ export async function awardPtsStrict(person, act, ref) {
     doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '' })
     if (doc.list.length > 40000) { const cut = doc.list.splice(0, doc.list.length - 40000); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真
     return { write: true, value: { awarded: true, reason: 'ok' } }
-  })
+  }, '行為分(' + person + ')', person) // 操作者＝得分的人（新殼命令橋留痕、驗收閘門看得到是誰）
 }
 // 原本的介面（GD 各處呼叫）：不丟錯、回 true/false；改用同一套原子寫入
 export async function awardPts(person, act, ref) {

@@ -84,6 +84,21 @@ const gdNames = (rosterDoc) => {
 // 新殼借用 GD 的 AI 出口（唯讀動作，2026-10-14 第 2 波耗損 F09 起）：金鑰、路由（AI 中樞設定）、用量紀錄都留在 GD；
 // 只允許登記過的路由，避免新殼任意呼叫；回 { text, provider, model }
 const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr', 'app']) // app：聊天室 @DD（F22，同 GD _chat.js 走 aiCall('app')） // menuocr：菜單拍照建檔（F18）
+// 積分（v4.71.136）：新殼已驗身分；編輯權限照 GD permWho 規則（權限表「排行榜」分頁 lb）；分派同 GD 舊頁（_pointsop.js）
+async function pointsRun(a, method) {
+  const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
+  if (!who.name) return { ok: false, error: '缺操作者' }
+  const kind = String(a.kind || '')
+  if (!['lb', 'cfg', 'rewardset', 'redeem', 'redeemlog', 'ledger'].includes(kind)) return { ok: false, error: '不認識的操作' }
+  if (method === 'POST' && kind === 'redeem' && (a.body || {}).op === 'setcheckers') return { ok: false, error: '設定核銷人在新殼 SOP 設定改' }
+  const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
+  const u = (pm.users || {})[who.rid]
+  const canEdit = pm.mode !== 'approve' ? true : !!(u && u.edit && (u.admin || !u.tabs || u.tabs.lb !== 0))
+  if (method === 'POST' && !canEdit) return { ok: false, error: '你還沒有排行榜的編輯權限——請找張良申請開通', status: 403 }
+  const { pointsDispatch } = await import('./_pointsop.js')
+  try { return await pointsDispatch({ kind, method, q: a.q || {}, body: a.body || {}, who, canEdit }) }
+  catch (e) { return { ok: false, error: '積分暫時出錯：' + String(e && e.message || e).slice(0, 120) } }
+}
 // 團體訂餐（v4.71.132）：新殼已驗身分；編輯權限照 GD permWho 規則（權限表 approve 模式＝已核准＋「團體訂餐」分頁沒關）；分派同 GD 舊頁（_grporderop.js）
 async function gorderRun(a, method) {
   const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
@@ -436,6 +451,8 @@ const ACTIONS = {
   },
   async gorder_read(a) { return gorderRun(a, 'GET') }, // 團體訂餐讀（列表／單張／設定）：唯讀，不佔事件位
   async gorder_op(a) { return gorderRun(a, 'POST') }, // 團體訂餐寫（新殼畫面 → 這裡執行；LINE、發票、金流只在 GD）：走事件佔位（同一個 idem 只執行一次，新殼重送不會重發 LINE／重開發票）
+  async points_read(a) { return pointsRun(a, 'GET') }, // 排行榜／積分規則／兌換紀錄／存摺讀：唯讀，不佔事件位
+  async points_op(a) { return pointsRun(a, 'POST') }, // 積分規則／獎勵／兌換寫（新殼畫面 → 這裡執行；通知在 GD）：走事件佔位（同一個 idem 只執行一次）
   async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）
     const IB = await import('./_inbox.js'); return { ok: true, ...(await IB.ibRetry({ limit: Math.min(300, Number(a.limit) || 100) })) }
   },
@@ -519,7 +536,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
