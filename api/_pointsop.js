@@ -26,6 +26,7 @@ const twNowR = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16
 const clone = (x) => JSON.parse(JSON.stringify(x))
 // 兌換單上限 2000：只裁已結案（不通過／已核銷／已給），待審、核准中、可用券一律保留（關卡 3 積分第一輪 OpenAI A5）
 const OPEN_RD = new Set(['pending', 'approving', 'approved'])
+const RD_CLOSED = 1e9 // 兌換關卡（流水帳 rdGate[兌換單]＝最新世代）關閉值：退回後任何世代都扣不到點
 const trimRedeem = (list) => { if (list.length <= 2000) return list; let room = 2000 - list.filter(x => OPEN_RD.has(x.status)).length; return list.filter(x => OPEN_RD.has(x.status) || (room-- > 0)) }
 // 通知小工具（鈴鐺＋LINE；同原本）：一律在資料都存好之後才呼叫
 async function notify(names, title, body) { try {
@@ -150,12 +151,22 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
     if (body.op === 'decide') {
       const note = body.note ? String(body.note).slice(0, 80) : ''
       if (!body.pass) {
+        // 退回（關卡 3 積分第七輪）：① 先看是不是待審 ② 流水帳同一交易：若已有這張單的扣點（過期執行者殘留）就退點一次＋把這張單的兌換關卡關閉（之後任何世代都扣不到點）
+        //   ③ 成功才標不通過 ④ 通知。② 失敗＝回「再按一次」（仍是待審，重按會重做，退點以 ref 去重）
+        const cur0 = ((await ptsRead([PTS_KEYS.redeem], op))[PTS_KEYS.redeem] || {}).list || []; const it0 = cur0.find(x => x.id === id)
+        if (!it0) return { status: 404, ok: false }
+        if (it0.status !== 'pending') return { status: 400, ok: false, error: '這筆已經處理過了' }
+        let refunded = false
+        try { await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; ptsDoc.rdGate = ptsDoc.rdGate || {}; let w = false
+          const ded = ptsDoc.list.find(e => e.act === 'redeem' && e.ref === id)
+          if (ded && !ptsDoc.list.some(e => e.act === 'redeem_refund' && e.ref === id)) { ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rf', person: ded.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem_refund', pts: Math.abs(Number(ded.pts) || 0), ref: id, by: who.name, note: '兌換未通過退點' }); refunded = true; w = true }
+          if (ptsDoc.rdGate[id] !== RD_CLOSED) { ptsDoc.rdGate[id] = RD_CLOSED; w = true }
+          return { write: w, value: 'ok' } }, '兌換退回關卡(' + id + ')', op) }
+        catch (e) { return { status: 503, ok: false, error: '退回沒存進去，請再按一次：' + String(e && e.message || e).slice(0, 60) } }
         let err = null, it = null
-        await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } } if (it.status !== 'pending') { err = { status: 400, ok: false, error: '這筆已經處理過了' }; return { write: false } } it.status = 'rejected'; it.decBy = who.name; it.decTs = nowR; if (note) it.note = note; return { write: true, doc: d } }, '兌換審核(' + who.name + ' 不通過)', op)
+        await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } } if (it.status === 'rejected') return { write: false }; if (it.status !== 'pending') { err = { status: 400, ok: false, error: '這筆已經處理過了' }; return { write: false } } it.status = 'rejected'; it.decBy = who.name; it.decTs = nowR; if (note) it.note = note; return { write: true, doc: d } }, '兌換審核(' + who.name + ' 不通過)', op)
         if (err) return err
-        // 保險（關卡 3 積分第六輪）：流水帳若已有這張單的扣點（過期執行者殘留），退回時退點一次（ref 去重）
-        try { await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; const ded = ptsDoc.list.find(e => e.act === 'redeem' && e.ref === id); if (!ded || ptsDoc.list.some(e => e.act === 'redeem_refund' && e.ref === id)) return { write: false, value: 'none' }; ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rf', person: ded.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem_refund', pts: Math.abs(Number(ded.pts) || 0), ref: id, by: who.name, note: '兌換未通過退點' }); return { write: true, value: 'ok' } }, '兌換退點(' + id + ')', op) } catch (e) { console.error('[points] 兌換退點失敗（請人工核對）', id, String(e && e.message || e).slice(0, 60)) }
-        await notify([it.person], '❌ 兌換未通過', `你換的「${it.rewardName}」未通過${note ? '（' + note.slice(0, 40) + '）' : ''}，點數沒扣`)
+        await notify([it.person], '❌ 兌換未通過', `你換的「${it.rewardName}」未通過${note ? '（' + note.slice(0, 40) + '）' : ''}，${refunded ? '已退回扣掉的點數' : '點數沒扣'}`)
         return { ok: true }
       }
       // 核准（v4.71.136 可安全重做的順序；跨三份文件不是同一交易，每一步都冪等）：
@@ -183,8 +194,13 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
       // ③ 扣點（同兌換單 ref 只扣一次；點數不足＝放回預留的庫存、退回待審）
       let rdOk
       try {
-        rdOk = await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }; if (balOf(it.person, ptsDoc) < it.cost) return { write: false, value: 'short' }; ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: who.name, note: it.rewardName }); return { write: true, value: 'ok' } }, '兌換扣點(' + it.person + ' -' + it.cost + ')', op)
+        rdOk = await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; ptsDoc.rdGate = ptsDoc.rdGate || {}; if ((Number(ptsDoc.rdGate[it.id]) || 0) > myGen) return { write: false, value: 'stale' }; // 兌換關卡：較新世代已到或已關閉＝我過期，扣不到（扣點端 fencing；關卡 3 積分第七輪 A2）
+           if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }; if (balOf(it.person, ptsDoc) < it.cost) { if ((Number(ptsDoc.rdGate[it.id]) || 0) === myGen) return { write: false, value: 'short' }; ptsDoc.rdGate[it.id] = myGen; return { write: true, value: 'short' } } ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: who.name, note: it.rewardName }); ptsDoc.rdGate[it.id] = myGen; return { write: true, value: 'ok' } }, '兌換扣點(' + it.person + ' -' + it.cost + ')', op) // 點數不足或扣點時都把關卡推到我的世代（同一交易）：之後較舊世代一律扣不到
       } catch (e) { return failRun({ status: 503, ok: false, error: '積分存檔失敗，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 80) }) }
+      if (rdOk === 'stale') { // 扣點被關卡擋（較新世代已到或已退回）：放回我自己剛預留的庫存（世代與編號都是我的才放）後結束，不碰兌換單
+        try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); const sr = (rw && rw.stockRun || {})[it.id]; if (!rw || !(rw.stockIds || []).includes(it.id) || !(sr && typeof sr === 'object' && Number(sr.gen) === myGen && sr.id === runId)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== it.id); rw.stockRun[it.id] = { gen: myGen, id: runId, released: true }; return { write: true, doc: d } }, '兌換放回庫存(過期執行者)', op) } catch (e) { console.error('[points] 過期執行者放回庫存失敗（請人工核對庫存）', it.id, String(e && e.message || e).slice(0, 60)) }
+        return { status: 409, ok: false, error: '這筆已被別人接手或已退回，請重新整理' }
+      }
       if (rdOk === 'short') { // 補償：確認仍持有執行權 → 放回預留庫存 → 成功才退回待審；放回失敗＝停在核准中（再按一次會重做補償）
         const cur0 = ((await ptsRead([PTS_KEYS.redeem], op))[PTS_KEYS.redeem] || {}).list || []; if (!mine(cur0.find(y => y.id === id))) return { status: 409, ok: false, error: '這筆狀態剛被改了，請重新整理' }
         try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); const sr = (rw && rw.stockRun || {})[it.id]; if (!rw || !(rw.stockIds || []).includes(it.id) || !(sr && typeof sr === 'object' && Number(sr.gen) === myGen && sr.id === runId)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== it.id); rw.stockRun[it.id] = { gen: myGen, id: runId, released: true }; return { write: true, doc: d } }, '兌換放回庫存(點數不足)', op) } catch (e) { return failRun({ status: 503, ok: false, error: '對方點數不足；放回庫存沒存進去，請再按一次核准（會重做放回）：' + String(e && e.message || e).slice(0, 60) }) } // 放回後保留世代墓碑：較舊世代之後才到的預留仍會被擋（關卡 3 積分第六輪 A2）
