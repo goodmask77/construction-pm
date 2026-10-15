@@ -180,8 +180,9 @@ const ACTIONS = {
   },
   async meet_ask_task(a) { // 發問→收件匣任務（鍵由發問 id 派生，重試不會多建）
     const key = 'sp_team_pm_task_mq' + a.askId
-    if (await kvGet(key)) return { ok: true, dup: true }
-    const ok = await kvSet(key, { id: 'mq' + a.askId, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
+    const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: String(a.by || '會議'), label: '任務' }) // v4.71.115 依資料歸屬
+    if (await kvT.kvGet(key)) return { ok: true, dup: true }
+    const ok = await kvT.kvPut(key, { id: 'mq' + a.askId, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
     return ok ? { ok: true } : { ok: false, retry: true }
   },
   async wp_names(a) { // App 站內通知＋推播（同名所有身分 id）
@@ -211,7 +212,8 @@ const ACTIONS = {
     const ops = (await kvGet('pm_bot_operators')) || {}
     for (const u of Object.keys(ops)) { if (await linePush(u, [{ type: 'text', text: '❓ 會議宣達發問【' + a.type + ' ' + a.date + '】\n' + a.by + '：' + a.q + '\n到 /prep → 會議 回覆（他會收到通知）' }])) { try { await logPush(u, 1, '會議發問通知') } catch (_) {} } }
     const id = 'mq' + Date.now().toString(36)
-    await kvSet('sp_team_pm_task_mq' + Date.now().toString(36), { id, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
+    const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: String(a.by || '會議'), label: '任務' }) // v4.71.115 依資料歸屬
+    await kvT.kvPut('sp_team_pm_task_' + id, { id, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
     return { ok: true }
   },
   async meet_answer(a) { // 回覆→DD 通知提問人
@@ -412,6 +414,11 @@ const ACTIONS = {
     const kv = await mhKv(kvGet, kvSet, who.name)
     try { return await mailhubDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || ''), q: a.q || {}, body: a.body || {}, who, kvGet: kv.kvGet, kvPut: kv.kvPut, guard: kv.guard }) }
     catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 300) } }
+  },
+  async task_notify(a) { // 任務通知（新殼任務頁 → 這裡發；文字照抄 GD ?tasknotify，_tasknotify.js 共用）；新殼已驗任務編輯權限，a.actor＝操作者
+    const { taskNotify } = await import('./_tasknotify.js')
+    const r = await taskNotify(a, String(a.actor || '').slice(0, 30))
+    return r.ok ? { ok: true, sent: r.sent } : { ok: false, retry: false, error: r.error }
   },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }

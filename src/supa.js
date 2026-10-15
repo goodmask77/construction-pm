@@ -142,7 +142,8 @@ export async function listSharedIds() {
 // 這些資料改由 GD（之後是新版 abgd）唯一負責；主 App 只能讀。擋在最底層＝任何按鈕、批次、刪除都寫不進去
 export const RETIRED_KEYS = new Set(['sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_menu', 'sp_finance_pm_menu_assets', 'sp_finance_pm_labor'])
 export const RETIRED_MSG = '主 App 已停用這項資料的修改，請到 GD 修改'
-const _retired = (k) => RETIRED_KEYS.has(String(k))
+export const RETIRED_PREFIXES = ['sp_team_pm_task_', 'sp_team_pm_data', 'sp_team_pm_ptscfg', 'sp_team_pm_ownerord'] // 團隊任務搬新殼（主 App TaskCenter 停寫）
+const _retired = (k) => RETIRED_KEYS.has(String(k)) || RETIRED_PREFIXES.some((p) => String(k).startsWith(p))
 
 async function setShared(k, value) {
   if (_retired(k)) { console.warn('[storage] ' + RETIRED_MSG, k); return }

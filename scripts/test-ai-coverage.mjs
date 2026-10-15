@@ -10,6 +10,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
 // ── 不需給 AI 的 key（每條都要寫原因；沒理由就不准加）──
 const ALLOW = [
   [/^pm_menu_assets$/, "菜單出圖版面／AI 圖素材設定（2026-10-15 主 App 停用寫入清單提到才被掃到）＝排版設定非業務資料；菜單內容 pm_menu 已接 AI"],
+  [/^pm_(ptscfg|ownerord)$/, "任務積分設定／負責人排序（2026-10-15 主 App 停寫清單提到才被掃到）＝設定非業務資料；任務本體 pm_task_ 已接 AI"],
   [/^sp_finance_pm_prep_perm$/, "/prep 編輯權限名單（2026-10-01 審核制）＝權限資料非業務資料"],
   [/^sp_finance_pm_prep_act_/, "實際備料逐日流水（2026-10-01）——先累積，分析功能上了再接 AI"],
   [/^pm_hist_|_v\d$|_v\d_/, "還原點/遷移旗標，非業務資料"],

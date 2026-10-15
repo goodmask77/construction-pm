@@ -26,9 +26,10 @@ export default async function handler(req, res) {
     const hr = tw.getUTCHours()      // 0..23 整點
     const slot = tw.toISOString().slice(0, 13) // YYYY-MM-DDTHH ＝本小時唯一碼（防同一小時重複發）
 
-    // 讀所有任務
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
-    const rows = r.ok ? await r.json() : []
+    // 讀所有任務（v4.71.115 依資料歸屬：任務域搬到新殼後改讀新殼、寫回走命令橋；_abgdkv.js）
+    const { abgdKv } = await import('./_abgdkv.js')
+    const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: '定期提醒', label: '任務' })
+    const all = await kvT.kvPrefix('sp_team_pm_task_')
 
     // 對象解析（照 mail-sync tasknotify 同一套）
     const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
@@ -39,8 +40,7 @@ export default async function handler(req, res) {
     const linePush = (to, text) => tkL ? fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkL }, body: JSON.stringify({ to, messages: [{ type: 'text', text }] }) }).catch(() => {}) : null
 
     let checked = 0, reminded = 0
-    for (const row of rows) {
-      let t; try { t = row && row.data && row.data.v ? JSON.parse(row.data.v) : null } catch (_) { t = null }
+    for (const t of Object.values(all)) {
       if (!t || !t.id) continue
       const rm = t.reminder
       if (!rm || !rm.on) continue
@@ -63,10 +63,15 @@ export default async function handler(req, res) {
         if (ch.includes('group')) await linePush(GRP_TASK, `🔔 定期提醒｜${title}${owner ? `（負責人：${owner}）` : ''}\n點開直達這張卡 👇\n${lnk}`)
       } catch (_) {}
 
-      rm.count = (Number(rm.count) || 0) + 1
-      rm.lastSlot = slot
-      t.reminder = rm; t.updatedAt = new Date().toISOString()
-      await kvPut('sp_team_pm_task_' + t.id, t, '定期提醒cron')
+      // 只改提醒欄位：讀最新那份再改（撞到同時在改＝重讀重做），不蓋掉別人剛改的內容
+      try {
+        await kvT.retry(async () => {
+          const k = 'sp_team_pm_task_' + t.id; const cur = await kvT.kvGet(k); if (!cur) return
+          cur.reminder = { ...(cur.reminder || rm), count: (Number((cur.reminder || {}).count) || 0) + 1, lastSlot: slot }
+          cur.updatedAt = new Date().toISOString()
+          await kvT.kvPut(k, cur, '定期提醒cron')
+        })
+      } catch (e) { console.log('[task-remind] 寫回提醒次數失敗', t.id, e && e.message) }
       reminded++
     }
     return res.status(200).json({ ok: true, tw: slot, wd, hr, checked, reminded })

@@ -157,14 +157,15 @@ export default async function handler(req, res) {
   if (false && req.query?.seed === 'pizza12') {
     const kvSet = async (id, obj) => { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'claude-seed', updated_at: new Date().toISOString() }) }); return r.ok }
     const title = '12吋披薩圓盒', url = 'https://www.bagasseproduct.com/'
-    const existing = await listPrefix('sp_team_pm_task_')
+    const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: 'Claude(補建)', label: '任務' }) // v4.71.115 依資料歸屬
+    const existing = Object.values(await kvT.kvPrefix('sp_team_pm_task_'))
     if (existing.some(t => t && t.title === title)) return res.status(200).json({ ok: true, skipped: '已存在，不重建' })
-    const catsRaw = await kvGet('sp_team_pm_data')
+    const catsRaw = await kvT.kvGet('sp_team_pm_data')
     const cats = Array.isArray(catsRaw) ? catsRaw : []
     const cat = cats.find(c => c.name === '採購-包材') || cats.find(c => /採購/.test(c.name || ''))
     const id = 't-seed' + Date.now().toString(36)
     const now = new Date().toISOString()
-    const okw = await kvSet('sp_team_pm_task_' + id, { id, title, note: url, status: 'todo', catId: cat ? cat.id : '__inbox__', start: '', due: '', priority: 'normal', tags: ['包材'], ord: Math.min(0, ...existing.map(t => t?.ord ?? 0)) - 1, createdAt: now, updatedAt: now })
+    const okw = await kvT.kvPut('sp_team_pm_task_' + id, { id, title, note: url, status: 'todo', catId: cat ? cat.id : '__inbox__', start: '', due: '', priority: 'normal', tags: ['包材'], ord: Math.min(0, ...existing.map(t => t?.ord ?? 0)) - 1, createdAt: now, updatedAt: now })
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
