@@ -5684,7 +5684,7 @@ export default async function handler(req, res) {
       const mkM = (process.env.MENU_PROBE_KEY || '').trim(), ckM = (process.env.CRON_SECRET || '').trim()
       const kM = String(req.query.mailhubrun)
       if (!((mkM && kM === mkM) || (ckM && kM === ckM))) return res.status(403).json({ ok: false })
-      try { const whoR = { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' }; const { mhKv } = await import('./_mailhubkv.js'); const kvR = await mhKv(kvGet, kvPut, whoR.name); return res.status(200).json(await MH.applyAll({ kvGet: kvR.kvGet, kvPut: kvR.kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: whoR })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+      try { const whoR = { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' }; const { mhKv } = await import('./_mailhubkv.js'); const kvR = await mhKv(kvGet, kvPut, whoR.name); return res.status(200).json(await MH.applyAll({ kvGet: kvR.kvGet, kvPut: kvR.kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: whoR, guard: kvR.guard })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
     }
     const okM = (process.env.OPS_BOARD_KEY || '').trim()
     if (!okM || String(req.query.mailhub) !== okM) return res.status(403).json({ ok: false })
@@ -5701,7 +5701,7 @@ export default async function handler(req, res) {
       // v4.71.108 操作分派抽到 _mailhubop.js（新殼經代發口共用）；讀寫依資料歸屬走 GD 或新殼（_mailhubkv.js）
       const { mailhubDispatch } = await import('./_mailhubop.js'); const { mhKv } = await import('./_mailhubkv.js')
       const kvM = await mhKv(kvGet, kvPut, whoM.name)
-      const rM = await mailhubDispatch({ method: req.method === 'POST' ? 'POST' : 'GET', op: opM, q: req.query, body: bM, who: whoM, kvGet: kvM.kvGet, kvPut: kvM.kvPut })
+      const rM = await mailhubDispatch({ method: req.method === 'POST' ? 'POST' : 'GET', op: opM, q: req.query, body: bM, who: whoM, kvGet: kvM.kvGet, kvPut: kvM.kvPut, guard: kvM.guard })
       return res.status(rM && rM.ok === false && rM.error === '不認得的操作' ? 400 : 200).json(rM)
     } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
   }
