@@ -2229,7 +2229,7 @@ export default async function handler(req, res) {
     { // abgd issues 域：搬到新殼後轉命令（新殼寫錯誤日誌、排 LINE 通知）；切換中＝這筆略過（錯誤日誌非業務資料）
       const ow = await abgdOwnerOf('sp_finance_pm_errlog')
       if (ow !== 'gd') {
-        if (ow !== 'abgd') return res.status(200).json({ ok: false, skipped: 'switching' })
+        if (ow !== 'abgd') { console.warn('[errlog] 資料域切換中或查不到鎖，這筆錯誤回報略過', ow, msg.slice(0, 80)); return res.status(200).json({ ok: false, skipped: 'switching' }) }
         const cr = await abgdCmd('issues', 'report', { msg, src: String(eb.src || '').slice(0, 120), page: String(eb.page || '').slice(0, 60), ver: String(eb.ver || '').slice(0, 20), stack: String(eb.stack || '').slice(0, 600) }, whoE ? whoE.name : '訪客')
         return res.status(200).json({ ok: !!cr.ok })
       }
