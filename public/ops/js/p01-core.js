@@ -93,7 +93,12 @@ async function hardRefresh(){ // v4.70.14 ↻＝⌘+Shift+R 效果：清 localSt
   try{ const u=new URL(location.href); u.searchParams.set('r', Date.now()); location.replace(u.toString()) }catch(_){ location.replace(location.pathname + '?r=' + Date.now()) }
 }
 // 依目前分頁重畫（綁定後/操作後用）
-function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
+async function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
+  if (!window._abgdSkip_task && typeof abgdTry === 'function') { // v4.71.118 abgd：任務已切到新殼就開新殼（深層連結帶 #task=）；判斷中 tasks.js 冷啟自救先讓路
+    window._tnRouting = true; let gone = false
+    try { gone = await abgdTry('task', window.tnFocusId ? '#task=' + window.tnFocusId : '') } finally { window._tnRouting = false }
+    if (gone) { window.tnFocusId = null; return }
+  }
   if (typeof tnPage === 'function') { tnPage(); return }
   // v4.44.2 真因修（張良「變成以前的版本嚇一跳」）：?v=快取換新後13支腳本重新下載，點任務搶在 tasks.js(93KB)載完前
   // →原本「立刻」退回舊 iframe(React TaskCenter=保留舊欄位的那個彈窗)＝看起來像退版。改=等它載好(最多6秒)再開原生；真的載不到才退 iframe 保底
