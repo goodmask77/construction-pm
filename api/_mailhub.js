@@ -164,7 +164,7 @@ export async function scanBox({ kvGet, kvPut, id, days = 7, who, connectFn = con
 export async function updateHub(kvGet, kvPut, mutate, who) {
   for (let i = 0; ; i++) {
     const hub = await loadHub(kvGet)
-    mutate(hub)
+    await mutate(hub) // 允許非同步修改
     try { await saveHub(kvPut, hub, who); return hub } catch (e) {
       if (i >= 4 || !/同時在改/.test(String(e && e.message || e))) throw e
       await new Promise(r => setTimeout(r, 150 + Math.random() * 400))
