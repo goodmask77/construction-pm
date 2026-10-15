@@ -35,7 +35,12 @@ export default async function handler(req, res) {
       { const g = await socGate(); if (g) return res.status(200).send(page('系統切換中', '行銷大師正在做資料搬家驗收（幾分鐘）。請稍後回 App 再按一次「連接 Facebook」。')) } // 換權杖前先問驗收閘門（關卡 3 行銷大師第一輪 A1）
       // v4.71.147 續做（第一輪 A5）：授權碼只能用一次 → 換到的權杖與粉專清單先存進這次的授權紀錄（同 state），後面寫入失敗時重新整理這一頁會接著寫、不再換一次
       let longUser, t2, list
-      if (saved.stage === 'got' && saved.got) { longUser = saved.got.longUser; t2 = { expires_in: saved.got.exp }; list = saved.got.list || [] }
+      // 互斥（第二輪 A5）：同一次授權只准一個在換權杖——state 相同且還沒開始＝標「處理中」；處理中（2 分鐘內）＝請稍候；已拿到＝接續；state 被換掉＝停
+      const lockR = await socTx('sp_finance_pm_social_oauth', (cur) => { if (!cur || cur.state !== state) return { write: false, value: 'gone' }; if (cur.stage === 'got') return { write: false, value: 'got' }; if (cur.stage === 'exchanging' && Date.now() - Date.parse(cur.exAt || 0) < 120e3) return { write: false, value: 'busy' }; return { write: true, doc: { ...cur, stage: 'exchanging', exAt: new Date().toISOString() }, value: 'mine' } }, 'oauth-exchanging')
+      if (lockR === 'gone') return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代或已完成。請回 App 重新按一次「連接 Facebook」。'))
+      if (lockR === 'busy') return res.status(200).send(page('處理中', '這次授權正在處理中，請等幾秒後重新整理這一頁。'))
+      const saved2 = lockR === 'got' ? ((await kvGet('sp_finance_pm_social_oauth')) || {}) : saved
+      if (lockR === 'got' && saved2.got) { longUser = saved2.got.longUser; t2 = { expires_in: saved2.got.exp }; list = saved2.got.list || [] }
       else {
         // 短期 user token → 長效 user token
         const t1 = await graphGet('/oauth/access_token', { client_id: APP_ID, client_secret: APP_SECRET, redirect_uri: REDIRECT_URI, code: String(req.query.code) })
@@ -60,7 +65,7 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       }
-      if (saved.stage !== 'got') await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: { ...cur, stage: 'got', got: { longUser, exp: t2.expires_in || null, list: list.map(p => ({ id: p.id, name: p.name, access_token: p.access_token, instagram_business_account: p.instagram_business_account || null })) }, gotAt: new Date().toISOString() } } : { write: false }, 'oauth-got')
+      if (lockR !== 'got') { const okGot = await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: { ...cur, stage: 'got', got: { longUser, exp: t2.expires_in || null, list: list.map(p => ({ id: p.id, name: p.name, access_token: p.access_token, instagram_business_account: p.instagram_business_account || null })) }, gotAt: new Date().toISOString() }, value: true } : { write: false, value: false }, 'oauth-got'); if (!okGot) return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。')) } // state 不符＝立刻停，不寫權杖（第二輪 A5）
       // v4.71.146：授權碼只能用一次 → 換到權杖後的寫入一律 socTx（重讀最新、合併、只重做寫入），不整段重做
       const S_KEY = 'sp_finance_pm_social_secret', A_KEY = 'sp_finance_pm_social_accounts'
       // 先存長效 user token（就算沒抓到粉專，之後也能用「粉專編號」手動加商家旗下粉專）

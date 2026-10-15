@@ -46,7 +46,7 @@ export async function publishPost(p, pages) {
       }
     } catch (e) {
       allOk = false
-      const unknown = !e.graph && e.code == null // 沒拿到 Meta 回應（逾時／斷線）＝結果不明，可能已發出（關卡 3 行銷大師第一輪 A6）
+      const unknown = !e.graph // 沒拿到 Meta 明確的錯誤內容（逾時、斷線、5xx 沒內容，不論錯誤碼）＝結果不明，可能已發出（關卡 3 行銷大師第一、二輪 A6）
       p.pub[type === 'ig' ? 'instagram' : 'facebook'] = unknown ? { status: 'unknown', error: '結果不明（' + String(e.message || '連線中斷').slice(0, 60) + '），可能已發出——請先到 FB／IG 確認再重發', dest: id } : { status: 'failed', error: e.message || '發布失敗', dest: id }
     }
   }
@@ -59,14 +59,14 @@ export default async function handler(req, res) {
     if (!metaReady()) return res.status(200).json({ ok: false, skipped: '未設 META env' })
     { const g = await socGate(); if (g) return res.status(200).json({ ok: true, skipped: '驗收閘門：' + g }) } // 切換驗收期間不發（下一輪再看）
     const doc = await getPosts(); const now = Date.now()
-    const due = (doc.list || []).filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now))
+    const due = (doc.list || []).filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now)) // 沒排程時間＝核准後立即發（原設計）；時間格式壞掉＝NaN＝不發
     if (!due.length) return res.status(200).json({ ok: true, published: 0 })
     const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
     const out = []
     for (const p0 of due.slice(0, 5)) { // 一次最多 5 則
       { const g = await socGate(); if (g) break } // 每則發前都問閘門（關卡 3 行銷大師第一輪 A1）
       // 認領同交易重驗：仍核准、已到時間、有目的地（關卡 3 行銷大師第一輪 A2）
-      const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved' || (x.scheduledAt && new Date(x.scheduledAt).getTime() > Date.now()) || !(x.dests && x.dests.length)) return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
+      const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved' || (x.scheduledAt && !(new Date(x.scheduledAt).getTime() <= Date.now())) || !(x.dests && x.dests.length)) return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
       if (!claim) continue // 已被別人（立即發布、畫面修改）處理
       let allOk = false
       try { allOk = await publishPost(claim, pages) } catch (e) { claim.pub = claim.pub || {}; claim.pub._err = String(e && e.message || e).slice(0, 200) }
