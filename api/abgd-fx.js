@@ -410,7 +410,7 @@ const ACTIONS = {
     if (!who.name) return { ok: false, error: '缺操作者' }
     const { mailhubDispatch } = await import('./_mailhubop.js'); const { mhKv } = await import('./_mailhubkv.js')
     const kv = await mhKv(kvGet, kvSet, who.name)
-    try { return await mailhubDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || ''), q: a.q || {}, body: a.body || {}, who, kvGet: kv.kvGet, kvPut: kv.kvPut }) }
+    try { return await mailhubDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || ''), q: a.q || {}, body: a.body || {}, who, kvGet: kv.kvGet, kvPut: kv.kvPut, guard: kv.guard }) }
     catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 300) } }
   },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排

@@ -35,7 +35,10 @@ export function decrypt(s) {
 }
 
 // ── 信箱清單 ──
-export async function loadHub(kvGet) { const h = (await kvGet(HUB_KEY)) || {}; return { boxes: h.boxes || [], rules: h.rules || [], log: h.log || [], envOff: h.envOff || {} } }
+export async function loadHub(kvGet) { const h = (await kvGet(HUB_KEY)) || {}; return { boxes: h.boxes || [], rules: h.rules || [], log: h.log || [], envOff: h.envOff || {}, envMeta: h.envMeta || {} } } // v4.71.109 envMeta 也要帶（原本漏帶，存一次就把預設信箱狀態洗掉）
+// 信件日期 → 台灣時間字串（壞日期回空字串，不讓整個掃描中斷；v4.71.109）
+const tpeDate = (d, len) => { const t = new Date(d); return isNaN(t.getTime()) ? '' : new Date(t.getTime() + 8 * 3600e3).toISOString().slice(0, len).replace('T', ' ') }
+const SCAN_MAX = 2000 // 掃描最多讀最新 2000 封（避免一次載入幾萬封）
 export async function saveHub(kvPut, hub, who) { await kvPut(HUB_KEY, hub, '信箱中樞 ' + ((who && who.name) || '')) }
 function envBoxes(hub) {
   const out = []
@@ -123,19 +126,21 @@ export async function boxDel({ kvGet, kvPut, body, who }) {
 export async function scanBox({ kvGet, kvPut, id, days = 7, who }) {
   const hub = await loadHub(kvGet)
   const box = boxById(hub, id); if (!box) return { ok: false, error: '找不到這個信箱' }
-  const t0 = Date.now(); let client = null; const mails = []; let unseen = 0, sp = { folders: [] }
+  const t0 = Date.now(); let client = null; const mails = []; let unseen = 0, sp = { folders: [] }, totalN = 0
   try {
     client = await connect(box)
     sp = await specials(client)
     const lock = await client.getMailboxLock('INBOX')
     try {
-      const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+      const uids0 = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+      totalN = (uids0 || []).length
+      const uids = (uids0 || []).slice().sort((x, y) => y - x).slice(0, SCAN_MAX) // 最新的 SCAN_MAX 封
       if (uids && uids.length) {
         for await (const msg of client.fetch(uids, { envelope: true, flags: true }, { uid: true })) {
           const fr = (msg.envelope && msg.envelope.from && msg.envelope.from[0]) || {}
           const seen = msg.flags && msg.flags.has && msg.flags.has('\\Seen')
           if (!seen) unseen++
-          mails.push({ uid: msg.uid, from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: (msg.envelope && msg.envelope.subject) || '', date: msg.envelope && msg.envelope.date ? new Date(msg.envelope.date).toISOString().slice(0, 16).replace('T', ' ') : '', seen: !!seen })
+          mails.push({ uid: msg.uid, from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: (msg.envelope && msg.envelope.subject) || '', date: msg.envelope && msg.envelope.date ? tpeDate(msg.envelope.date, 16) : '', seen: !!seen })
         }
       }
     } finally { lock.release() }
@@ -148,7 +153,7 @@ export async function scanBox({ kvGet, kvPut, id, days = 7, who }) {
   const agg = {}
   mails.forEach(m => { const a = agg[m.from] = agg[m.from] || { from: m.from, name: m.name, count: 0, unseen: 0, latest: '', sample: '' }; a.count++; if (!m.seen) a.unseen++; if (m.date > a.latest) { a.latest = m.date; a.sample = m.subject; if (m.name) a.name = m.name } })
   const senders = Object.values(agg).sort((a, b) => b.count - a.count)
-  const scan = { scannedAt: now(), days, inboxCount: mails.length, unseen, senders, mails: mails.slice(0, 500), folders: sp.folders, trash: sp.trash, all: sp.all, ms: Date.now() - t0 }
+  const scan = { scannedAt: now(), days, inboxCount: Math.max(totalN, mails.length), capped: totalN > mails.length ? mails.length : 0, unseen, senders, mails: mails.slice(0, 500), folders: sp.folders, trash: sp.trash, all: sp.all, ms: Date.now() - t0 }
   await kvPut(SCAN_KEY(id), scan, '信箱掃描')
   await markBox(kvGet, kvPut, id, { lastScan: scan.scannedAt, lastOk: scan.scannedAt, lastErr: '' }, who)
   return { ok: true, scan: { ...scan, mails: scan.mails.slice(0, 200) } }
@@ -231,13 +236,14 @@ export async function previewRule({ kvGet, ruleId, rule: draft, boxId }) {
 }
 
 // ── 執行：連 IMAP 真的把信搬走（dry=只算不動）──
-export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyIds = null, who, requireConfirmed = true }) {
+export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyIds = null, who, requireConfirmed = true, guard = null }) { // guard：真的搬信前呼叫，回字串＝不准動（切換中／驗收中；v4.71.109）
   const hub = await loadHub(kvGet)
   const box = boxById(hub, id); if (!box) return { ok: false, error: '找不到這個信箱' }
   if (!box.on) return { ok: false, error: '這個信箱已停用' }
   const rules = hub.rules.filter(r => r.on && (r.box === '*' || r.box === id) && (!requireConfirmed || r.confirmed || r.action === 'keep') && (!onlyIds || onlyIds.includes(r.id) || r.action === 'keep'))
   if (!rules.some(r => r.action !== 'keep')) return { ok: true, box: id, n: 0, groups: [], note: '沒有已確認的規則' }
-  let client = null; const groups = {}; let scanned = 0
+  if (!dry && guard) { const g0 = await guard(); if (g0) return { ok: false, box: id, error: g0 } } // 連信箱前先檢查（不記成連線失敗）
+  let client = null; const groups = {}; let scanned = 0, stopped = ''
   try {
     client = await connect(box)
     const sp = await specials(client)
@@ -248,14 +254,15 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
         for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
           scanned++
           const fr = (msg.envelope && msg.envelope.from && msg.envelope.from[0]) || {}
-          const m = { uid: msg.uid, from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: (msg.envelope && msg.envelope.subject) || '', date: msg.envelope && msg.envelope.date ? new Date(msg.envelope.date).toISOString().slice(0, 10) : '' }
+          const m = { uid: msg.uid, from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: (msg.envelope && msg.envelope.subject) || '', date: msg.envelope && msg.envelope.date ? tpeDate(msg.envelope.date, 10) : '' }
           const d = decide(rules, id, m, onlyIds ? [...onlyIds, ...rules.filter(r => r.action === 'keep').map(r => r.id)] : null)
           if (!d || d.action === 'keep') continue
           const g = groups[d.rule.id] = groups[d.rule.id] || { rule: d.rule.id, action: d.action, folder: d.rule.folder, kw: d.rule.kw, uids: [], samples: [], err: '' }
           g.uids.push(m.uid); if (g.samples.length < 5) g.samples.push({ from: m.from, subject: m.subject.slice(0, 80), date: m.date })
         }
       }
-      if (!dry) {
+      stopped = !dry && guard ? (await guard()) || '' : '' // 掃完、真的搬之前再檢查一次（期間切換或上了驗收閘門＝一封都不動）
+      if (!dry && !stopped) {
         for (const g of Object.values(groups)) {
           if (!g.uids.length) continue
           try {
@@ -265,24 +272,25 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
             else if (g.action === 'label') dest = g.folder
             if (g.action === 'archive' && !dest) dest = '封存'
             if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (_) {} }
-            if (dest) await client.messageMove(g.uids, dest, { uid: true })
+            if (dest) for (let i9 = 0; i9 < g.uids.length; i9 += 500) await client.messageMove(g.uids.slice(i9, i9 + 500), dest, { uid: true }) // 分批（IMAP 指令長度有限）
             g.moved = g.uids.length
           } catch (e) { g.err = errText(e); g.moved = 0 }
         }
       }
     } finally { lock.release() }
   } catch (e) { const err = errText(e); await markBox(kvGet, kvPut, id, { lastErr: err }, who); return { ok: false, error: err } } finally { if (client) await client.logout().catch(() => {}) }
+  if (stopped) return { ok: false, box: id, error: stopped, scanned }
   const gs = Object.values(groups).map(g => ({ rule: g.rule, action: g.action, folder: g.folder, kw: g.kw, n: g.uids.length, moved: dry ? 0 : (g.moved || 0), samples: g.samples, err: g.err }))
   const hub2 = await loadHub(kvGet)
-  for (const g of gs) if (g.n) pushLog(hub2, { box: id, rule: g.rule, action: g.action, n: g.n, moved: g.moved, samples: g.samples, dry: !!dry, by: (who && who.name) || '每日自動', err: g.err })
+  for (const g of gs) if (g.n && !dry) pushLog(hub2, { box: id, rule: g.rule, action: g.action, n: g.n, moved: g.moved, samples: g.samples, dry: !!dry, by: (who && who.name) || '每日自動', err: g.err })
   if (!dry) { const b2 = hub2.boxes.find(x => x.id === id); if (b2) { b2.lastApply = now(); b2.lastOk = now(); b2.lastErr = '' } }
   await saveHub(kvPut, hub2, who)
   return { ok: true, box: id, scanned, n: gs.reduce((t, g) => t + g.n, 0), groups: gs, dry: !!dry }
 }
-export async function applyAll({ kvGet, kvPut, days = 7, dry = false, who = { name: '每日自動' } }) {
+export async function applyAll({ kvGet, kvPut, days = 7, dry = false, who = { name: '每日自動' }, guard = null }) {
   const hub = await loadHub(kvGet)
   const out = []
-  for (const b of allBoxes(hub)) { if (!b.on) continue; try { out.push({ ...(await applyBox({ kvGet, kvPut, id: b.id, days, dry, who })), name: b.name }) } catch (e) { out.push({ ok: false, box: b.id, name: b.name, error: String(e && e.message || e).slice(0, 200) }) } }
+  for (const b of allBoxes(hub)) { if (!b.on) continue; try { out.push({ ...(await applyBox({ kvGet, kvPut, id: b.id, days, dry, who, guard })), name: b.name }) } catch (e) { out.push({ ok: false, box: b.id, name: b.name, error: String(e && e.message || e).slice(0, 200) }) } }
   return { ok: true, boxes: out, n: out.reduce((t, x) => t + (x.n || 0), 0) }
 }
 export function pushLog(hub, e) { hub.log = [{ at: now(), ...e }, ...(hub.log || [])].slice(0, 300) }
