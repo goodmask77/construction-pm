@@ -1,7 +1,9 @@
 // ── 🏦 積分中樞共用模組（張良 2026-10-06）──
 // 抽出來讓 mail-sync（排行榜/規則/回饋/SOP/簽收/回報）與 punch（打卡）等端點共用同一套給分邏輯，
 // 避免 punch 靜態 import 整包 mail-sync（含 imapflow 等）造成循環/冷啟負擔。KV 走 _onboard（與 mail-sync 同 data.v 格式）。
+import crypto from 'node:crypto'
 import { abgdKv } from './_abgdkv.js'
+import { SB_URL, svc } from './_onboard.js'
 
 // 行為分規則預設（可被 sp_finance_pm_points_cfg.behavior 覆寫/增刪；cap=每人每天上限，0=不限只用 ref 去重）
 export const POINTS_DEFAULT = {
@@ -67,7 +69,30 @@ export async function awardPtsStrict(person, act, ref) {
 }
 // 原本的介面（GD 各處呼叫）：不丟錯、回 true/false；改用同一套原子寫入
 export async function awardPts(person, act, ref) {
-  try { return (await awardPtsStrict(person, act, ref)).awarded } catch (e) { console.log('[awardPts] 失敗', person, act, ref, String(e && e.message || e).slice(0, 160)); return false }
+  try { return (await awardPtsStrict(person, act, ref)).awarded } catch (e) { console.log('[awardPts] 失敗，進補分佇列', person, act, ref, String(e && e.message || e).slice(0, 160)); await ptsQueue(person, act, ref); return false }
+}
+// ── 補分佇列（v4.71.136；關卡 3 積分第一輪 OpenAI A6）：給分寫不進去（驗收閘門、一直撞版本、新殼連不上）→ 存一筆 GD 文件 pm_ptsq_<雜湊>（不屬積分域，留 GD），
+//   每小時排程與拆閘門後的 points_drain 依原 ref 重給（awardPtsStrict 同人同動作同 ref 只給一次，重放不會加倍）；成功（含已給過／達上限／規則關閉）就刪
+const PQ = 'pm_ptsq_'
+async function ptsQueue(person, act, ref) {
+  try {
+    const at = new Date().toISOString(); const id = PQ + crypto.createHash('sha256').update(String(person) + '|' + String(act) + '|' + (ref ? String(ref) : '@' + at)).digest('hex').slice(0, 40)
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ person, act, ref: ref || '', at }) }, editor: '補分佇列', updated_at: at }) })
+    if (!r.ok && r.status !== 409) console.error('[awardPts] 補分佇列也存不進去（這筆行為分會漏，請人工補）', person, act, ref, r.status)
+  } catch (e) { console.error('[awardPts] 補分佇列也存不進去（這筆行為分會漏，請人工補）', person, act, ref, String(e && e.message || e).slice(0, 80)) }
+}
+export async function ptsDrain({ limit = 50 } = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent('pm\\_ptsq\\_')}*&select=id,data&order=updated_at.asc&limit=${Math.min(300, Number(limit) || 50)}`, { headers: svc })
+  if (!r.ok) throw new Error('讀補分佇列失敗 HTTP ' + r.status)
+  const rows = await r.json(); let ok = 0, left = 0, drop = 0
+  for (const row of rows) {
+    let q = null; try { q = JSON.parse(row.data.v) } catch (_) {}
+    const del = async () => { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(row.id)}`, { method: 'DELETE', headers: svc }) }
+    if (!q || !q.person || !q.act) { await del(); drop++; continue }
+    try { await awardPtsStrict(q.person, q.act, q.ref || ''); await del(); ok++ }
+    catch (e) { if (Date.now() - Date.parse(q.at || 0) > 7 * 86400e3) { console.error('[awardPts] 補分超過 7 天仍失敗，放棄（請人工補）', JSON.stringify(q)); await del(); drop++ } else left++ }
+  }
+  return { seen: rows.length, ok, left, drop }
 }
 
 // ── 🏆 積分總表（排行榜 lb 口＋DD 積分段落共用同一套算法；張良 2026-10-12「DD 又抓不到資料（我現在有多少積分）」治本）──

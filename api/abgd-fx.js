@@ -89,7 +89,7 @@ async function pointsRun(a, method) {
   const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
   if (!who.name) return { ok: false, error: '缺操作者' }
   const kind = String(a.kind || '')
-  if (!['lb', 'cfg', 'rewardset', 'redeem', 'redeemlog', 'ledger'].includes(kind)) return { ok: false, error: '不認識的操作' }
+  if (!(method === 'GET' ? ['lb', 'cfg', 'redeemlog', 'ledger'] : ['cfg', 'rewardset', 'redeem']).includes(kind)) return { ok: false, error: '不認識的操作', status: 400 } // 唯讀口只准讀（關卡 3 積分第一輪 OpenAI A1）
   if (method === 'POST' && kind === 'redeem' && (a.body || {}).op === 'setcheckers') return { ok: false, error: '設定核銷人在新殼 SOP 設定改' }
   const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
   const u = (pm.users || {})[who.rid]
@@ -453,6 +453,7 @@ const ACTIONS = {
   async gorder_op(a) { return gorderRun(a, 'POST') }, // 團體訂餐寫（新殼畫面 → 這裡執行；LINE、發票、金流只在 GD）：走事件佔位（同一個 idem 只執行一次，新殼重送不會重發 LINE／重開發票）
   async points_read(a) { return pointsRun(a, 'GET') }, // 排行榜／積分規則／兌換紀錄／存摺讀：唯讀，不佔事件位
   async points_op(a) { return pointsRun(a, 'POST') }, // 積分規則／獎勵／兌換寫（新殼畫面 → 這裡執行；通知在 GD）：走事件佔位（同一個 idem 只執行一次）
+  async points_drain(a) { const { ptsDrain } = await import('./_points.js'); return { ok: true, ...(await ptsDrain({ limit: Math.min(300, Number(a.limit) || 100) })) } }, // 積分補分佇列立即排空（拆閘門後呼叫）；唯讀路徑（重給本身依 ref 去重）
   async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）
     const IB = await import('./_inbox.js'); return { ok: true, ...(await IB.ibRetry({ limit: Math.min(300, Number(a.limit) || 100) })) }
   },
@@ -536,7 +537,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

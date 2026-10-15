@@ -1,6 +1,7 @@
 // 積分／排行榜／兌換分派（v4.71.136 從 mail-sync ?lb ?pointscfg ?rewardset ?redeem ?redeemlog ?ledger 抽出；GD 舊頁與新殼（經代發口 points_read／points_op）共用同一份，內容照搬）
 // 呼叫端負責驗身分：who（sopWho；讀取可為 null）、canEdit（permWho(token,'lb') 有過＝true；寫入一律要）；回傳物件，status 欄＝HTTP 狀態（沒有＝200）
 // 積分四份文件依資料歸屬讀寫（_points.js ptsTx／ptsRead，版本比對）；其他資料（SOP 問題、任務、名冊、SOP 設定、綁定）照舊讀 GD（搬走的域由同步鏡像）
+import crypto from 'node:crypto'
 import { kvGet, SB_URL, SB_KEY } from './_onboard.js'
 import { FACETS, pointsRules, computePointsBoard, pointsCas, ptsTx, ptsRead, PTS_KEYS } from './_points.js'
 export const REWARDS_SEED = [
@@ -23,6 +24,9 @@ const twDate = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10
 const twHm = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
 const twNowR = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
 const clone = (x) => JSON.parse(JSON.stringify(x))
+// 兌換單上限 2000：只裁已結案（不通過／已核銷／已給），待審、核准中、可用券一律保留（關卡 3 積分第一輪 OpenAI A5）
+const OPEN_RD = new Set(['pending', 'approving', 'approved'])
+const trimRedeem = (list) => { if (list.length <= 2000) return list; let room = 2000 - list.filter(x => OPEN_RD.has(x.status)).length; return list.filter(x => OPEN_RD.has(x.status) || (room-- > 0)) }
 // 通知小工具（鈴鐺＋LINE；同原本）：一律在資料都存好之後才呼叫
 async function notify(names, title, body) { try {
   const bindN = (await kvGet('sp_finance_pm_prep_bind')) || {}
@@ -35,6 +39,7 @@ async function notify(names, title, body) { try {
 
 export async function pointsDispatch({ kind, method, q = {}, body = {}, who, canEdit = false }) {
   const op = (who && who.name) || '積分'
+  if ((kind === 'rewardset' || kind === 'redeem') && method !== 'POST') return { status: 405, ok: false, error: '要用 POST' } // 寫入一律 POST（關卡 3 積分第一輪 OpenAI A1）
   // ── 🏆 排行榜（讀；順手補基礎獎勵種子、補發舊券核銷碼）──
   if (kind === 'lb') {
     const [issDoc, rosterL, catsDoc, taskRows, defL, P] = await Promise.all([
@@ -92,7 +97,7 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
     const defW = await kvGet('sp_finance_pm_sop_def'); if (!isAdmOf(who, defW)) return { status: 403, ok: false, error: '只有管理者/主管能改獎勵' }
     if (body.op === 'set') { const nm = String(body.name || '').trim().slice(0, 30); const cost = Math.max(1, Math.round(Number(body.cost) || 0)); if (!nm || !cost) return { status: 400, ok: false, error: '名稱和點數要填' } }
     else if (body.op !== 'del') return { status: 400, ok: false }
-    const newId = 'rw' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) // 加亂數：同一毫秒兩人新增不撞號（v4.71.136 實測抓到）
+    const newId = 'rw' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex') // 加亂數：同一毫秒兩人新增不撞號（v4.71.136 實測抓到）
     const doc = await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; d.list = d.list || []
       if (body.op === 'set') {
         const nm = String(body.name || '').trim().slice(0, 30); const cost = Math.max(1, Math.round(Number(body.cost) || 0))
@@ -117,11 +122,12 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
       if (!rw) return { status: 404, ok: false, error: '找不到這個獎勵' }
       if (rw.stock != null && rw.stock <= 0) return { status: 400, ok: false, error: '這個獎勵庫存沒了' }
       const bal = balOf(who.name, P[PTS_KEYS.points]); if (bal < rw.cost) return { status: 400, ok: false, error: `點數不夠（你有 ${bal}、需要 ${rw.cost}）` }
-      const rid = body.cid ? 'rd' + String(body.cid).replace(/[^A-Za-z0-9]/g, '').slice(0, 24) : 'rd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) // 同一次申請（cid）重送不重建
+      const rid = body.cid ? 'rd' + crypto.createHash('sha256').update(who.name + '|' + String(body.cid)).digest('hex').slice(0, 20) : 'rd' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex') // 同一個人同一次申請（cid）重送＝同一張；編號綁申請人（關卡 3 積分第一輪 OpenAI A4）（cid）重送不重建
       const it = { id: rid, person: who.name, rewardId: rw.id, rewardName: rw.name, cost: rw.cost, ts: nowR, status: 'pending' }
-      const made = await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; d.list = d.list || []; if (d.list.some(x => x.id === rid)) return { write: false, value: false }; d.list = [it, ...d.list].slice(0, 2000); return { write: true, doc: d, value: true } }, '兌換申請(' + who.name + '→' + rw.name + ')', op)
-      if (made) await notify(aprR, '🎁 有人要兌換獎勵', `${who.name} 想換「${rw.name}」（${rw.cost} 點），到排行榜審核`)
-      return { ok: true, item: it }
+      const got = await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; d.list = d.list || []; const ex = d.list.find(x => x.id === rid); if (ex) return { write: false, value: { made: false, item: ex } }; d.list = trimRedeem([it, ...d.list]); return { write: true, doc: d, value: { made: true, item: it } } }, '兌換申請(' + who.name + '→' + rw.name + ')', op)
+      if (got.item.person !== who.name) return { status: 409, ok: false, error: '申請編號衝突，請重新整理再試' }
+      if (got.made) await notify(aprR, '🎁 有人要兌換獎勵', `${who.name} 想換「${rw.name}」（${rw.cost} 點），到排行榜審核`)
+      return { ok: true, item: got.item }
     }
     if (body.op === 'checkin') {
       if (!isCheckerR) return { status: 403, ok: false, error: '你不是授權核銷人，不能核銷' }
@@ -149,18 +155,24 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
         return { ok: true }
       }
       // 核准（v4.71.136 可安全重做的順序；跨三份文件不是同一交易，每一步都冪等）：
-      //   ① 兌換單 pending→approving（認領；別人不能再審或退回）② 扣點（同兌換單 ref 只扣一次；點數不足＝退回 pending）
-      //   ③ 扣庫存（同兌換單只扣一次，記在獎勵 stockIds）④ approving→approved＋核銷碼 ⑤ 都存好才通知
+      //   ① 兌換單 pending→approving（認領；別人不能再審或退回）② 預留庫存（同兌換單只扣一次，記在獎勵 stockIds；缺貨＝退回 pending）
+      //   ③ 扣點（同兌換單 ref 只扣一次；不足＝放回庫存、退回 pending）④ approving→approved＋核銷碼 ⑤ 都存好才通知
       //   中途失敗：兌換單停在 approving，再按一次核准會從頭冪等做完
       let err = null, it = null
       await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } } if (it.status === 'approving') return { write: false }; if (it.status !== 'pending') { err = { status: 400, ok: false, error: '這筆已經處理過了' }; return { write: false } } it.status = 'approving'; it.decBy = who.name; it.decTs = nowR; if (note) it.note = note; return { write: true, doc: d } }, '兌換核准中(' + who.name + ')', op)
       if (err) return err
+      // ② 預留庫存（同兌換單只扣一次；缺貨＝退回待審；寫不進去＝停在核准中、回「再按一次」）（關卡 3 積分第一輪 OpenAI A2：原本扣庫存失敗被吞、會超賣）
+      let stockErr = null
+      try { await ptsTx(PTS_KEYS.rewards, (cur) => { stockErr = null; const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || rw.stock == null) return { write: false }; rw.stockIds = rw.stockIds || []; if (rw.stockIds.includes(it.id)) return { write: false }; if (!(rw.stock > 0)) { stockErr = 'out'; return { write: false } } rw.stock = rw.stock - 1; rw.stockIds = [...rw.stockIds, it.id]; return { write: true, doc: d } }, '兌換預留庫存', op) }
+      catch (e) { return { status: 503, ok: false, error: '庫存存檔失敗，請再按一次核准（不會重複扣）：' + String(e && e.message || e).slice(0, 60) } }
+      const backToPending = (why) => ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x || x.status !== 'approving') return { write: false }; x.status = 'pending'; delete x.decBy; delete x.decTs; return { write: true, doc: d } }, '兌換退回待審(' + why + ')', op).catch(() => {})
+      if (stockErr === 'out') { await backToPending('缺貨'); return { status: 400, ok: false, error: '這個獎勵庫存沒了，無法核准（已退回待審）' } }
+      // ③ 扣點（同兌換單 ref 只扣一次；點數不足＝放回預留的庫存、退回待審）
       let rdOk
       try {
         rdOk = await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }; if (balOf(it.person, ptsDoc) < it.cost) return { write: false, value: 'short' }; ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: who.name, note: it.rewardName }); return { write: true, value: 'ok' } }, '兌換扣點(' + it.person + ' -' + it.cost + ')', op)
       } catch (e) { return { status: 503, ok: false, error: '積分存檔失敗，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 80) } }
-      if (rdOk === 'short') { await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x || x.status !== 'approving') return { write: false }; x.status = 'pending'; delete x.decBy; delete x.decTs; return { write: true, doc: d } }, '兌換退回待審(點數不足)', op).catch(() => {}); return { status: 400, ok: false, error: '對方點數不足（可能剛被扣），無法核准' } }
-      try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || rw.stock == null) return { write: false }; rw.stockIds = rw.stockIds || []; if (rw.stockIds.includes(it.id)) return { write: false }; rw.stock = Math.max(0, rw.stock - 1); rw.stockIds = [...rw.stockIds, it.id].slice(-500); return { write: true, doc: d } }, '兌換扣庫存', op) } catch (_) {}
+      if (rdOk === 'short') { try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || !(rw.stockIds || []).includes(it.id)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== it.id); return { write: true, doc: d } }, '兌換放回庫存(點數不足)', op) } catch (e) { console.error('[points] 放回庫存失敗（請人工補庫存）', it.id, String(e && e.message || e).slice(0, 60)) } await backToPending('點數不足'); return { status: 400, ok: false, error: '對方點數不足（可能剛被扣），無法核准（已退回待審）' } }
       let fin = null, already = false
       try { await ptsTx(PTS_KEYS.redeem, (cur) => { fin = null; already = false; const d = cur || { list: [] }; d.list = d.list || []; const x = d.list.find(y => y.id === id); if (!x) return { write: false }; if (x.status === 'approved') { fin = x; already = true; return { write: false } } if (x.status !== 'approving') return { write: false }; const used = new Set(d.list.filter(y => y.code).map(y => y.code)); x.status = 'approved'; x.code = x.code || genCodeFrom(used); fin = x; return { write: true, doc: d } }, '兌換審核(' + who.name + ')', op) }
       catch (e) { return { status: 503, ok: false, error: '點數已扣，券還沒存好，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 60) } }
@@ -172,7 +184,7 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
     }
     if (body.op === 'done') {
       let err = null
-      await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x) { err = { status: 404, ok: false }; return { write: false } } x.status = 'done'; x.doneTs = nowR; return { write: true, doc: d } }, '兌換已給(' + who.name + ')', op)
+      await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x) { err = { status: 404, ok: false }; return { write: false } } if (x.status === 'done') return { write: false }; if (x.status !== 'approved' && x.status !== 'used') { err = { status: 400, ok: false, error: '這筆還沒核准，不能標已給' }; return { write: false } } x.status = 'done'; x.doneTs = nowR; return { write: true, doc: d } }, '兌換已給(' + who.name + ')', op)
       return err || { ok: true }
     }
     return { status: 400, ok: false }
