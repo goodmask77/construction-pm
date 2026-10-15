@@ -36,10 +36,12 @@ export default async function handler(req, res) {
       // v4.71.147 續做（第一輪 A5）：授權碼只能用一次 → 換到的權杖與粉專清單先存進這次的授權紀錄（同 state），後面寫入失敗時重新整理這一頁會接著寫、不再換一次
       let longUser, t2, list
       // 互斥（第二輪 A5）：同一次授權只准一個在換權杖——state 相同且還沒開始＝標「處理中」；處理中（2 分鐘內）＝請稍候；已拿到＝接續；state 被換掉＝停
-      const lockR = await socTx('sp_finance_pm_social_oauth', (cur) => { if (!cur || cur.state !== state) return { write: false, value: 'gone' }; if (cur.stage === 'got') return { write: false, value: 'got' }; if (cur.stage === 'exchanging' && Date.now() - Date.parse(cur.exAt || 0) < 120e3) return { write: false, value: 'busy' }; return { write: true, doc: { ...cur, stage: 'exchanging', exAt: new Date().toISOString() }, value: 'mine' } }, 'oauth-exchanging')
+      const holder = 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) // 持有者編號（第三輪 A5）：存權杖紀錄要持有者相符；Facebook 授權碼本身只能換一次，逾時接手也換不到第二份
+      const lockR = await socTx('sp_finance_pm_social_oauth', (cur) => { if (!cur || cur.state !== state) return { write: false, value: 'gone' }; if (cur.stage === 'got') return { write: false, value: 'got' }; if (cur.stage === 'exchanging' && Date.now() - Date.parse(cur.exAt || 0) < 120e3) return { write: false, value: 'busy' }; return { write: true, doc: { ...cur, stage: 'exchanging', exAt: new Date().toISOString(), holder }, value: 'mine' } }, 'oauth-exchanging')
       if (lockR === 'gone') return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代或已完成。請回 App 重新按一次「連接 Facebook」。'))
       if (lockR === 'busy') return res.status(200).send(page('處理中', '這次授權正在處理中，請等幾秒後重新整理這一頁。'))
       const saved2 = lockR === 'got' ? ((await kvGet('sp_finance_pm_social_oauth')) || {}) : saved
+      if (lockR === 'got' && saved2.state !== state) return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。')) // 接續前重驗 state
       if (lockR === 'got' && saved2.got) { longUser = saved2.got.longUser; t2 = { expires_in: saved2.got.exp }; list = saved2.got.list || [] }
       else {
         // 短期 user token → 長效 user token
@@ -65,10 +67,13 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       }
-      if (lockR !== 'got') { const okGot = await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: { ...cur, stage: 'got', got: { longUser, exp: t2.expires_in || null, list: list.map(p => ({ id: p.id, name: p.name, access_token: p.access_token, instagram_business_account: p.instagram_business_account || null })) }, gotAt: new Date().toISOString() }, value: true } : { write: false, value: false }, 'oauth-got'); if (!okGot) return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。')) } // state 不符＝立刻停，不寫權杖（第二輪 A5）
+      if (lockR !== 'got') { const okGot = await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state && cur.holder === holder && cur.stage === 'exchanging') ? { write: true, doc: { ...cur, stage: 'got', got: { longUser, exp: t2.expires_in || null, list: list.map(p => ({ id: p.id, name: p.name, access_token: p.access_token, instagram_business_account: p.instagram_business_account || null })) }, gotAt: new Date().toISOString() }, value: true } : { write: false, value: false }, 'oauth-got'); if (!okGot) return res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。')) } // state 不符＝立刻停，不寫權杖（第二輪 A5）
       // v4.71.146：授權碼只能用一次 → 換到權杖後的寫入一律 socTx（重讀最新、合併、只重做寫入），不整段重做
       const S_KEY = 'sp_finance_pm_social_secret', A_KEY = 'sp_finance_pm_social_accounts'
+      const stillMine = async () => (((await kvGet('sp_finance_pm_social_oauth')) || {}).state === state) // 每次寫權杖前再確認這次授權沒被新的連接取代
+      const gone = () => res.status(200).send(page('連接逾時', '這次授權已被新的連接取代。請回 App 重新按一次「連接 Facebook」。'))
       // 先存長效 user token（就算沒抓到粉專，之後也能用「粉專編號」手動加商家旗下粉專）
+      if (!(await stillMine())) return gone()
       await socTx(S_KEY, (cur) => { const s0 = JSON.parse(JSON.stringify(cur || {})); s0.facebook = s0.facebook || {}; s0.facebook.userToken = longUser; s0.facebook.userTokenExp = t2.expires_in || null; return { write: true, doc: s0 } }, 'FB user token')
       if (!list.length) return res.status(200).send(page('授權成功，粉專待加入', '授權已存好 👍 但你的粉專掛在「商家」底下、沒自動列出。<br><br>請回 App「社群」分頁用「<b>用粉專編號加入</b>」，貼上 GROUN:D 粉專編號即可。', true))
       // 多粉專：把這次授權帳號能管的粉專全部「併入」（不覆蓋別帳號已連的），A Beach / GROUN:D 可各自連
@@ -79,11 +84,13 @@ export default async function handler(req, res) {
         if (list.find(p => p.id === pid)) continue // /me/accounts 已處理過
         try { const pg = await graphGet('/' + pid, { fields: 'id,name,access_token,instagram_business_account' }, longUser); if (pg.access_token) extra[pid] = pg } catch (_) {}
       }
+      if (!(await stillMine())) return gone()
       await socTx(A_KEY, (cur) => { const acc = JSON.parse(JSON.stringify(cur || {})); acc.facebook = acc.facebook || {}; if (!acc.facebook.pages) acc.facebook.pages = {}
         for (const pg of list) acc.facebook.pages[pg.id] = { pageId: pg.id, pageName: pg.name, igUserId: (pg.instagram_business_account || {}).id || null, tokenStatus: 'ok', tokenCheckedAt: now, connectedAt: (acc.facebook.pages[pg.id] || {}).connectedAt || now, connectedBy: saved.by || '' }
         for (const [pid, pg] of Object.entries(extra)) if (acc.facebook.pages[pid]) { acc.facebook.pages[pid].igUserId = (pg.instagram_business_account || {}).id || acc.facebook.pages[pid].igUserId; acc.facebook.pages[pid].tokenStatus = 'ok'; acc.facebook.pages[pid].tokenCheckedAt = now }
         if (!acc.facebook.defaultPageId) acc.facebook.defaultPageId = list[0].id
         return { write: true, doc: acc } }, 'FB連接')
+      if (!(await stillMine())) return gone()
       await socTx(S_KEY, (cur) => { const sec = JSON.parse(JSON.stringify(cur || {})); sec.facebook = sec.facebook || {}; if (!sec.facebook.tokens) sec.facebook.tokens = {}
         for (const pg of list) sec.facebook.tokens[pg.id] = pg.access_token
         for (const [pid, pg] of Object.entries(extra)) sec.facebook.tokens[pid] = pg.access_token
