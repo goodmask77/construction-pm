@@ -29,6 +29,7 @@
         + (d && /綁定|登入|身分/.test(d.error || '') ? '<div class="hint" style="margin-top:10px;line-height:1.7">物料進價是內部成本資料，要先登入才看得到。<br>私訊 DD「登入碼」拿 4 位數 → 右上「登入」填入。</div>' : '') + '</section>'
       return
     }
+    if (d && d.me && window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.matlib) d.me.canEdit = false // abgd 搬家（F08）：物料庫切新殼後舊頁只能看（分類管理鈕不出現）
     MDATA = d; MORD = (od && od.ok) ? od : { orders: [], err: (od && od.error) || '' }; mRender()
   }
   // 物料 key（跟後端同規則：有品號用品號、否則用正規化名稱）＝訂單品項↔物料互跳用

@@ -5378,88 +5378,24 @@ export default async function handler(req, res) {
     const meTk = String(req.query.me || '')
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
-    const todayM = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosM = (() => { const out = []; const d = new Date(todayM.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
-    const [ordiDocs, catDoc] = await Promise.all([
-      Promise.all(mosM.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
-      kvGet('sp_finance_pm_boss_matcat'),
-    ])
-    const catD = catDoc || { cats: [], map: {} }
-    const d30M = (() => { const d = new Date(todayM + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 29); return d.toISOString().slice(0, 10) })()
-    const normM = s => String(s || '').replace(/\s+/g, '').trim()
-    const items = {}, vend = {}, byMonth = {}
-    let rowCount = 0
-    for (const doc of ordiDocs) {
-      for (const r of Object.values((doc || {}).rows || {})) {
-        const nm = r.name || r.item || ''
-        if (!nm) continue
-        const date = String(r.ordered_at || r.created_at || '').slice(0, 10)
-        if (date.length < 10) continue
-        const key = normM(r.code) ? ('c:' + normM(r.code)) : ('n:' + normM(nm))
-        const price = (r.price == null || r.price === '' || !(Number(r.price) > 0)) ? null : Number(r.price) // v4.70.31 口徑統一：單價 0／空＝不知道價格（同規格與 _cost.js）
-        const qty = Number(r.qty) || 0
-        const amt = (r.amount == null || r.amount === '') ? (price != null ? price * qty : null) : Number(r.amount)
-        const supplier = (r.supplier || '').trim() || '（未填廠商）'
-        const status = r.order_status || r.status || ''
-        const appr = status === 'approved'
-        rowCount++
-        const o = items[key] || (items[key] = { key, name: nm, code: r.code || '', unit: r.unit || '', suppliers: {}, recs: [], qty30: 0, amt30: 0, n30: 0 })
-        o.name = nm; if (r.unit) o.unit = r.unit
-        o.suppliers[supplier] = (o.suppliers[supplier] || 0) + 1
-        o.recs.push({ d: date, s: supplier, q: qty, u: r.unit || '', p: price, a: amt == null ? null : Math.round(amt), st: status, oid: r.order_id || '' })
-        if (date >= d30M && appr) { o.qty30 += qty; if (amt != null) o.amt30 += amt; o.n30++ }
-        const v = vend[supplier] || (vend[supplier] = { name: supplier, amt30: 0, n30: 0, items: {}, last: '' })
-        v.items[key] = 1; if (date > v.last) v.last = date
-        if (date >= d30M && appr) { v.amt30 += (amt || 0); v.n30++ }
-        if (appr && amt != null) byMonth[date.slice(0, 7)] = (byMonth[date.slice(0, 7)] || 0) + amt
-      }
-    }
-    const itemsOut = Object.values(items).map(o => {
-      o.recs.sort((a, b) => (a.d < b.d ? -1 : (a.d > b.d ? 1 : 0)))
-      const priced = o.recs.filter(r => r.p != null && r.st === 'approved')
-      const first = priced[0], last = priced[priced.length - 1]
-      const prices = priced.map(r => r.p)
-      const lastP = last ? last.p : null, firstP = first ? first.p : null
-      return {
-        key: o.key, name: o.name, code: o.code, unit: o.unit, cat: catD.map[o.key] || '',
-        suppliers: Object.keys(o.suppliers),
-        lastPrice: lastP, lastDate: (o.recs[o.recs.length - 1] || {}).d || '',
-        firstPrice: firstP,
-        pctChg: (firstP && lastP != null && priced.length > 1) ? Math.round((lastP - firstP) / firstP * 1000) / 10 : null,
-        minP: prices.length ? Math.min(...prices) : null, maxP: prices.length ? Math.max(...prices) : null,
-        qty30: Math.round(o.qty30 * 10) / 10, amt30: Math.round(o.amt30), n30: o.n30, nRec: o.recs.length,
-        series: priced.map(r => ({ d: r.d, p: r.p, s: r.s })).slice(-80),
-        recs: o.recs.slice(-80),
-      }
-    }).sort((a, b) => b.amt30 - a.amt30)
-    const vendorsOut = Object.values(vend).map(v => ({ name: v.name, cat: (catD.vmap || {})[v.name] || '', amt30: Math.round(v.amt30), n30: v.n30, nItems: Object.keys(v.items).length, last: v.last })).sort((a, b) => b.amt30 - a.amt30)
+    const { buildMatlib } = await import('./_matlib.js') // v4.71.89 抽成共用（abgd 物料庫 F08 逐字共用）
+    const mlOut = await buildMatlib({ kvGet })
     const canEditM = !!(await permWho(meTk, 'buy'))
-    return res.status(200).json({
-      ok: true, me: { name: meW.name, canEdit: canEditM },
-      items: itemsOut, vendors: vendorsOut, cats: catD.cats || [], vcats: catD.vcats || [],
-      byMonth, months: mosM.slice().reverse(),
-      updatedAt: (ordiDocs.find(Boolean) || {}).updatedAt || null, rows: rowCount,
-    })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...mlOut })
   }
   // 📦 物料庫分類管理（張良要「分類可自己增刪改」；UI 慣例）：POST ?matcat=<OPS_BOARD_KEY> {op, token, ...}；限採購權限
   if (req.method === 'POST' && req.query?.matcat) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.matcat) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_boss_matcat')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F08 物料庫）：分類切新殼後舊入口不寫
     let bm = {}
     try { bm = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoM = await permWho(bm.token, 'buy')
     if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {}, vcats: [], vmap: {} }
-    doc.cats = doc.cats || []; doc.map = doc.map || {}; doc.vcats = doc.vcats || []; doc.vmap = doc.vmap || {}
-    const isV = bm.kind === 'vendor' // kind=vendor → 操作廠商分類(vcats/vmap)；預設物料分類(cats/map)
-    const C = isV ? 'vcats' : 'cats', M = isV ? 'vmap' : 'map'
-    const op = bm.op
-    if (op === 'addcat') { const nm = String(bm.name || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '分類名稱空白' }); if (!doc[C].includes(nm)) doc[C].push(nm) }
-    else if (op === 'delcat') { doc[C] = doc[C].filter(c => c !== bm.name); for (const k of Object.keys(doc[M])) if (doc[M][k] === bm.name) delete doc[M][k] }
-    else if (op === 'rencat') { const nm = String(bm.to || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '新名稱空白' }); doc[C] = doc[C].map(c => (c === bm.name ? nm : c)); for (const k of Object.keys(doc[M])) if (doc[M][k] === bm.name) doc[M][k] = nm }
-    else if (op === 'setcat') { const keys = Array.isArray(bm.keys) ? bm.keys : [bm.key]; for (const k of keys) { if (!k) continue; if (bm.cat) doc[M][k] = String(bm.cat).slice(0, 20); else delete doc[M][k] } }
-    else if (op === 'order') { if (Array.isArray(bm.cats)) doc[C] = bm.cats.filter(c => typeof c === 'string').slice(0, 50) }
-    else return res.status(400).json({ ok: false, error: '未知操作' })
+    const isV = bm.kind === 'vendor'
+    const { applyMatcat } = await import('./_matlib.js')
+    const errM = applyMatcat(doc, bm); if (errM) return res.status(400).json({ ok: false, error: errM.error })
     await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類' + (isV ? '(廠商)' : '') + '(' + whoM.name + ')')
     return res.status(200).json({ ok: true, cats: doc.cats, map: doc.map, vcats: doc.vcats, vmap: doc.vmap })
   }
@@ -5472,13 +5408,14 @@ export default async function handler(req, res) {
     const todayS = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosS = (() => { const out = []; const d = new Date(todayS.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     if (req.method === 'POST') {
+      if ((await abgdOwnerOf('sp_finance_pm_boss_matcat')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F08 物料庫）：分類切新殼後舊入口不寫
       let bs = {}
       try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
       const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {}, vcats: [], vmap: {} }
       doc.cats = doc.cats || []; doc.map = doc.map || {}; doc.vcats = doc.vcats || []; doc.vmap = doc.vmap || {}
       if (Array.isArray(bs.vcats)) for (const c of bs.vcats) { const cc = String(c || '').trim().slice(0, 20); if (cc && !doc.vcats.includes(cc)) doc.vcats.push(cc) }
       if (bs.vmap && typeof bs.vmap === 'object') for (const [k, v] of Object.entries(bs.vmap)) {
-        if (!k) continue
+        if (!k || k === '__proto__' || Object.prototype.hasOwnProperty.call(Object.prototype, k)) continue
         if (v) { const cc = String(v).trim().slice(0, 20); doc.vmap[k] = cc; if (cc && !doc.vcats.includes(cc)) doc.vcats.push(cc) } else delete doc.vmap[k]
       }
       await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫廠商分類(種子批次)')
@@ -5824,32 +5761,10 @@ export default async function handler(req, res) {
     const meTk = String(req.query.me || '')
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '叫貨單屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
-    const todayO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const mosO = (() => { const out = []; const d = new Date(todayO.slice(0, 7) + '-01T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
-    const tpeDay = s => { const t = Date.parse(String(s || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
-    // v4.70.42 兩店都列（張良 2026-10-11 問 DD「GD 10 月叫貨單」才發現這頁也只有 AB）：store=AB（阿桑 OPS ord/ordi）／GD（gops gord/gordi）
-    const [ordDocs, ordiDocs, gordDocs, gordiDocs] = await Promise.all([
-      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ord_' + m.replace('-', '')))),
-      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
-      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_gord_' + m.replace('-', '')))),
-      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_gordi_' + m.replace('-', '')))),
-    ])
-    const orders = {}
-    for (const [store, docs] of [['AB', ordDocs], ['GD', gordDocs]]) for (const doc of docs) for (const r of Object.values((doc || {}).rows || {})) {
-      if (!r.order_id) continue
-      orders[store + ':' + r.order_id] = { id: store + ':' + r.order_id, store, date: tpeDay(r.created_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.status || '', total: Number(r.total_amount) || 0, lineCount: Number(r.line_count) || 0, unpriced: Number(r.unpriced_lines) || 0, items: [] }
-    }
-    for (const [store, docs] of [['AB', ordiDocs], ['GD', gordiDocs]]) for (const doc of docs) for (const r of Object.values((doc || {}).rows || {})) {
-      const oid0 = r.order_id; if (!oid0) continue
-      const oid = store + ':' + oid0
-      let o = orders[oid]
-      if (!o) o = orders[oid] = { id: oid, store, date: tpeDay(r.ordered_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.order_status || '', total: 0, lineCount: 0, unpriced: 0, items: [], _fi: 1 } // 單頭缺→用明細補一張
-      o.items.push({ name: r.name || r.item || '', code: r.code || '', qty: Number(r.qty) || 0, unit: r.unit || '', price: (r.price == null || r.price === '') ? null : Number(r.price), amount: (r.amount == null || r.amount === '') ? null : Math.round(Number(r.amount)), st: r.order_status || '' })
-      if (o._fi) { o.total += (Number(r.amount) || 0); o.lineCount = o.items.length }
-    }
-    const outO = Object.values(orders).map(o => { delete o._fi; o.total = Math.round(o.total); return o }).sort((a, b) => (a.date < b.date ? 1 : (a.date > b.date ? -1 : 0)))
+    const { buildMatord } = await import('./_matlib.js')
+    const moOut = await buildMatord({ kvGet })
     const canEditO = !!(await permWho(meTk, 'buy'))
-    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditO }, orders: outO, months: mosO.slice().reverse(), updatedAt: (ordDocs.find(Boolean) || {}).updatedAt || null })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditO }, ...moOut })
   }
   // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
   // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）
