@@ -10,7 +10,7 @@ export async function grporderDispatch({ method, op, q = {}, body = {}, who, can
     return { status: 400, ok: false, error: '不認識的操作' }
   }
   if (!canEdit) return { status: 403, ok: false, error: '沒有「團體訂餐」的編輯權限（請主管在權限頁開）' }
-  if (op === 'create') return GO.createOrder({ who, ...body })
+  if (op === 'create') { const p = {}; for (const k of ['acct', 'convId', 'custName', 'company', 'taxId', 'when', 'mode', 'contact', 'phone', 'uid', 'deadline', 'demo']) if (body[k] !== undefined) p[k] = body[k]; return GO.createOrder({ ...p, who }) } // 只取白名單欄位、操作者一律用驗過的身分（關卡 3 第一輪 OpenAI A：原本 body.who 能蓋掉）
   if (op === 'save') return GO.saveOrder({ who, id: String(body.id || ''), patch: body.patch || {} })
   if (op === 'status') return GO.setStatus({ who, id: String(body.id || ''), status: String(body.status || '') })
   if (op === 'parse') return GO.parseText({ text: body.text })
