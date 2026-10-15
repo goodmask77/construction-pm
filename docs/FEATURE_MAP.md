@@ -204,3 +204,5 @@ Meta OAuth 重新授權、綠界特約商店申請、LINE Pay 回呼白名單、
 ## 6. 三家關卡紀錄
 
 見 docs/ABGD_3AI_LOG.md。關卡 1：OpenAI 暫不通過＋Gemini 有條件 → 已依共識改成 v2（風險、順序、地基內容）；獨立 Claude 與第二輪待補。
+
+> 2026-10-15：銷售數據 F29 的人改四份（pos_hidden／alias／prices／costs）已拆成 posmeta 域並切到新殼（17:08）；修改入口仍在 GD 銷售頁，經命令橋寫。F29 其他（外部抓取）待架構決定。
