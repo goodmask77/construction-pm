@@ -19,12 +19,13 @@
 | 菜單成本 F12 | ✅ 10-15 04:53 已切（從 menu 拆出 pricing 域；關卡 3 兩輪；冒煙 12 項＋正式回切演練 10 項；epoch 2；04:57 拆驗收閘門） | pricing |
 | 菜單 F18（菜單本體＋出圖版面） | ✅ 10-15 12:20 已切（關卡 3 三輪；冒煙 24 項＋正式回切演練 12 項；epoch 2；12:25 拆驗收閘門） | menu（只剩 sp_finance_pm_menu 前綴） |
 | 盤點 F05／包材 F06／採購 F07 | ✅ 10-15 14:48 已切（關卡 3 五輪；冒煙 13 項＋正式回切演練 10 項；epoch 2；14:52 拆驗收閘門；低水位排程改新殼 /api/ops/cron/inv-low 11:05／11:20／11:35） | inv（sp_finance_pm_inv、sp_finance_pm_buy） |
+| 物料庫 F08（分類） | ✅ 10-15 16:12 已切（關卡 3 兩輪；當班 27 項含成本讀者與回切演練；epoch 2；16:20 拆閘門） | matlib（只有 sp_finance_pm_boss_matcat） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
 版本：新殼 v0.4.84（main）、GD v4.71.79（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
- ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -106,4 +107,11 @@
 - 回切演練不能發真訊息時：測試庫用真 worker＋真佇列＋代發口替身（cost-test/fxstub.ts、invfxdrill.mjs），停在 sending 再回切；GD 端把要驗的段落拆成依賴注入的小模組（_invlow.js）用替身跑。
 - Next 16 預先產生頁面時，元件初始 state 不能呼叫 Date.now()／Math.random()（CI 建置會失敗）；改在事件裡產生。
 - Mac 睡眠會讓背景 sleep 暫停：監看腳本用 `caffeinate -i` 包起來。
+
+## 10-15 物料庫學到的
+- 外部同步來的大資料（阿桑 boss_*）跟人改的小設定（分類）放同一個前綴時，只拆人改的那份先搬；外部資料留到它的同步排程一起搬。
+- GD 算法要搬時先在 GD 裡原樣抽成獨立檔（_matlib.js），用「本機跑新檔讀 GD 正式庫 vs 線上舊程式」證明抽檔沒改到行為，再逐字複製到新殼。
+- 讀阿桑月檔這類「列順序影響結果」的算法，GD 讀取一律包 orderedKvGet（jsonb 鍵順序），否則跟新殼讀鏡像對不上。
+- 跨域讀者（成本模組讀分類）要在閘門期間實測：改值→反推追平→兩邊比→改回→再比；回切演練也要跑一次成本比對。
+- Gemini 連續連線失敗時，獨立 Claude＋OpenAI 都通過即可放行，失敗要記在紀錄。
 
