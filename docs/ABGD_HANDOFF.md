@@ -18,12 +18,13 @@
 | 食譜 F10 | ✅ 10-15 04:15 已切（epoch 1，關卡 3 兩輪；冒煙 21 項全過；04:17 拆驗收閘門） | recipe |
 | 菜單成本 F12 | ✅ 10-15 04:53 已切（從 menu 拆出 pricing 域；關卡 3 兩輪；冒煙 12 項＋正式回切演練 10 項；epoch 2；04:57 拆驗收閘門） | pricing |
 | 菜單 F18（菜單本體＋出圖版面） | ✅ 10-15 12:20 已切（關卡 3 三輪；冒煙 24 項＋正式回切演練 12 項；epoch 2；12:25 拆驗收閘門） | menu（只剩 sp_finance_pm_menu 前綴） |
+| 盤點 F05／包材 F06／採購 F07 | ✅ 10-15 14:48 已切（關卡 3 五輪；冒煙 13 項＋正式回切演練 10 項；epoch 2；14:52 拆驗收閘門；低水位排程改新殼 /api/ops/cron/inv-low 11:05／11:20／11:35） | inv（sp_finance_pm_inv、sp_finance_pm_buy） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
 版本：新殼 v0.4.84（main）、GD v4.71.79（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
- ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -96,4 +97,13 @@
 - 兩份文件要一起變（版本存檔→菜單頂端圖）：用「發布序號只增不減＋補同步只套更新的」，失敗下次自動補，不叫人重按；建立類操作帶操作編號 rid。
 - 冒煙比對用逐欄比（jsonb 會重排欄位順序，字串比會誤判）。
 - 送審附 diff 要附完整 hunk（含檔名），只 grep 改動行會讓審查者看錯檔。
+
+## 10-15 盤點學到的（下一個功能照做）
+- 對帳時「權限類欄位」（審核人、可編輯）要用同一個真人身分比，測試替身身分比出來的不一樣不算數。
+- 會改到多筆資料的操作（分類改名／刪除）要連帶推進每筆的版本記號，否則舊表單能把舊值寫回。
+- 排程類（每日提醒）：計算放進交易裡、通知分通道各一筆 effects、標記跟入列同交易；排程跑多次（時窗內）＋同日只排一次，不要只跑一次。
+- GD 舊排程的「標記」寫法：先條件認領再發，失敗收回；寫入 pm_documents 的條件寫入用 updated_at（GD kvPut 每次都更新它）。
+- 回切演練不能發真訊息時：測試庫用真 worker＋真佇列＋代發口替身（cost-test/fxstub.ts、invfxdrill.mjs），停在 sending 再回切；GD 端把要驗的段落拆成依賴注入的小模組（_invlow.js）用替身跑。
+- Next 16 預先產生頁面時，元件初始 state 不能呼叫 Date.now()／Math.random()（CI 建置會失敗）；改在事件裡產生。
+- Mac 睡眠會讓背景 sleep 暫停：監看腳本用 `caffeinate -i` 包起來。
 
