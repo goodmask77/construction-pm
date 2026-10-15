@@ -9,7 +9,7 @@ const P_KEY = 'sp_finance_pm_social_posts'
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 // 發一則到它指定的 dests（FB／IG）。更新 p.pub，回傳是否全部成功。不負責存檔（caller 存）＝立即發與 cron 共用
-export async function publishPost(p, pages, snap) { // snap：同代快照（有就只用快照裡的權杖，不中途重讀；第八輪 A1）
+export async function publishPost(p, pages, snap) { // snap：必傳的同代快照（只用快照裡的權杖與帳號對應，不中途重讀；第八、九輪 A1）
   if (!snap || !snap.tokens) throw new Error('發文要帶同代快照') // 強制必傳快照，不再有中途重讀權杖的退路（第九輪 A1）
   const tokOf = async (pid) => (pid ? (snap.tokens[pid] || '') : (Object.values(snap.tokens)[0] || snap.legacy || ''))
   p.pub = p.pub || {}
