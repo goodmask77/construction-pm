@@ -22,8 +22,11 @@ const sign = (body) => crypto.createHmac('sha256', (process.env.BRIDGE_SECRET ||
 // 讀：沒有這份＝null；讀失敗／內容壞掉＝丟錯（不當成「沒有」，免得讀改寫拿空資料蓋掉；關卡 3 tasks 第一輪 OpenAI B4）
 async function nGet(k) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}&select=data`, { headers: svc, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const rows = await r.json(); if (rows[0]?.data?.v == null) return null; try { return JSON.parse(rows[0].data.v) } catch (_) { throw new Error('資料內容壞掉：' + k) } }
 async function nPut(k, v, editor) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id: k, data: { v: JSON.stringify(v) }, editor: String(editor || 'abgdkv').slice(0, 60), updated_at: new Date().toISOString() }) }); if (!r.ok) { const tx = await r.text().catch(() => ''); console.log('[abgdkv] 寫入失敗', k, r.status, tx.slice(0, 160)) } return r.ok }
+async function nGetMany(keys) { if (!keys.length) return {}; const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=in.(${keys.map(k => encodeURIComponent('"' + k + '"')).join(',')})&select=id,data`, { headers: svc, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const out = {}; for (const row of await r.json()) { if (row?.data?.v == null) continue; try { out[row.id] = JSON.parse(row.data.v) } catch (_) { throw new Error('資料內容壞掉：' + row.id) } } return out }
+// 只新增（已存在＝不覆蓋，回 false）
+async function nInsert(k, v, editor) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ id: k, data: { v: JSON.stringify(v) }, editor: String(editor || 'abgdkv').slice(0, 60), updated_at: new Date().toISOString() }) }); if (r.ok) return true; const tx = await r.text().catch(() => ''); if (r.status === 409 || /23505|duplicate/.test(tx)) return false; console.log('[abgdkv] 新增失敗', k, r.status, tx.slice(0, 160)); throw new Error('存不進去，請稍後再試') }
 async function nDel(k) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}`, { method: 'DELETE', headers: svc }); return r.ok }
-async function nPrefix(pf) { const like = pf.replace(/[\\%_]/g, m => '\\' + m); const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(like)}*&select=id,data`, { headers: svc, signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const rows = await r.json(); const out = {}; for (const row of rows) { if (!String(row.id).startsWith(pf) || row?.data?.v == null) continue; try { out[row.id] = JSON.parse(row.data.v) } catch (_) { throw new Error('資料內容壞掉：' + row.id) } } return out }
+async function nPrefix(pf, opt = {}) { const like = pf.replace(/[\\%_]/g, m => '\\' + m); const ord = opt.order === 'updated' ? '&order=updated_at.desc' : opt.order === 'id' ? '&order=id.desc' : ''; const lim = opt.limit ? '&limit=' + Number(opt.limit) : ''; const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(like)}*&select=id,data${ord}${lim}`, { headers: svc, signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const rows = await r.json(); const out = {}; for (const row of rows) { if (!String(row.id).startsWith(pf) || row?.data?.v == null) continue; try { out[row.id] = JSON.parse(row.data.v) } catch (_) { throw new Error('資料內容壞掉：' + row.id) } } return out }
 
 export async function abgdKv({ domain, lockKey, operator, label = '這項資料' }) {
   const ow = await owner(lockKey)
@@ -31,11 +34,11 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
   const retry = async (fn) => { for (let i = 0; ; i++) { try { return await fn() } catch (e) { if (i >= 4 || !isStale(e)) throw e; await new Promise(r => setTimeout(r, 150 + Math.random() * 400)) } } }
   if (ow === 'gd') return {
     mode: 'gd', retry,
-    kvGet: nGet, kvPrefix: nPrefix,
+    kvGet: nGet, kvPrefix: nPrefix, kvGetMany: nGetMany, kvInsert: nInsert,
     kvPut: async (k, v, ed) => { if (!(await nPut(k, v, ed))) throw new Error(BUSY(label)); return true },
     kvDel: async (k) => { if (!(await nDel(k))) throw new Error(BUSY(label)); return true },
   }
-  if (ow !== 'abgd') return { mode: 'frozen', retry, kvGet: nGet, kvPrefix: nPrefix, kvPut: async () => { throw new Error(BUSY(label)) }, kvDel: async () => { throw new Error(BUSY(label)) } }
+  if (ow !== 'abgd') return { mode: 'frozen', retry, kvGet: nGet, kvPrefix: nPrefix, kvGetMany: nGetMany, kvPut: async () => { throw new Error(BUSY(label)) }, kvInsert: async () => { throw new Error(BUSY(label)) }, kvDel: async () => { throw new Error(BUSY(label)) } }
   if (!(process.env.BRIDGE_SECRET || '').trim()) throw new Error('新版連線金鑰未設定')
   const revs = {}
   const read = async (payload) => {
@@ -46,7 +49,8 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
     return j.docs || {}
   }
   const kvGet = async (k) => { const g = (await read({ keys: [k] }))[k] || {}; revs[k] = Number(g.rev) || 0; return g.exists ? g.doc : null }
-  const kvPrefix = async (pf) => { const d = await read({ prefix: pf }); const out = {}; for (const [k, g] of Object.entries(d)) { revs[k] = Number(g.rev) || 0; out[k] = g.doc } return out }
+  const kvPrefix = async (pf, opt = {}) => { const d = await read({ prefix: pf, order: opt.order, limit: opt.limit }); const out = {}; for (const [k, g] of Object.entries(d)) { revs[k] = Number(g.rev) || 0; out[k] = g.doc } return out } // 回傳物件照伺服器排序
+  const kvGetMany = async (keys) => { const out = {}; for (let i = 0; i < keys.length; i += 20) { const d = await read({ keys: keys.slice(i, i + 20) }); for (const [k, g] of Object.entries(d)) { revs[k] = Number(g.rev) || 0; if (g.exists) out[k] = g.doc } } return out }
   const cmd = async (action, args) => {
     const body = JSON.stringify({ idem: domain + '-' + crypto.randomUUID(), domain, action, args, operator: String(operator || '系統').slice(0, 30) })
     const r = await fetch(base() + '/api/core/commands', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sign(body) }, body, signal: AbortSignal.timeout(20000) })
@@ -56,7 +60,8 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
   }
   const kvPut = async (k, v) => { if (!(k in revs)) await kvGet(k); const j = await cmd('put', { key: k, doc: v, baseRev: revs[k] }); revs[k] = Number(j.rev) || revs[k] + 1; return true }
   const kvDel = async (k) => { if (!(k in revs)) await kvGet(k); const j = await cmd('del', { key: k, baseRev: revs[k] }); revs[k] = Number(j.rev) || revs[k] + 1; return true }
-  return { mode: 'abgd', retry, kvGet, kvPrefix, kvPut, kvDel }
+  const kvInsert = async (k, v) => { try { const j = await cmd('put', { key: k, doc: v, baseRev: 0 }); revs[k] = Number(j.rev) || 1; return true } catch (e) { if (e && e.code === 'stale') return false; throw e } } // 只新增：已存在（版本不是 0）＝不覆蓋
+  return { mode: 'abgd', retry, kvGet, kvPrefix, kvGetMany, kvPut, kvInsert, kvDel }
 }
 
 // 刪任務＋清掉同空間其他任務對它的 dependsOn（v4.71.117；關卡 3 tasks 第一輪 OpenAI A3）：

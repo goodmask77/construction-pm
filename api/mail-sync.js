@@ -4830,36 +4830,14 @@ export default async function handler(req, res) {
     let bodyI = {}
     if (req.method === 'POST') { try { bodyI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
     const tkI = req.method === 'POST' ? bodyI.token : req.query.me
-    const [whoI, defI, pmI, rosI, hrI] = await Promise.all([sopWho(tkI), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_crew_pm_hr_master')])
+    const whoI = await sopWho(tkI)
     if (!whoI) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
-    const IB = await import('./_inbox.js')
-    const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
-    const mgrI = IB.isMgr(whoI, aprI, pmI)
-    const cfgI = await IB.loadCfg()
-    const opI = String(req.method === 'POST' ? bodyI.op : req.query.op || 'list')
-    const originI = 'https://' + (String(req.headers['x-forwarded-host'] || req.headers.host || 'ground-pm.vercel.app'))
-    // 名單依 AB／GD × 正職／PT 分組（張良 10-11）：店別與職別來自人資名冊 sp_crew_pm_hr_master（co 含 A Beach＝AB、GD；title 正職／PT），在職名單仍以 kb_roster 為準
-    const aliveI = ((rosI || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
-    const hrRows = ((hrI || {}).rows || [])
-    const peopleI = aliveI.map(p => { const h = hrRows.find(r => r && r.name === p.name && !r.resign && !r.leave) || hrRows.find(r => r && r.name === p.name) || {}; const co = /A ?Beach|AB/i.test(h.co || '') ? 'AB' : /GD|GROUN/i.test(h.co || '') ? 'GD' : ''; const title = /PT|兼職/i.test(h.title || p.gdRole || '') ? 'PT' : (h.title ? '正職' : ''); return { name: p.name, co, title } })
     res.setHeader('Cache-Control', 'private, no-store')
-    try {
-      const accountsI = IB.ACCOUNTS.filter(a => IB.canSeeAcct(cfgI, whoI, mgrI, a.key)).map(a => ({ key: a.key, name: a.name, color: a.color, configured: IB.configured(a), canReply: IB.canReplyAcct(cfgI, whoI, mgrI, a.key) }))
-      if (req.method !== 'POST') {
-        if (opI === 'list') return res.status(200).json({ ok: true, ver: IB.INBOX_VER, me: { rid: whoI.rid || whoI.uid, name: whoI.name, mgr: mgrI }, cats: cfgI.cats, accounts: accountsI, convs: await IB.listConvs({ who: whoI, mgr: mgrI, cfg: cfgI, acct: String(req.query.acct || '') || null }), templates: cfgI.templates || [], people: peopleI.map(p => p.name), peopleInfo: peopleI })
-        if (opI === 'conv') return res.status(200).json(await IB.getConv({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(req.query.id || ''), markRead: String(req.query.read || '') === '1' }))
-        if (opI === 'settings') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能看設定' }); return res.status(200).json({ ...(await IB.settings({ origin: originI })), people: peopleI.map(p => p.name), peopleInfo: peopleI }) }
-        return res.status(400).json({ ok: false, error: '不認識的操作' })
-      }
-      if (opI === 'send') return res.status(200).json(await IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }))
-      if (opI === 'sendfile') return res.status(200).json(await IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }))
-      if (opI === 'ai') return res.status(200).json(await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
-      if (opI === 'import') return res.status(200).json(await IB.importChat({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), csv: bodyI.csv, dry: !!bodyI.dry })) // v4.71.20 匯入舊帳號聊天記錄 CSV
-      if (opI === 'cust') return res.status(200).json(await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
-      if (['status', 'assign', 'note', 'rename', 'star', 'wait', 'memo', 'memodel', 'cat', 'custset', 'bkset'].includes(opI)) return res.status(200).json(await IB.convOp({ who: whoI, mgr: mgrI, cfg: cfgI, op: opI, id: String(bodyI.id || ''), value: bodyI.value }))
-      if (opI === 'cfg') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能改設定' }); return res.status(200).json(await IB.saveCfg(bodyI.cfg || {}, whoI)) }
-      if (opI === 'connect') { if (!mgrI) return res.status(403).json({ ok: false, error: '只有主管能接帳號' }); return res.status(200).json(await IB.connectAcct({ key: String(bodyI.acct || ''), origin: originI, force: !!bodyI.force })) }
-      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    try { // v4.71.120 分派抽到 api/_inboxop.js（新殼經代發口 inbox_op 共用）
+      const { inboxDispatch } = await import('./_inboxop.js')
+      const r = await inboxDispatch({ method: req.method === 'POST' ? 'POST' : 'GET', op: String(req.method === 'POST' ? bodyI.op : req.query.op || 'list'), q: req.query || {}, body: bodyI, who: whoI, origin: 'https://' + (String(req.headers['x-forwarded-host'] || req.headers.host || 'ground-pm.vercel.app')) })
+      const st = (r && r.status) || 200; if (r && r.status) delete r.status
+      return res.status(st).json(r)
     } catch (e) { return res.status(200).json({ ok: false, error: '收件匣暫時出錯：' + String(e?.message || e).slice(0, 80) }) }
   }
   if (req.query?.chat) {
