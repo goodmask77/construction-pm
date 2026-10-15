@@ -3,7 +3,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 讀：GET  ?social=<OPS_BOARD_KEY>&me=token  → 帳號狀態＋貼文＋最新成效＋KPI＋canEdit
 // 寫：POST ?social=<OPS_BOARD_KEY> body={op,token,...}  op: save/del/submit/approve/reject/disconnect
 // 發文本身在 social-collect / 未來 social-publish；本檔只管內容庫與審核流程（Phase 1 先不自動發）
-import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
+import { kvGet, kvPut, socTx, socRun, socGate, socSetOp } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 import { getAccounts, setAccounts, getSecret, setSecret, getPosts, setPosts, metricsKey, whoSocial, canEditSocial, metaReady, GV, graphGet, pubSnapshot } from './_social.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -72,6 +72,7 @@ async function handlerInner(req, res) {
     if (req.method === 'GET') {
       if (!ok2 || String(req.query.social || '') !== ok2) return res.status(403).json({ ok: false, error: '金鑰錯誤' })
       const who = req._who !== undefined ? req._who : await whoSocial(String(req.query.me || ''))
+      if (who) socSetOp(who.name) // 操作者＝本人（命令橋留痕、驗收閘門）
       const acc = await getAccounts()
       const posts = (await getPosts()).list || []
       const mx = await latestMetrics(posts.map(p => p.id))
@@ -107,6 +108,7 @@ async function handlerInner(req, res) {
       if (!ok2 || String(req.query.social || '') !== ok2) return res.status(403).json({ ok: false, error: '金鑰錯誤' })
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
       const who = req._who !== undefined ? req._who : await whoSocial(String(body.token || ''))
+      if (who) socSetOp(who.name) // 操作者＝本人（命令橋留痕、驗收閘門）
       if (!canEditSocial(who)) return res.status(200).json({ ok: false, error: '沒有編輯權限——請找張良開通' })
       const op = body.op
       if (['upload', 'genimg', 'gen', 'imgbrief', 'pinimport', 'pinboardadd', 'pinsync', 'sync', 'addpage', 'publishnow'].includes(op)) { const g = await socGate(); if (g) return res.status(200).json({ ok: false, error: g, code: 'smoke' }) } // 有對外動作（上傳、AI、Pinterest、Meta）先問驗收閘門（關卡 3 行銷大師第一輪 A1）

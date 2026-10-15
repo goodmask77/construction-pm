@@ -15,6 +15,8 @@ export async function kvGet(id) { if (!SOC_RE.test(String(id))) return gdGet(id)
 export async function kvPut(id, v, editor) { if (!SOC_RE.test(String(id))) return gdPut(id, v, editor); await (await kv()).kvPut(id, v, editor || '社群'); return true } // 社群鍵寫失敗會丟錯（撞版本＝code stale）
 const isStale = (e) => !!(e && e.code === 'stale')
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+// 確認身分後把這次的操作者改成本人（讀寫物件還沒建才改；GD 舊頁一進來還不知道是誰）
+export function socSetOp(name) { const st = als.getStore(); if (st && !st.kv && name) st.op = String(name).slice(0, 30) }
 export async function socRun(op, fn) {
   if (als.getStore()) return fn() // 已在情境內（巢狀呼叫）：沿用外層
   for (let i = 0; ; i++) {
