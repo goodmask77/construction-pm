@@ -3,13 +3,14 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 讀：GET  ?social=<OPS_BOARD_KEY>&me=token  → 帳號狀態＋貼文＋最新成效＋KPI＋canEdit
 // 寫：POST ?social=<OPS_BOARD_KEY> body={op,token,...}  op: save/del/submit/approve/reject/disconnect
 // 發文本身在 social-collect / 未來 social-publish；本檔只管內容庫與審核流程（Phase 1 先不自動發）
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 import { getAccounts, setAccounts, getSecret, setSecret, getPosts, setPosts, metricsKey, whoSocial, canEditSocial, metaReady, GV, graphGet } from './_social.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const ymOf = (iso) => String(iso || '').slice(0, 7)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+const P_KEY = 'sp_finance_pm_social_posts' // 貼文（同 _social.js）
 const AST_KEY = 'sp_finance_pm_social_assets' // 素材庫（可重複用的圖片／影片）
 const SLG_KEY = 'sp_finance_pm_social_slogans' // v4.71.5 靈感標語庫（張良 2026-10-12「我會貼上很多短劇slogan 主要文字＆精神標語 ai幫我產出文案」）：{list:[{id,text,tag,addedAt,addedBy}]}
 const slgGet = async () => { const d = (await kvGet(SLG_KEY)) || { list: [] }; d.list = d.list || []; return d }
@@ -61,13 +62,16 @@ async function latestMetrics(postIds) {
   return out
 }
 
-export default async function handler(req, res) {
+// v4.71.146 入口包 socRun（一次請求一個讀寫物件；撞版本整段重做——有對外動作的操作（立即發布、上傳、AI 生圖）動作後一律 socTx 只重做寫入）
+// 新殼頁經代發口 social_req 呼叫：req._who＝新殼已驗身分（同 whoSocial 格式），req._fromShell＝true
+export default async function handler(req, res) { return socRun((req && req._who && req._who.name) || '社群', () => handlerInner(req, res)) }
+async function handlerInner(req, res) {
   try {
     const ok2 = clean(process.env.OPS_BOARD_KEY)
 
     if (req.method === 'GET') {
       if (!ok2 || String(req.query.social || '') !== ok2) return res.status(403).json({ ok: false, error: '金鑰錯誤' })
-      const who = await whoSocial(String(req.query.me || ''))
+      const who = req._who !== undefined ? req._who : await whoSocial(String(req.query.me || ''))
       const acc = await getAccounts()
       const posts = (await getPosts()).list || []
       const mx = await latestMetrics(posts.map(p => p.id))
@@ -102,7 +106,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       if (!ok2 || String(req.query.social || '') !== ok2) return res.status(403).json({ ok: false, error: '金鑰錯誤' })
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
-      const who = await whoSocial(String(body.token || ''))
+      const who = req._who !== undefined ? req._who : await whoSocial(String(body.token || ''))
       if (!canEditSocial(who)) return res.status(200).json({ ok: false, error: '沒有編輯權限——請找張良開通' })
       const op = body.op
       const doc = await getPosts(); doc.list = doc.list || []
@@ -111,7 +115,7 @@ export default async function handler(req, res) {
       if (op === 'sync') {
         // 立即同步：手動觸發 collect（抓最新成效＋偵測粉專已刪的貼文）。張良 2026-10-10
         try { const { runCollect } = await import('./social-collect.js'); const r = await runCollect(Number(body.days) || 30); await act('立即同步社群成效'); return res.status(200).json(r) }
-        catch (e) { return res.status(200).json({ ok: false, error: e.message || '同步失敗' }) }
+        catch (e) { if (e && e.code === 'stale') throw e; return res.status(200).json({ ok: false, error: e.message || '同步失敗' }) }
       }
       // ── v4.71.5 Pinterest（張良「做 存＆貼連結」）：貼連結立刻抓／登記圖版每小時自動抓 ──
       if (op === 'pinimport') { // body.urls = 多行連結（釘圖或圖版）
@@ -149,7 +153,7 @@ export default async function handler(req, res) {
           if (!r.ok) return res.status(200).json({ ok: false, error: '上傳失敗(' + r.status + ')' })
           const publicUrl = `${SB_URL}/storage/v1/object/public/photos/${path}`
           // 存進素材庫，之後可重複選用
-          try { const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = a.list || []; a.list.unshift({ url: publicUrl, type: 'image', name: String(body.name || '').slice(0, 40), addedAt: new Date().toISOString(), addedBy: who.name }); a.list = a.list.slice(0, 300); await kvPut(AST_KEY, a, '素材入庫') } catch (_) {}
+          { const item = { url: publicUrl, type: 'image', name: String(body.name || '').slice(0, 40), addedAt: new Date().toISOString(), addedBy: who.name }; try { await socTx(AST_KEY, (cur) => { const L = (cur && cur.list) || []; if (L.some(x => x.url === publicUrl)) return { write: false }; return { write: true, doc: { ...(cur || {}), list: [item, ...L].slice(0, 300) } } }, '素材入庫') } catch (e) { console.error('[social] 素材入庫沒存進去', publicUrl, String(e && e.message || e).slice(0, 80)) } }
           return res.status(200).json({ ok: true, url: publicUrl })
         } catch (e) { return res.status(200).json({ ok: false, error: e.message || '上傳失敗' }) }
       }
@@ -264,7 +268,7 @@ export default async function handler(req, res) {
           const r = await fetch(`${SB_URL}/storage/v1/object/photos/${path}`, { method: 'POST', headers: { authorization: `Bearer ${SB_KEY}`, 'content-type': im.mime || 'image/png' }, body: Buffer.from(im.data, 'base64') })
           if (!r.ok) return res.status(200).json({ ok: false, error: '圖生好了但上傳失敗(' + r.status + ')' })
           const publicUrl = `${SB_URL}/storage/v1/object/public/photos/${path}`
-          try { const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = a.list || []; a.list.unshift({ url: publicUrl, type: 'image', name: ('AI:' + prompt).slice(0, 40), ai: 1, prompt: prompt.slice(0, 300), model: im.provider + '/' + im.model, addedAt: new Date().toISOString(), addedBy: who.name }); a.list = a.list.slice(0, 300); await kvPut(AST_KEY, a, 'AI生圖入庫') } catch (_) {}
+          { const item = { url: publicUrl, type: 'image', name: ('AI:' + prompt).slice(0, 40), ai: 1, prompt: prompt.slice(0, 300), model: im.provider + '/' + im.model, addedAt: new Date().toISOString(), addedBy: who.name }; try { await socTx(AST_KEY, (cur) => { const L = (cur && cur.list) || []; if (L.some(x => x.url === publicUrl)) return { write: false }; return { write: true, doc: { ...(cur || {}), list: [item, ...L].slice(0, 300) } } }, 'AI生圖入庫') } catch (e) { console.error('[social] AI 生圖入庫沒存進去', publicUrl, String(e && e.message || e).slice(0, 80)) } } // 圖已生好上傳：只重做寫入（不重生圖）
           await act('社群AI生圖', (im.provider + ' ' + prompt).slice(0, 40))
           return res.status(200).json({ ok: true, url: publicUrl, provider: im.provider, model: im.model, note: im.note || '' })
         } catch (e) { return res.status(200).json({ ok: false, error: e.message || '上傳失敗' }) }
@@ -303,17 +307,21 @@ export default async function handler(req, res) {
         if (!metaReady()) return res.status(200).json({ ok: false, error: '發送功能尚未開通（Meta 未設定）' })
         const p = doc.list.find(x => x.id === body.id); if (!p) return res.status(200).json({ ok: false, error: '找不到貼文' })
         if (!(p.dests && p.dests.length)) return res.status(200).json({ ok: false, error: '還沒勾選要發到哪個平台（下面「發布到哪裡」）' })
-        try {
-          const { publishPost } = await import('./social-publish.js')
-          const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
-          p.status = 'publishing'; p.updatedAt = new Date().toISOString(); await setPosts(doc, '立即發布中')
-          const okPub = await publishPost(p, pages)
-          p.status = okPub ? 'published' : 'failed'; p.updatedAt = new Date().toISOString(); if (okPub) { p.publishedAt = new Date().toISOString(); p.approvedBy = who.name; p.approvedAt = p.publishedAt }
-          await setPosts(doc, '立即發布結果'); await act(okPub ? '社群立即發布' : '社群發布失敗', (p.caption || '').slice(0, 20))
-          const igErr = p.pub && p.pub.instagram && p.pub.instagram.status === 'failed' ? p.pub.instagram.error : ''
-          const fbErr = p.pub && p.pub.facebook && p.pub.facebook.status === 'failed' ? p.pub.facebook.error : ''
-          return res.status(200).json({ ok: okPub, status: p.status, pub: p.pub, error: okPub ? null : ('發布失敗：' + [igErr && ('IG—' + igErr), fbErr && ('FB—' + fbErr)].filter(Boolean).join('；')) })
-        } catch (e) { p.status = 'failed'; await setPosts(doc, '立即發布錯誤'); return res.status(200).json({ ok: false, error: e.message || '發布失敗' }) }
+        // v4.71.146：① 先問驗收閘門 ② 版本比對認領（發布中＝不發：結果不明的不自動重發，要先到 FB／IG 確認；已發布的照原本可再發）③ 發 ④ 結果只改這一則（重讀最新、只重做寫入）
+        { const g = await socGate(); if (g) return res.status(200).json({ ok: false, error: g, code: 'smoke' }) }
+        const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false, value: { err: '找不到貼文' } }; if (x.status === 'publishing') return { write: false, value: { err: '這則正在發布中或上次結果不明——請先到 FB／IG 確認有沒有發出去，再找 CC 重設' } }; const now = new Date().toISOString(); x.status = 'publishing'; x.claimAt = now; x.claimBy = who.name; x.updatedAt = now; return { write: true, doc: d, value: { post: JSON.parse(JSON.stringify(x)) } } }, '立即發布中')
+        if (claim.err) return res.status(200).json({ ok: false, error: claim.err })
+        const { publishPost } = await import('./social-publish.js')
+        const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
+        const p2 = claim.post; let okPub = false
+        try { okPub = await publishPost(p2, pages) } catch (e) { p2.pub = p2.pub || {}; p2.pub._err = String(e && e.message || e).slice(0, 200) }
+        const nowR = new Date().toISOString()
+        try { await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false }; x.pub = p2.pub; x.status = okPub ? 'published' : 'failed'; x.updatedAt = nowR; delete x.claimAt; if (okPub) { x.publishedAt = nowR; x.approvedBy = who.name; x.approvedAt = nowR } return { write: true, doc: d } }, '立即發布結果') }
+        catch (e) { console.error('[social] 立即發布結果沒存進去（貼文停在發布中）', body.id, String(e && e.message || e).slice(0, 80)); return res.status(200).json({ ok: okPub, status: okPub ? 'published' : 'failed', pub: p2.pub, error: '發布' + (okPub ? '成功' : '失敗') + '，但結果沒存進去（貼文停在發布中），請重新整理並找 CC 核對' }) }
+        await act(okPub ? '社群立即發布' : '社群發布失敗', (p2.caption || '').slice(0, 20))
+        const igErr = p2.pub && p2.pub.instagram && p2.pub.instagram.status === 'failed' ? p2.pub.instagram.error : ''
+        const fbErr = p2.pub && p2.pub.facebook && p2.pub.facebook.status === 'failed' ? p2.pub.facebook.error : ''
+        return res.status(200).json({ ok: okPub, status: okPub ? 'published' : 'failed', pub: p2.pub, error: okPub ? null : ('發布失敗：' + [igErr && ('IG—' + igErr), fbErr && ('FB—' + fbErr), p2.pub && p2.pub._err].filter(Boolean).join('；')) })
       }
       if (op === 'addpage') {
         if (!who.admin) return res.status(200).json({ ok: false, error: '只有管理者能新增粉專' })
@@ -335,7 +343,7 @@ export default async function handler(req, res) {
           sec.facebook.tokens[pg.id] = pg.access_token; await setSecret(sec, '加粉專token')
           await act('社群加粉專', pg.name)
           return res.status(200).json({ ok: true, name: pg.name })
-        } catch (e) { return res.status(200).json({ ok: false, error: e.message || '新增失敗' }) }
+        } catch (e) { if (e && e.code === 'stale') throw e; return res.status(200).json({ ok: false, error: e.message || '新增失敗' }) } // 撞版本整段重做（重拿權杖是唯讀）
       }
       if (op === 'delpage') {
         if (!who.admin) return res.status(200).json({ ok: false, error: '只有管理者能移除粉專' })
@@ -351,5 +359,5 @@ export default async function handler(req, res) {
     }
 
     return res.status(405).json({ ok: false, error: '方法不支援' })
-  } catch (e) { return res.status(200).json({ ok: false, error: e.message || '伺服器錯誤' }) }
+  } catch (e) { if (e && e.code === 'stale') throw e; return res.status(200).json({ ok: false, error: e.message || '伺服器錯誤' }) } // 撞版本往外丟給 socRun 整段重做
 }

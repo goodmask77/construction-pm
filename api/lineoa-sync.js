@@ -14,7 +14,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 //       第一次回補 397 天（LINE 可查上限）大約跑十幾個小時自動補完，之後每小時只是補昨天（unready 就下一小時再試）。
 // 通知（LINE 私訊張良）：昨天封鎖數比前一天多 ≥3 → 提醒；訊息額度用到 80%／95% → 每月各提醒一次。
 // 讀：GET ?lineoa=<OPS_BOARD_KEY>[&days=400] → 前端「行銷大師 → LINE 官方帳號」；加 &run=1 先抓再回
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 import { ACCOUNTS, creds, configured } from './_inbox.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -160,7 +160,8 @@ export async function runCollect(opts = {}) {
   return { ok: true, accounts: out }
 }
 
-export default async function handler(req, res) {
+export default async function handler(req, res) { return socRun('LINE官方統計', () => handlerInner(req, res)) } // v4.71.146 撞版本整段重做（只讀 LINE、寫統計月檔）
+async function handlerInner(req, res) {
   try {
     const q = req.query || {}
     const ok2 = clean(process.env.OPS_BOARD_KEY)
@@ -178,7 +179,7 @@ export default async function handler(req, res) {
     // cron／手動：?batch=N&only=gd
     const out = await runCollect({ batch: Math.min(28, Number(q.batch) || BATCH), only: q.only ? String(q.only) : '' })
     return res.status(200).json(out)
-  } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
+  } catch (e) { if (e && e.code === 'stale') throw e; return res.status(200).json({ ok: false, error: e.message }) }
 }
 
 async function lineBoss(text) {

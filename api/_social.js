@@ -1,7 +1,7 @@
 // ── 社群自動發文＋成效 共用模組（張良 2026-10-08：FB/IG 內容系統，Phase 1 先 FB 只讀數據）──
 // 設計同其他整合（em-sync/boss-sync）：KV 存資料、機密 token 另存一檔永不回前端、Graph API 呼叫包一層
 // 標籤頁代碼＝'social'（permWho/canTab 用）；資料鍵前綴 sp_finance_pm_social_*
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 

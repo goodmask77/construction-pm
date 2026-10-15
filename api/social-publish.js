@@ -2,7 +2,9 @@
 // 規則：status='approved' 且（無排程時間 或 排程時間已到）→ 發到貼文指定的目的地 dests
 // dests 格式：['fb:<pageId>', 'ig:<igUserId>']。FB 有圖走 /photos、純文字走 /feed；IG 兩步驟(建container→輪詢→publish)，IG 一定要有圖
 // 安全：人工核可才會到 approved（審核即人工閘門）；DRY_RUN=true 只記 log 不真發
-import { getPosts, setPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady } from './_social.js'
+import { getPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady } from './_social.js'
+import { socTx, socGate } from './_socialkv.js'
+const P_KEY = 'sp_finance_pm_social_posts'
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
@@ -50,25 +52,27 @@ export async function publishPost(p, pages) {
   return allOk
 }
 
+// v4.71.146：原本「先標發布中」是整份覆蓋（不是真的鎖，跟立即發布或畫面編輯同時會互蓋）→ 改成每則各自版本比對認領（仍是 approved 才改 publishing）→ 發 → 結果只改這一則
 export default async function handler(req, res) {
   try {
     if (!metaReady()) return res.status(200).json({ ok: false, skipped: '未設 META env' })
-    const doc = await getPosts(); doc.list = doc.list || []
-    const now = Date.now()
-    const due = doc.list.filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now))
+    { const g = await socGate(); if (g) return res.status(200).json({ ok: true, skipped: '驗收閘門：' + g }) } // 切換驗收期間不發（下一輪再看）
+    const doc = await getPosts(); const now = Date.now()
+    const due = (doc.list || []).filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now))
     if (!due.length) return res.status(200).json({ ok: true, published: 0 })
     const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
     const out = []
-
-    for (const p of due.slice(0, 5)) { // 一次最多 5 則
-      p.status = 'publishing'; p.updatedAt = new Date().toISOString(); await setPosts(doc, '發布中') // 原子鎖：先標記避免重複發
-      const allOk = await publishPost(p, pages)
-      p.status = allOk ? 'published' : 'failed'; p.updatedAt = new Date().toISOString(); if (allOk) p.publishedAt = new Date().toISOString()
-      await setPosts(doc, '發布結果')
-      try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: allOk ? '✅ 社群已發布' : '⚠️ 社群發布失敗', body: (p.caption || '').slice(0, 50), url: '/prep#social', cat: 'other' }) } catch (_) {}
-      out.push({ id: p.id, status: p.status })
+    for (const p0 of due.slice(0, 5)) { // 一次最多 5 則
+      const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved') return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
+      if (!claim) continue // 已被別人（立即發布、畫面修改）處理
+      let allOk = false
+      try { allOk = await publishPost(claim, pages) } catch (e) { claim.pub = claim.pub || {}; claim.pub._err = String(e && e.message || e).slice(0, 200) }
+      const t2 = new Date().toISOString()
+      try { await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x) return { write: false }; x.pub = claim.pub; x.status = allOk ? 'published' : 'failed'; x.updatedAt = t2; delete x.claimAt; if (allOk) x.publishedAt = t2; return { write: true, doc: d } }, '發布結果') }
+      catch (e) { console.error('[social-publish] 發布結果沒存進去（貼文停在發布中，不會自動重發）', p0.id, allOk, String(e && e.message || e).slice(0, 80)) }
+      try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: allOk ? '✅ 社群已發布' : '⚠️ 社群發布失敗', body: (claim.caption || '').slice(0, 50), url: '/prep#social', cat: 'other' }) } catch (_) {}
+      out.push({ id: p0.id, status: allOk ? 'published' : 'failed' })
     }
-
     return res.status(200).json({ ok: true, dryRun: DRY_RUN, published: out.filter(x => x.status === 'published').length, results: out })
   } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
 }

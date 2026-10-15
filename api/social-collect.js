@@ -7,7 +7,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 //   → ① FB 跟 IG 各存一份不再互蓋 ② 一天最多 8 個時序點＝畫得出「貼文發出後的成長曲線」
 //   原始整包存 raw（指標改名也不遺失）。舊格式 <postId>::<date> 仍可被 social.js 相容讀取。
 // ⚠️ Insights metric 名稱 Meta 近年會改；抓不到不致命，raw 都留著，之後對照文件補
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 import { getAccounts, setAccounts, getSecret, setSecret, getPosts, setPosts, metricsKey, graphGet, fbPageToken, metaReady, APP_ID, APP_SECRET } from './_social.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -163,7 +163,7 @@ export async function runCollect(daysBack = 30) {
 
 export default async function handler(req, res) {
   try {
-    const out = await runCollect(Number(req.query.days) || 30)
+    const out = await socRun('社群成效', () => runCollect(Number(req.query.days) || 30)) // v4.71.146 撞版本整段重做（只讀 Meta、寫成效／貼文／帳號）
     return res.status(200).json(out)
   } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
 }
