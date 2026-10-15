@@ -329,7 +329,8 @@ async function noteGate(id) {
   const rows = await kvGetManyRaw([id]).catch(() => null); const n = rows && rows[id]
   if (!n || typeof n !== 'object' || !n.text) return null
   if (n.st !== 'pending') return null
-  if (Date.now() - Date.parse(n.firstAt || n.at || 0) > NOTE_TTL) { await qPut(id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作超過 20 小時未確認，改人工核對', id); return null }
+  const t0 = Date.parse(n.firstAt || n.at || ''); const age = Date.now() - t0
+  if (!Number.isFinite(t0) || age < -300e3 || age > NOTE_TTL) { await qPut(id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作時間無效或超過 20 小時未確認，改人工核對', id); return null } // 時間讀不出來／在未來＝也不推（第十輪）
   return n
 }
 const noteId = (key) => 'pm_ibnote_' + crypto.createHash('sha256').update('ibnote:' + String(key)).digest('hex').slice(0, 40) // 完整鍵＋命名空間 SHA-256 取 160 位元（不截斷、不刪字元；碰撞機率極低；第七輪）
