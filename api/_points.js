@@ -56,6 +56,7 @@ export async function awardPtsStrict(person, act, ref, atIso) { // atIso：行�
   const cfg = (await ptsRead([PTS_KEYS.cfg], person))[PTS_KEYS.cfg]
   const rule = pointsRules(cfg)[act]
   if (!rule || rule.off || !(Number(rule.pts) > 0)) return { awarded: false, reason: 'rule-off' }
+  if (atIso && !(Date.now() - Date.parse(atIso) <= 25 * 86400e3)) throw new Error('補分事件超過 25 天（或時間無效），不重放') // 折舊只折 30 天前：25 天內的重放一定還找得到去重憑證（關卡 3 積分第四輪 A5／A6）
   return pointsCas(doc => {
     doc.list = doc.list || []; doc.carry = doc.carry || {}
     const t0 = atIso && Number.isFinite(Date.parse(atIso)) ? Date.parse(atIso) : Date.now()
@@ -92,8 +93,9 @@ export async function ptsDrain({ limit = 50 } = {}) {
     const dead = async (why) => { const at = new Date().toISOString(); const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: 'pm_ptsqdead_' + row.id.slice(PQ.length), data: { v: JSON.stringify({ ...(q || {}), why, deadAt: at }) }, editor: '補分死信', updated_at: at }) }); if (!r2.ok) throw new Error('寫補分死信失敗 HTTP ' + r2.status); console.error('[awardPts] 補分進死信（請人工核對補分）', why, JSON.stringify(q)); await del() } // 死信保留（不刪），等人工核對
     try {
       if (!q || !q.person || !q.act) { await dead('內容壞了'); drop++; continue }
+      if (!(Date.now() - Date.parse(q.at || '') <= 7 * 86400e3)) { await dead('超過 7 天（或時間無效）沒補成，不再重放'); drop++; continue } // 超齡不嘗試、直接進死信（關卡 3 積分第四輪 A6）
       try { await awardPtsStrict(q.person, q.act, q.ref || '', q.at); await del(); ok++ }
-      catch (e) { if (Date.now() - Date.parse(q.at || 0) > 7 * 86400e3) { await dead('超過 7 天仍失敗：' + String(e && e.message || e).slice(0, 80)); drop++ } else left++ }
+      catch (e) { left++ }
     } catch (e) { console.error('[awardPts] 補分佇列處理失敗（下輪再試）', row.id, String(e && e.message || e).slice(0, 80)); left++ }
   }
   return { seen: rows.length, ok, left, drop }
