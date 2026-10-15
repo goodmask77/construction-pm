@@ -3580,6 +3580,7 @@ export default async function handler(req, res) {
       if (i0 >= 0) kd.items[i0] = clean; else kd.items.push(clean)
     }
     kd.edits = [{ ts: new Date().toISOString(), by: whoN.name, op: bn.op, name: (bn.item || {}).name || bn.name || bn.id }, ...(kd.edits || [])].slice(0, 30)
+    { const curN = await kvGet('sp_finance_pm_inv'); if (curN && curN.notified) doc.notified = curN.notified } // 低水位「今天已處理」以最新為準（不被這次整份存檔蓋回舊值；abgd 關卡 3 盤點第三輪 A5）
     await kvPut('sp_finance_pm_inv', doc, '盤點品項' + bn.op + '(' + whoN.name + ')')
     return res.status(200).json({ ok: true })
   }
@@ -3598,6 +3599,7 @@ export default async function handler(req, res) {
     const kd = doc[kind] || (doc[kind] = { items: [], counts: {} })
     kd.counts = kd.counts || {}
     kd.counts[bc.id] = [{ ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), qty: qv, by: whoC.name }, ...(kd.counts[bc.id] || [])].slice(0, 30)
+    { const curN = await kvGet('sp_finance_pm_inv'); if (curN && curN.notified) doc.notified = curN.notified } // 低水位「今天已處理」以最新為準（不被這次整份存檔蓋回舊值；abgd 關卡 3 盤點第三輪 A5）
     await kvPut('sp_finance_pm_inv', doc, '盤點紀錄(' + whoC.name + ')')
     await awardPts(whoC.name, 'inv_count', new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) // 🏦 行為分：盤點（每天算一次，不論盤幾項）
     return res.status(200).json({ ok: true })
