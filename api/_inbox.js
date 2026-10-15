@@ -313,15 +313,24 @@ export async function ibQueueOut(a, uid, text, by, mode, t, full) { // full＝{m
   return qPut(key, { kind: 'out', acct: a.key, uid, text: String(text || '').slice(0, 5000), by, mode, t: new Date(t).toISOString(), ms: t, at: nowIso(), tries: 0, ...(full && full.msg ? { mk: full.mk, msg: full.msg } : {}) }).catch(() => false)
 }
 // 通知主管（DD 私訊老闆）：送出結果需要人工核對時。第五輪 A3：固定鍵的通知工作 pm_ibnote_<鍵>（只新增＝同一件事只建一次）；送成功才標完成，沒送成功由補存排程重試
-async function bossPush(text) { try { const { linePush } = await import('./_onboard.js'); const boss = (process.env.LINE_BOSS_USER || '').trim() || 'Uf7ce4fb9191cd3055247204e0cb6b4fc'; const r = await linePush(boss, String(text).slice(0, 900)); return r !== false } catch (e) { console.log('[inbox] 通知主管失敗', e && e.message); return false } }
-export async function ibAlert(key, text) { // 回 true＝這次確定送出通知
-  const id = 'pm_ibnote_' + String(key).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60)
-  const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), at: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null)
-  if (ins && ins.status === 409) return false // 已經有這件通知工作（建過＝不重複通知）
-  const sent = await bossPush(text)
-  if (sent && ins && ins.ok) await qPut(id, { st: 'done', text: String(text).slice(0, 900), at: nowIso() }).catch(() => {})
+// 第六輪：通知主管一律帶 LINE 重試鍵（X-Line-Retry-Key，由通知編號算出的固定 UUID）：同一件通知不管同時跑、或送成功後標記沒寫上再送，LINE 24 小時內只送一次
+const retryKeyOf = (id) => { const h = crypto.createHash('sha256').update('ibnote:' + id).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
+async function bossPush(id, text) { // 回 true＝LINE 確定收下（2xx，或 409＝這把重試鍵已經送過）
+  const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim(); if (!tk) return false
+  const boss = (process.env.LINE_BOSS_USER || '').trim() || 'Uf7ce4fb9191cd3055247204e0cb6b4fc'
+  try { const r = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${tk}`, 'X-Line-Retry-Key': retryKeyOf(id) }, body: JSON.stringify({ to: boss, messages: [{ type: 'text', text: String(text).slice(0, 900) }] }), signal: AbortSignal.timeout(10000) }); return r.ok || r.status === 409 }
+  catch (e) { console.log('[inbox] 通知主管失敗', e && e.message); return false }
+}
+// 建通知工作（只新增）：回 true＝工作已存在（這次建的或之前建過）
+async function noteCreate(id, text) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), at: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !!(r && (r.ok || r.status === 409)) }
+const noteId = (key) => 'pm_ibnote_' + String(key).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60)
+export async function ibAlert(key, text) { // 立即通知：先建工作、再送（帶重試鍵）；回 true＝確定送出
+  const id = noteId(key); const made = await noteCreate(id, text)
+  const sent = await bossPush(id, text)
+  if (sent && made) await qPut(id, { st: 'done', text: String(text).slice(0, 900), at: nowIso() }).catch(() => {}) // 標記沒寫上也沒關係：重送時 LINE 依重試鍵不會再送
   return sent
 }
+
 export async function ibRetry({ limit = 5 } = {}) { return ibStore() ? _ibRetry({ limit }) : ibAs('收件匣補存', () => _ibRetry({ limit })) } // 包請求情境（對話快照、操作者）
 async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個事件套用過」，同一筆被兩邊同時補存也不會重複
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(IBQ))}*&select=id,data&order=updated_at.asc&limit=${Math.min(500, limit * 4)}`, { headers: H() })
@@ -343,8 +352,6 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
   // 送出標記（第五輪 A2／A4）：只撈待處理狀態（資料庫篩選，舊的已完成標記不會塞住）；轉移狀態用版本比對（pm_doc_cas），版本變了就不動
   //   10 分鐘門檻＞函式最長執行時間 5 分鐘：排程不會動到還在跑的送出
   const sendRows = async (stx) => { const like = encodeURIComponent('*"st":"' + stx + '"*'); const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibsend%5C_*&data->>v=like.${like}&select=id,updated_at&order=updated_at.asc&limit=50`, { headers: H() }).catch(() => null); return r && r.ok ? r.json() : [] }
-  const docGet = async (id) => { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_get`, { method: 'POST', headers: H(), body: JSON.stringify({ p_id: id }) }); const j = r.ok ? await r.json() : null; if (!j || !j.data) return null; let v = null; try { v = JSON.parse(j.data.v) } catch (_) {} return { v, rev: Number(j.rev) || 0 } }
-  const docCas = async (id, rev, v) => { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_cas`, { method: 'POST', headers: H(), body: JSON.stringify({ p_id: id, p_rev: rev, p_data: { v: JSON.stringify(v) }, p_editor: '收件匣補存' }) }); const j = r.ok ? await r.json() : null; return !!(j && j.ok) }
   try {
     for (const row of await sendRows('lineok')) { // LINE 已送出但紀錄沒存上：一次套用補記（固定鍵，已存在＝dup）→ sent
       if (Date.now() - Date.parse(row.updated_at) < 60e3) continue
@@ -356,12 +363,13 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
     for (const stx of ['sending', 'unknown']) for (const row of await sendRows(stx)) { // 結果不明超過 10 分鐘：標待核對（版本比對）＋建通知工作（固定鍵只建一次）
       if (Date.now() - Date.parse(row.updated_at) < 600e3) continue
       const d = await docGet(row.id); const m = d && d.v; if (!m || m.st !== stx) continue
-      if (!(await docCas(row.id, d.rev, { ...m, st: 'review', reviewAt: nowIso() }))) continue // 別人剛改過＝這輪不動
-      await ibAlert('c_' + row.id.slice(10), `收件匣：有一則送出結果不確定（${(acctOf(m.acct) || {}).name || m.acct || ''}・${String(m.uid || (m.job || {}).id || '').slice(-6)}）：「${String(m.lastText || (m.job || {}).text || '').slice(0, 40)}」。請到 LINE 官方帳號後台確認客人有沒有收到；系統不會自動重送。`).catch(() => {})
+      const made = await noteCreate(noteId('c_' + row.id.slice(10)), `收件匣：有一則送出結果不確定（${(acctOf(m.acct) || {}).name || m.acct || ''}・${String(m.uid || (m.job || {}).id || '').slice(-6)}）：「${String(m.lastText || (m.job || {}).text || '').slice(0, 40)}」。請到 LINE 官方帳號後台確認客人有沒有收到；系統不會自動重送。`)
+      if (!made) continue // 通知工作沒建好＝不轉待核對（下輪再來）
+      await docCas(row.id, d.rev, { ...m, st: 'review', reviewAt: nowIso() }) // 版本對不上＝不動（通知工作已在，下輪 409＝已存在）
     }
     { // 通知工作沒送成功的：重試
       const like = encodeURIComponent('*"st":"pending"*'); const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibnote%5C_*&data->>v=like.${like}&select=id,data&order=updated_at.asc&limit=20`, { headers: H() }).catch(() => null)
-      for (const row of (r && r.ok ? await r.json() : [])) { let n = null; try { n = JSON.parse(row.data.v) } catch (_) { continue } if (n && n.st === 'pending' && await bossPush(n.text)) await qPut(row.id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) }
+      for (const row of (r && r.ok ? await r.json() : [])) { let n = null; try { n = JSON.parse(row.data.v) } catch (_) { continue } if (n && n.st === 'pending' && await bossPush(row.id, n.text)) await qPut(row.id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) } // 帶重試鍵：同時跑或標記沒寫上，LINE 都只送一次
     }
     { // 已送完的送出標記留 2 天（防重用）後清掉
       const like = encodeURIComponent('*"st":"sent"*'); await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibsend%5C_*&data->>v=like.${like}&updated_at=lt.${encodeURIComponent(new Date(Date.now() - 2 * 86400e3).toISOString())}`, { method: 'DELETE', headers: H() }).catch(() => {})
@@ -374,6 +382,10 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
 // 店員送出 LINE 前：收件匣在新殼且正在做切換驗收、不是驗收者＝不准送（關卡 3 inbox 第一輪 A5）；回 null＝放行
 export async function ibGate() { const kv = await ibKv(); if (kv.mode === 'gd') return null; if (kv.mode !== 'abgd') return '收件匣正在切換，請稍後再送'; return kv.gate() }
 // 同一個送出動作只送一次（頁面每次按送出產生 cid）：pm_ibsend_<cid> 記狀態（GD 原表，不屬收件匣域）；結果不確定＝不自動重送
+// 送出標記的版本讀寫（GD pm_doc_get／pm_doc_cas）
+const docGet = async (id) => { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_get`, { method: 'POST', headers: H(), body: JSON.stringify({ p_id: id }) }).catch(() => null); const j = r && r.ok ? await r.json() : null; if (!j || !j.data) return null; let v = null; try { v = JSON.parse(j.data.v) } catch (_) { return null } return { v, rev: Number(j.rev) || 0 } }
+const docCas = async (id, rev, v) => { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_cas`, { method: 'POST', headers: H(), body: JSON.stringify({ p_id: id, p_rev: rev, p_data: { v: JSON.stringify(v) }, p_editor: '收件匣送出' }) }).catch(() => null); const j = r && r.ok ? await r.json() : null; return !!(j && j.ok) }
+async function markUnknown(key) { for (let i = 0; i < 3; i++) { const d = await docGet(key); if (!d || !d.v) return; if (d.v.st !== 'sending') return; if (await docCas(key, d.rev, { ...d.v, st: 'unknown', at: nowIso() })) return } } // 讀不到＝不寫；lineok／sent 不降級
 export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內容摘要}：同一個編號只認同一則；need＝必須帶編號（新殼頁）
   const c = String(cid || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
   if (!c) { if (need) return { ok: false, error: '缺送出編號，請重新整理再送' }; return fn() }
@@ -393,7 +405,7 @@ export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內�
   try { res = await fn() } catch (e) { res = { ok: false, sentUnknown: true, error: '送出結果不確定：' + String(e && e.message || e).slice(0, 100) + '——請重新整理看有沒有送出' } } // 例外＝不確定（第二輪 A3）
   if (res && res.ok && res.queued === false) { /* LINE 已送、紀錄沒存上也沒排上：保留「已送出＋內容」標記（補存排程從這裡補記後改 sent） */ }
   else if (res && res.ok) await qPut(key, { st: 'sent', at: nowIso(), h, res: { ok: true, msg: res.msg, mode: res.mode, conv: res.conv } }).catch(() => {})
-  else if (res && res.sentUnknown) { const cur = (await kvGetManyRaw([key]).catch(() => ({})))[key] || {}; await qPut(key, { ...cur, st: 'unknown', at: nowIso(), h }).catch(() => {}) } // 不確定＝只改狀態、保留送前寫的完整內容（第五輪 A1）；同編號不准重送
+  else if (res && res.sentUnknown) await markUnknown(key) // 不確定：版本比對、只從「送出中」轉、保留全部欄位（第六輪）；同編號不准重送
   else await qDel(key).catch(() => {}) // 確定沒送出（LINE 4xx、權限、內容錯）＝可以重送
   return res
 }
