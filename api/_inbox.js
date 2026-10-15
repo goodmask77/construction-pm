@@ -325,12 +325,16 @@ async function bossPush(id, text) { // 回 true＝LINE 確定收下（2xx，或 
 // 建通知工作（只新增）：回 'new'＝這次建的、'exists'＝已經有（409）、''＝建不起來
 async function noteCreate(id, text, key) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), key: String(key || '').slice(0, 200), at: nowIso(), firstAt: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !r ? '' : r.ok ? 'new' : r.status === 409 ? 'exists' : '' }
 // 送出判斷（立即通知與排程共用；第八輪）：讀回工作 → 已完成／人工＝不推；超過 20 小時＝轉人工不推；讀不到＝不推；可以推才回工作內容
-async function noteGate(id) {
-  const rows = await kvGetManyRaw([id]).catch(() => null); const n = rows && rows[id]
+async function noteGate(id) { // 第十一輪：版本讀取；轉人工用版本比對寫入，寫成功才記「已轉人工」；不管轉成不成功，這次都不推（下輪重新判斷、再試轉人工）
+  const d = await docGet(id); const n = d && d.v
   if (!n || typeof n !== 'object' || !n.text) return null
   if (n.st !== 'pending') return null
   const t0 = Date.parse(n.firstAt || n.at || ''); const age = Date.now() - t0
-  if (!Number.isFinite(t0) || age < -300e3 || age > NOTE_TTL) { await qPut(id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作時間無效或超過 20 小時未確認，改人工核對', id); return null } // 時間讀不出來／在未來＝也不推（第十輪）
+  if (!Number.isFinite(t0) || age < -300e3 || age > NOTE_TTL) { // 時間讀不出來／在未來超過 5 分鐘／超過 20 小時
+    if (await docCas(id, d.rev, { ...n, st: 'manual', manualAt: nowIso() })) console.log('[inbox] 通知工作時間無效或超過 20 小時，已轉人工核對', id)
+    else console.log('[inbox] 通知工作要轉人工但寫入沒成功（下輪再試；這次不推）', id)
+    return null
+  }
   return n
 }
 const noteId = (key) => 'pm_ibnote_' + crypto.createHash('sha256').update('ibnote:' + String(key)).digest('hex').slice(0, 40) // 完整鍵＋命名空間 SHA-256 取 160 位元（不截斷、不刪字元；碰撞機率極低；第七輪）
