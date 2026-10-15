@@ -46,7 +46,7 @@ async function ibKv() {
   return M.abgdKv({ domain: 'inbox', lockKey: 'pm_inbox_x', operator: op, label: '收件匣', owner: _ibOwner.v })
 }
 const clone = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)))
-const snapPut = (k, v) => { const st = ibStore(); if (st && k.startsWith(IBC) && v) st.snaps.set(k, clone(v)) }
+const snapPut = (k, v) => { const st = ibStore(); if (st && k.startsWith(IBC)) st.snaps.set(k, v ? clone(v) : null) } // 讀了但不存在＝null（跟「沒讀過」分開）
 async function kvGetManyRaw(ids) {
   if (!SB_URL || !SB_KEY || !ids.length) return {}
   try {
@@ -58,7 +58,7 @@ async function kvGetManyRaw(ids) {
 async function kvGetMany(ids) {
   const ib = ids.filter(k => k.startsWith(IBP)), other = ids.filter(k => !k.startsWith(IBP))
   const out = other.length ? await kvGetManyRaw(other) : {}
-  if (ib.length) { const m = await (await ibKv()).kvGetMany(ib); for (const [k, v] of Object.entries(m)) { out[k] = v; snapPut(k, v) } }
+  if (ib.length) { const m = await (await ibKv()).kvGetMany(ib); for (const k of ib) { if (m[k] !== undefined) out[k] = m[k]; snapPut(k, m[k] || null) } }
   return out
 }
 const kvGet = async (id) => (await kvGetMany([id]))[id] || null
@@ -68,20 +68,22 @@ const NEWEST = ['last', 'lastT', 'lastInT', 'lastOutT', 'replyToken', 'replyT', 
 const IFEMPTY = { name: [], cat: ['catBy'], phone: ['phoneBy'], assignee: [] } // 原本空白才填（不蓋掉別人同時填的）
 const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b)
 // before＝讀到時的對話（沒有＝新對話）、after＝改完的；t＝事件時間（沒有＝現在）
-export function convPatch(before, after, t) {
+export function convPatch(before, after, t, opt = {}) { // opt.reopen：客人訊息（交易依目前狀態與 statusT 決定要不要重開）
   const st = ibStore(); const force = !!(st && st.force) // 店員手動操作（convOp）：負責人／分類等直接設定，不套「空白才填」
   const b = before || {}, p = { set: {}, unset: [], last: {}, lastUnset: [], t: t || new Date().toISOString(), inc: 0, reopen: false, ifEmpty: {} }
   const keys = new Set([...Object.keys(b), ...Object.keys(after)])
   const companion = new Set(Object.values(IFEMPTY).flat())
   // 自動重開＝原本完成／等待中、改成新、人工改狀態時間（statusT）沒變（＝客人訊息觸發）；交給套用端依事件時間判斷
   const autoReopen = ['done', 'wait'].includes(b.status) && after.status === 'new' && same(b.statusT, after.statusT)
-  if (autoReopen) p.reopen = true
+  if (autoReopen || opt.reopen) p.reopen = true
+  const autoOpen = b.status === 'new' && after.status === 'open' && same(b.statusT, after.statusT) // 自動 新→處理中（送出時）：交易裡目前還是新才轉（第三輪 A2）
+  if (autoOpen) p.autoOpen = true
   for (const k of keys) {
-    if (autoReopen && (k === 'status' || k === 'waitUntil')) continue
+    if ((autoReopen && (k === 'status' || k === 'waitUntil')) || (autoOpen && k === 'status')) continue
     if (same(b[k], after[k]) || companion.has(k)) continue
     if (k === 'replyUsed' && b.replyToken && same(b.replyToken, after.replyToken)) { p.ifTok = { tok: b.replyToken, set: { replyUsed: after.replyUsed } }; continue } // 只在憑證沒換時標（第二輪 A4）
     if (NEWEST.includes(k)) { if (after[k] === undefined) p.lastUnset.push(k); else p.last[k] = after[k]; continue } // 拿掉也要比時間（第二輪 A4）
-    if (k === 'unread') { const d = (Number(after.unread) || 0) - (Number(b.unread) || 0); if ((Number(after.unread) || 0) === 0) p.set.unread = 0; else p.inc += d; continue }
+    if (k === 'unread') { const d = (Number(after.unread) || 0) - (Number(b.unread) || 0); if ((Number(after.unread) || 0) === 0) p.clearUnread = { upTo: String(b.lastInT || '') }; else p.inc += d; continue } // 清未讀只清到讀到的那則（第三輪 A1）
     if (IFEMPTY[k] && !force && (b[k] == null || b[k] === '') && after[k] != null && after[k] !== '') { const g = { [k]: after[k] }; for (const c of IFEMPTY[k]) if (after[c] !== undefined) g[c] = after[c]; p.ifEmpty[k] = g; continue }
     if (after[k] === undefined) p.unset.push(k); else p.set[k] = after[k]
   }
@@ -104,13 +106,15 @@ export function convApplyJs(cur, conv0, p) {
   for (const [k, g] of Object.entries(p.ifEmpty || {})) if (c[k] == null || c[k] === '') Object.assign(c, g)
   if (String(p.t || '') >= String(c.lastT || '')) { if (p.last) Object.assign(c, p.last); for (const k of p.lastUnset || []) delete c[k] }
   if (p.ifTok && String(c.replyToken || '') === String(p.ifTok.tok || '')) Object.assign(c, p.ifTok.set || {})
+  if (p.clearUnread && String(c.lastInT || '') <= String(p.clearUnread.upTo || '')) c.unread = 0
+  if (p.autoOpen && c.status === 'new') c.status = 'open'
   if (p.inc) c.unread = Math.max(0, (Number(c.unread) || 0) + p.inc)
   if (p.reopen && ['done', 'wait'].includes(c.status) && String(p.t || '') > String(c.statusT || '')) { c.status = 'new'; c.waitUntil = '' }
   return c
 }
 // 訊息＋對話一次套用：回 { dup, conv }
-export async function ibApply(ck, mk, msg, before, after, full) {
-  const kv = await ibKv(); const patch = full ? convPatchFull(after) : convPatch(before, after, msg ? msg.t : undefined) // 新對話（before＝null）：規則本身從空白建出完整內容（起點空白，未讀不會算兩次）
+export async function ibApply(ck, mk, msg, before, after, full, opt) {
+  const kv = await ibKv(); const patch = full ? convPatchFull(after) : convPatch(before, after, msg ? msg.t : undefined, opt || {}) // 新對話（before＝null）：規則本身從空白建出完整內容（起點空白，未讀不會算兩次）
   if (kv.mode === 'abgd') { const j = await kv.cmdRaw('apply', { convKey: ck, msgKey: mk || null, msg: mk ? msg : null, conv0: {}, patch }); return { dup: !!j.dup, conv: j.conv || after } }
   if (kv.mode !== 'gd') throw new Error('收件匣正在切換，請稍後再試')
   // GD 原表：同規則的資料庫函式 pm_inbox_apply（一個交易；第二輪 A2）
@@ -122,7 +126,7 @@ export async function ibApply(ck, mk, msg, before, after, full) {
 }
 async function kvSet(id, obj, editor) {
   if (id.startsWith(IBC)) { // 對話：只送改了的欄位（沒有本次讀到的快照＝當新對話／整份欄位）
-    const st = ibStore(); const before = st ? st.snaps.get(id) : undefined
+    const st = ibStore(); const before = st && st.snaps.has(id) ? st.snaps.get(id) : undefined
     if (before === undefined) { // 沒有本次讀到的快照（程式漏讀）：新殼模式不准整份覆蓋既有對話（第二輪 A1）；GD 原表照舊並留紀錄
       const kv0 = await ibKv(); console.log('[inbox] 對話存檔沒有快照', id, kv0.mode)
       if (kv0.mode !== 'gd') throw new Error('收件匣存檔缺讀取快照，請重新整理再試一次')
@@ -282,7 +286,7 @@ async function _ingestEvent(a, ev, destination, opt = {}) { // opt.retry＝待�
   const mk = ev.webhookEventId ? `pm_inbox_m_${a.key}_${uid}_${t.toString(36)}e${djb(String(ev.webhookEventId))}` : msgKey(a.key, uid, t); msg.id = mk // 有事件編號＝固定鍵（重存不會變兩則）
   conv.last = { text: text.slice(0, 80), t: msg.t, dir: msg.dir }
   conv.lastT = msg.t
-  const ap = await ibApply(ck, mk, msg, before, conv) // v4.71.122 訊息＋對話一次套用；這個事件套用過＝不再通知
+  const ap = await ibApply(ck, mk, msg, before, conv, false, { reopen: msg.dir === 'in' || ev.type === 'follow' }) // v4.71.122 訊息＋對話一次套用；這個事件套用過＝不再通知；客人訊息一律帶可重開（交易決定）
   if (ap.dup) return { conv: ap.conv, msg, dup: true }
   conv = ap.conv
   bumpStat(a.key, { lastEventT: nowIso(), destination: destination || undefined, lastEventType: ev.type }).catch(() => {})
@@ -325,6 +329,18 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
       if (await qDel(id)) ok++; else bad++ // 刪不掉＝下一輪再判斷重複後刪
     } catch (e) { bad++; q.tries = (q.tries || 0) + 1; q.err = String(e && e.message || e).slice(0, 200); await qPut(id, q).catch(() => {}) }
   }
+  // LINE 已送出但紀錄沒存上（標記停在 lineok 超過 1 分鐘）：補記這則送出紀錄，標記改 sent（第三輪 A3）
+  try {
+    const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibsend%5C_*&select=id,data,updated_at&order=updated_at.asc&limit=50`, { headers: H() })
+    for (const row of (lr.ok ? await lr.json() : [])) {
+      let m = null; try { m = JSON.parse(row.data.v) } catch (_) { continue }
+      if (!m || m.st !== 'lineok' || Date.now() - Date.parse(row.updated_at) < 60e3) continue
+      const a = acctOf(m.acct); if (!a || !m.msg) continue
+      const ck = convKey(m.acct, m.uid); const cur = await kvGet(ck); if (!cur) continue
+      const after = { ...cur, replyUsed: true, last: { text: m.lastText, t: m.msg.t, dir: 'out', by: m.by }, lastT: m.msg.t, lastOutT: m.msg.t }
+      try { await ibApply(ck, m.mk, m.msg, cur, after); await qPut(row.id, { st: 'sent', at: nowIso(), h: m.h, res: { ok: true, msg: m.msg, mode: m.mode }, fixed: 1 }); ok++ } catch (e) { bad++ }
+    }
+  } catch (_) {}
   const cr = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(IBQ))}*&select=id`, { headers: { ...H(), Prefer: 'count=exact', Range: '0-0' } }).catch(() => null)
   const left = cr ? Number(String(cr.headers.get('content-range') || '').split('/')[1]) : NaN
   return { ok, bad, dead, seen: Math.min(rows.length, limit), left: Number.isFinite(left) ? left : null } // left＝現在實際還剩幾筆
@@ -335,8 +351,11 @@ export async function ibGate() { const kv = await ibKv(); if (kv.mode === 'gd') 
 export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內容摘要}：同一個編號只認同一則；need＝必須帶編號（新殼頁）
   const c = String(cid || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
   if (!c) { if (need) return { ok: false, error: '缺送出編號，請重新整理再送' }; return fn() }
-  const key = 'pm_ibsend_' + c, h = djb(JSON.stringify(bind || {}))
-  const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id: key, data: { v: JSON.stringify({ st: 'sending', at: nowIso(), h }) }, editor: '收件匣送出', updated_at: nowIso() }) })
+  const b0 = bind || {}; const h = crypto.createHash('sha256').update(['v1', String(b0.id || ''), String(b0.text || ''), String(b0.name || ''), String(b0.n || '')].join('\u001f')).digest('hex') // 固定格式＋SHA-256（第三輪 B1）
+  const key = 'pm_ibsend_' + c
+  const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id: key, data: { v: JSON.stringify({ st: 'sending', at: nowIso(), h, job: { id: b0.id || '', text: String(b0.text || '').slice(0, 5000), name: b0.name || '' } }) }, editor: '收件匣送出', updated_at: nowIso() }) }).catch(() => null)
+  if (!ins) return { ok: false, error: '系統暫時連不上，請稍後再送' }
+  if (!ins.ok && ins.status !== 409) return { ok: false, error: '系統暫時連不上（' + ins.status + '），請稍後再送' }
   if (!ins.ok) {
     const prev = await kvGetManyRaw([key]); const p = prev[key]
     if (p && p.h && p.h !== h) return { ok: false, error: '送出編號重複（對到別則訊息），請重新整理再送' }
@@ -344,8 +363,10 @@ export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內�
     return { ok: false, error: '這則剛剛送過，結果還不確定——請重新整理看有沒有送出，沒有再送一次' }
   }
   let res
+  { const st = ibStore(); if (st) { st.sendKey = key; st.sendH = h } } // deliver 在 LINE 成功後寫「已送出」到這個標記
   try { res = await fn() } catch (e) { res = { ok: false, sentUnknown: true, error: '送出結果不確定：' + String(e && e.message || e).slice(0, 100) + '——請重新整理看有沒有送出' } } // 例外＝不確定（第二輪 A3）
-  if (res && res.ok) await qPut(key, { st: 'sent', at: nowIso(), h, res: { ok: true, msg: res.msg, mode: res.mode, conv: res.conv } }).catch(() => {})
+  if (res && res.ok && res.queued === false) { /* LINE 已送、紀錄沒存上也沒排上：保留「已送出＋內容」標記（補存排程從這裡補記後改 sent） */ }
+  else if (res && res.ok) await qPut(key, { st: 'sent', at: nowIso(), h, res: { ok: true, msg: res.msg, mode: res.mode, conv: res.conv } }).catch(() => {})
   else if (res && res.sentUnknown) await qPut(key, { st: 'unknown', at: nowIso(), h }).catch(() => {}) // 不確定＝保留標記（同編號不准重送）
   else await qDel(key).catch(() => {}) // 確定沒送出（LINE 4xx、權限、內容錯）＝可以重送
   return res
@@ -477,15 +498,18 @@ async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastTe
   if (!r.ok) return { ok: false, notSent: true, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
   const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
+  { const st = ibStore(); if (st && st.sendKey) await qPut(st.sendKey, { st: 'lineok', at: nowIso(), h: st.sendH, acct, uid, mk, msg, lastText: String(lastText || '').slice(0, 80), by: who.name, mode }).catch(() => {}) } // LINE 已送出：先記下（存檔與補存都失敗時，補存排程從這裡補記；第三輪 A3）
   conv.replyUsed = true; conv.last = { text: String(lastText || '').slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
   if (conv.status === 'new') conv.status = 'open'
   if (!conv.assignee) conv.assignee = who.name
   let ap; try { ap = await ibApply(ck, mk, msg, before, conv) } // 負責人空白才填（不蓋掉同時指派的）
-  catch (e) { // LINE 已經送出、紀錄存不上：紀錄放佇列補存，回「已送出」（不能讓店員以為沒送又送一次）
-    await ibQueueOut(a, uid, String(lastText || ''), who.name, mode, t).catch(() => {})
-    return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee }, queued: true }
+  catch (e) { // LINE 已經送出、紀錄存不上：紀錄放佇列補存，回「已送出」（不能讓店員以為沒送又送一次）；佇列也放不進去＝照實說（送出標記裡有內容，補存排程會補記）
+    const qok = await ibQueueOut(a, uid, String(lastText || ''), who.name, mode, t).catch(() => false)
+    console.log('[inbox] 送出後紀錄存不上', mk, e && e.message, 'queue', qok)
+    return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee }, queued: !!qok, warn: qok ? '已送出，紀錄稍後補上' : '已送出，但紀錄暫時存不上（系統會再補記）' }
   }
   const cv = ap.conv || conv
+  { const st = ibStore(); if (st) st.snaps.set(ck, clone(cv)) } // 同一次請求後面再存這個對話時用最新的（Gemini 第三輪 B）
   return { ok: true, msg, mode, conv: { status: cv.status, assignee: cv.assignee } }
 }
 // 送圖片／檔案（v4.70.49 張良「能上傳檔案或截圖貼上嗎」）：圖片→LINE 圖片訊息（LINE 要抓得到的 https 網址＝私桶簽名一年）；其他檔案 LINE 沒有「檔案訊息」→ 用文字附連結
