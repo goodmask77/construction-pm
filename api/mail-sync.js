@@ -112,6 +112,8 @@ async function abgdCmd(domain, action, args, operator, idem) {
 // SOP（F02＋問題回報 F33）寫入端點：SOP 切新殼後一律 409（GD 側欄已導去新版；舊頁快取還開著的人看到提示）
 // 班表 F15（shift 域＝sp_finance_pm_shift_g）寫入端點：切新殼後一律 409（不分方法：shiftoff／shiftdedup 是 GET 也會寫）
 const SHIFT_WRITE_QS = ['shiftset', 'shiftcolor', 'shiftfill', 'shiftdedup', 'shiftoff']
+// 工時成本試算＋AB 模組班表（shiftplan 域＝sp_finance_pm_labor／sp_finance_pm_abmod）寫入端點：切新殼後一律 409（班表頁已在新殼）
+const SHIFTPLAN_WRITE_QS = ['laborset', 'abmodset']
 const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
@@ -427,6 +429,7 @@ async function syncJoya(daysBack) {
 
 export default async function handler(req, res) {
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
+  if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if ((req.method === 'POST' || (req.query && req.query.sopstamp)) && req.query && SOP_WRITE_QS.some(k => req.query[k]) && !(req.query.sopissue && SOP_WRITE_QS.filter(k => req.query[k]).length === 1 && (() => { try { const b0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); return b0.op === 'pub' } catch (_) { return false } })()) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // sopissue op=pub（GD 首頁「N 筆回報等確認發布」）例外：下面轉新殼
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
@@ -4579,7 +4582,7 @@ export default async function handler(req, res) {
     if (!Array.isArray(bm9.mods)) return res.status(400).json({ ok: false })
     docAm2.mods = bm9.mods.slice(0, 12)
     docAm2.log = [{ by: whoAm2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }, ...(docAm2.log || [])].slice(0, 40)
-    await kvPut('sp_finance_pm_abmod', docAm2, 'AB模組班表(' + whoAm2.name + ')')
+    if (!(await kvPut('sp_finance_pm_abmod', docAm2, 'AB模組班表(' + whoAm2.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true })
   }
   // ── ✅ 違規處理紀錄 v4.37.0（張良「負責人調整確認完才消失 不然一直提醒;處理完進紀錄留存」）：POST ?vioresset=K {token,key,op:done|undo,note} ──
@@ -5187,11 +5190,11 @@ export default async function handler(req, res) {
       const finC = { rent: nf(finIn.rent, 9999999), util: nf(finIn.util, 9999999), misc: nf(finIn.misc, 9999999), days: Math.max(1, Math.min(31, Number(finIn.days) || 26)), food: nf(finIn.food, 99), tax: nf(finIn.tax, 99), pay: nf(finIn.pay, 99), ins: nf(finIn.ins, 99), profit: nf(finIn.profit, 99) }
       const clean = { fin: finC, wage: Math.max(1, Math.min(9999, Number(shIn.wage) || 300)), pct: Math.max(1, Math.min(99, Number(shIn.pct) || 20)), id: shIn.id || 'lb' + Date.now().toString(36), name: String(shIn.name || '方案').slice(0, 20), cols: (Array.isArray(shIn.cols) ? shIn.cols : []).map(c => String(c).trim().slice(0, 12)).filter(Boolean).slice(0, 20), rows: rowsC, by: whoL.name, ts: new Date().toISOString() }
       doc.sheets = [...(doc.sheets || []).filter(x => x.id !== clean.id), clean].slice(-20)
-      await kvPut('sp_finance_pm_labor', doc, '工時成本 ' + clean.name + '(' + whoL.name + ')')
+      if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本 ' + clean.name + '(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
       return res.status(200).json({ ok: true, id: clean.id })
     } else if (bl.op === 'del') {
       doc.sheets = (doc.sheets || []).filter(x => x.id !== bl.id)
-      await kvPut('sp_finance_pm_labor', doc, '工時成本刪方案(' + whoL.name + ')')
+      if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本刪方案(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
       return res.status(200).json({ ok: true })
     } else if (bl.op === 'snap') { // v4.31.6（張良「存檔+版本檔案庫 怕自己或別人動到」）：目前方案拍快照進版本庫，之後自動儲存動不到它
       const shS = (doc.sheets || []).find(x => x.id === bl.id)
@@ -5199,7 +5202,7 @@ export default async function handler(req, res) {
       const ts8 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
       const v9 = { vid: 'lv' + Date.now().toString(36), name: String(bl.name || (shS.name + ' ' + ts8)).slice(0, 40), by: whoL.name, ts: ts8, sheet: JSON.parse(JSON.stringify(shS)) }
       doc.versions = [...(doc.versions || []), v9].slice(-40)
-      await kvPut('sp_finance_pm_labor', doc, '工時成本存檔「' + v9.name + '」(' + whoL.name + ')')
+      if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本存檔「' + v9.name + '」(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
       return res.status(200).json({ ok: true, versions: doc.versions })
     } else if (bl.op === 'restore') { // 還原：快照蓋回同 id 方案（方案被刪了就補回來）
       const v9 = (doc.versions || []).find(x => x.vid === bl.vid)
@@ -5207,15 +5210,15 @@ export default async function handler(req, res) {
       const shR = JSON.parse(JSON.stringify(v9.sheet)); shR.by = whoL.name; shR.ts = new Date().toISOString()
       const i9 = (doc.sheets || []).findIndex(x => x.id === shR.id)
       if (i9 >= 0) doc.sheets[i9] = shR; else doc.sheets = [...(doc.sheets || []), shR]
-      await kvPut('sp_finance_pm_labor', doc, '工時成本還原「' + v9.name + '」(' + whoL.name + ')')
+      if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本還原「' + v9.name + '」(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
       return res.status(200).json({ ok: true, sheets: doc.sheets, versions: doc.versions || [] })
     } else if (bl.op === 'vdel') {
       doc.versions = (doc.versions || []).filter(x => x.vid !== bl.vid)
-      await kvPut('sp_finance_pm_labor', doc, '工時成本刪版本(' + whoL.name + ')')
+      if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本刪版本(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
       return res.status(200).json({ ok: true, versions: doc.versions })
     } else if (bl.op === 'vren') {
       const v9 = (doc.versions || []).find(x => x.vid === bl.vid)
-      if (v9) { v9.name = String(bl.name || v9.name).slice(0, 40); await kvPut('sp_finance_pm_labor', doc, '工時成本版本改名(' + whoL.name + ')') }
+      if (v9) { v9.name = String(bl.name || v9.name).slice(0, 40); if (!(await kvPut('sp_finance_pm_labor', doc, '工時成本版本改名(' + whoL.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED }) }
       return res.status(200).json({ ok: true, versions: doc.versions || [] })
     }
     return res.status(400).json({ ok: false })

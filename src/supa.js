@@ -140,7 +140,7 @@ export async function listSharedIds() {
 
 // 主 App 停用寫入（張良 2026-10-15：主 App 不要了、只搬 GD）：品項成本／定價／隱藏／改名、菜單兩份
 // 這些資料改由 GD（之後是新版 abgd）唯一負責；主 App 只能讀。擋在最底層＝任何按鈕、批次、刪除都寫不進去
-export const RETIRED_KEYS = new Set(['sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_menu', 'sp_finance_pm_menu_assets'])
+export const RETIRED_KEYS = new Set(['sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_menu', 'sp_finance_pm_menu_assets', 'sp_finance_pm_labor'])
 export const RETIRED_MSG = '主 App 已停用這項資料的修改，請到 GD 修改'
 const _retired = (k) => RETIRED_KEYS.has(String(k))
 
