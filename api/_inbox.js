@@ -308,10 +308,12 @@ export async function ibQueue(a, ev, destination, err) {
 }
 export const ibDequeue = (a, ev) => qDel(ibQid(a, ev)).catch(() => false)
 // DD 回覆紀錄存不上（例：對話還沒建好、切換中）：放佇列，補存時用原本時間（固定鍵）
-export async function ibQueueOut(a, uid, text, by, mode, t) {
+export async function ibQueueOut(a, uid, text, by, mode, t, full) { // full＝{mk, msg}：店員送出時保存完整訊息（附件也照原樣補記）
   const key = IBQ + 'out_' + a.key + '_' + String(uid).slice(-12) + '_' + t.toString(36) + djb(String(text))
-  return qPut(key, { kind: 'out', acct: a.key, uid, text: String(text || '').slice(0, 5000), by, mode, t: new Date(t).toISOString(), ms: t, at: nowIso(), tries: 0 }).catch(() => false)
+  return qPut(key, { kind: 'out', acct: a.key, uid, text: String(text || '').slice(0, 5000), by, mode, t: new Date(t).toISOString(), ms: t, at: nowIso(), tries: 0, ...(full && full.msg ? { mk: full.mk, msg: full.msg } : {}) }).catch(() => false)
 }
+// 通知主管（DD 私訊老闆）：送出結果需要人工核對時
+export async function ibAlert(text) { try { const { linePush } = await import('./_onboard.js'); const boss = (process.env.LINE_BOSS_USER || '').trim() || 'Uf7ce4fb9191cd3055247204e0cb6b4fc'; await linePush(boss, String(text).slice(0, 900)) } catch (e) { console.log('[inbox] 通知主管失敗', e && e.message) } }
 export async function ibRetry({ limit = 5 } = {}) { return ibStore() ? _ibRetry({ limit }) : ibAs('收件匣補存', () => _ibRetry({ limit })) } // 包請求情境（對話快照、操作者）
 async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個事件套用過」，同一筆被兩邊同時補存也不會重複
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(IBQ))}*&select=id,data&order=updated_at.asc&limit=${Math.min(500, limit * 4)}`, { headers: H() })
@@ -324,7 +326,8 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
     const a = acctOf(q.acct); if (!a) { await toDead(id, q, '沒有這個帳號'); continue }
     if ((q.tries || 0) >= 30) { await toDead(id, q, '重試 30 次仍失敗：' + (q.err || '')); continue }
     try {
-      if (q.kind === 'out') { const m = await noteOut(a, q.uid, q.text, q.by, q.mode, { t: q.ms }); if (!m) throw new Error('對話還沒建好') }
+      if (q.kind === 'out' && q.msg && q.mk) { const ck = convKey(q.acct, q.uid); const cur = await kvGet(ck); if (!cur) throw new Error('對話還沒建好'); await ibApply(ck, q.mk, q.msg, cur, { ...cur, replyUsed: true, last: { text: String(q.text || '').slice(0, 80), t: q.msg.t, dir: 'out', by: q.by }, lastT: q.msg.t, lastOutT: q.msg.t }) }
+      else if (q.kind === 'out') { const m = await noteOut(a, q.uid, q.text, q.by, q.mode, { t: q.ms }); if (!m) throw new Error('對話還沒建好') }
       else await ingestEvent(a, q.ev, q.destination, { retry: true })
       if (await qDel(id)) ok++; else bad++ // 刪不掉＝下一輪再判斷重複後刪
     } catch (e) { bad++; q.tries = (q.tries || 0) + 1; q.err = String(e && e.message || e).slice(0, 200); await qPut(id, q).catch(() => {}) }
@@ -334,6 +337,11 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
     const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibsend%5C_*&select=id,data,updated_at&order=updated_at.asc&limit=50`, { headers: H() })
     for (const row of (lr.ok ? await lr.json() : [])) {
       let m = null; try { m = JSON.parse(row.data.v) } catch (_) { continue }
+      if (m && (m.st === 'sending' || m.st === 'unknown') && Date.now() - Date.parse(row.updated_at) > 600e3) { // 結果不明超過 10 分鐘：標待核對、通知主管一次；不自動當成已送、不重送（第四輪 A）
+        await qPut(row.id, { ...m, st: 'review', reviewAt: nowIso() }).catch(() => {})
+        await ibAlert(`收件匣：有一則送出結果不確定（${(acctOf(m.acct) || {}).name || m.acct || ''}・${String(m.uid || (m.job || {}).id || '').slice(-6)}）：「${String(m.lastText || (m.job || {}).text || '').slice(0, 40)}」。請到 LINE 官方帳號後台確認客人有沒有收到；系統不會自動重送。`)
+        continue
+      }
       if (!m || m.st !== 'lineok' || Date.now() - Date.parse(row.updated_at) < 60e3) continue
       const a = acctOf(m.acct); if (!a || !m.msg) continue
       const ck = convKey(m.acct, m.uid); const cur = await kvGet(ck); if (!cur) continue
@@ -351,7 +359,7 @@ export async function ibGate() { const kv = await ibKv(); if (kv.mode === 'gd') 
 export async function ibSendOnce(cid, fn, bind, need) { // bind＝{對話, 內容摘要}：同一個編號只認同一則；need＝必須帶編號（新殼頁）
   const c = String(cid || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
   if (!c) { if (need) return { ok: false, error: '缺送出編號，請重新整理再送' }; return fn() }
-  const b0 = bind || {}; const h = crypto.createHash('sha256').update(['v1', String(b0.id || ''), String(b0.text || ''), String(b0.name || ''), String(b0.n || '')].join('\u001f')).digest('hex') // 固定格式＋SHA-256（第三輪 B1）
+  const b0 = bind || {}; const h = crypto.createHash('sha256').update(JSON.stringify(['v2', String(b0.id || ''), String(b0.text || ''), String(b0.name || ''), String(b0.sha || '')])).digest('hex') // 無歧義序列化（JSON 陣列）＋SHA-256；附件綁內容雜湊（第四輪 B）
   const key = 'pm_ibsend_' + c
   const ins = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id: key, data: { v: JSON.stringify({ st: 'sending', at: nowIso(), h, job: { id: b0.id || '', text: String(b0.text || '').slice(0, 5000), name: b0.name || '' } }) }, editor: '收件匣送出', updated_at: nowIso() }) }).catch(() => null)
   if (!ins) return { ok: false, error: '系統暫時連不上，請稍後再送' }
@@ -490,23 +498,28 @@ async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastTe
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
   let mode = fresh ? 'reply' : 'push', r
   const unknown = (x) => !x.ok && (x.status === 0 || x.status >= 500) // 連不上／LINE 伺服器錯＝不確定有沒有送到（第二輪 A3）
+  // 第四輪 A：送 LINE 之前先把固定訊息鍵＋完整內容寫進送出標記（寫不進去＝不送，這時還沒送出，可以安全重試）
+  const t = Date.now(); const mk = msgKey(acct, uid, t); const st0 = ibStore()
+  const base = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, ...msgPatch }
+  if (st0 && st0.sendKey) { const okPre = await qPut(st0.sendKey, { st: 'sending', at: nowIso(), h: st0.sendH, acct, uid, mk, msg: base, lastText: String(lastText || '').slice(0, 80), by: who.name }).catch(() => false); if (!okPre) return { ok: false, notSent: true, error: '系統暫時連不上，還沒送出，請稍後再送' } }
   if (fresh) {
     r = await lineApi(a, '/v2/bot/message/reply', { method: 'POST', body: JSON.stringify({ replyToken: conv.replyToken, messages }) })
     if (!r.ok && !unknown(r)) { mode = 'push'; r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) }) } // reply 憑證過期（4xx）才退 push；不確定時不再推一次
   } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', noQuota: true, body: JSON.stringify({ to: uid, messages }) })
   if (unknown(r)) return { ok: false, sentUnknown: true, error: `送出結果不確定（LINE ${r.status || '連不上'}）——請到 LINE 官方帳號後台確認客人有沒有收到，沒有再送` }
   if (!r.ok) return { ok: false, notSent: true, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
-  const t = Date.now(); const mk = msgKey(acct, uid, t)
-  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
-  { const st = ibStore(); if (st && st.sendKey) await qPut(st.sendKey, { st: 'lineok', at: nowIso(), h: st.sendH, acct, uid, mk, msg, lastText: String(lastText || '').slice(0, 80), by: who.name, mode }).catch(() => {}) } // LINE 已送出：先記下（存檔與補存都失敗時，補存排程從這裡補記；第三輪 A3）
+  const msg = { ...base, mode }
+  let markOk = true
+  if (st0 && st0.sendKey) markOk = await qPut(st0.sendKey, { st: 'lineok', at: nowIso(), h: st0.sendH, acct, uid, mk, msg, lastText: String(lastText || '').slice(0, 80), by: who.name, mode }).catch(() => false) // LINE 已送出：記下（補存排程從這裡補記；第三輪 A3）；失敗不吞（第四輪 A）
   conv.replyUsed = true; conv.last = { text: String(lastText || '').slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
   if (conv.status === 'new') conv.status = 'open'
   if (!conv.assignee) conv.assignee = who.name
   let ap; try { ap = await ibApply(ck, mk, msg, before, conv) } // 負責人空白才填（不蓋掉同時指派的）
   catch (e) { // LINE 已經送出、紀錄存不上：紀錄放佇列補存，回「已送出」（不能讓店員以為沒送又送一次）；佇列也放不進去＝照實說（送出標記裡有內容，補存排程會補記）
-    const qok = await ibQueueOut(a, uid, String(lastText || ''), who.name, mode, t).catch(() => false)
-    console.log('[inbox] 送出後紀錄存不上', mk, e && e.message, 'queue', qok)
-    return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee }, queued: !!qok, warn: qok ? '已送出，紀錄稍後補上' : '已送出，但紀錄暫時存不上（系統會再補記）' }
+    const qok = await ibQueueOut(a, uid, String(lastText || ''), who.name, mode, t, { mk, msg }).catch(() => false) // 佇列存完整訊息（附件也照原樣補記）
+    console.log('[inbox] 送出後紀錄存不上', mk, e && e.message, 'queue', qok, 'mark', markOk)
+    if (!qok && !markOk) await ibAlert(`收件匣：「${String(lastText || '').slice(0, 40)}」已送給客人，但紀錄存不上（${a.name}・${uid.slice(-6)}）。請到 LINE 官方帳號後台核對；系統不會重送。`)
+    return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee }, queued: !!qok, warn: qok ? '已送出，紀錄稍後補上' : markOk ? '已送出，但紀錄暫時存不上（系統會再補記）' : '已送出，但紀錄存不上，已通知主管核對' }
   }
   const cv = ap.conv || conv
   { const st = ibStore(); if (st) st.snaps.set(ck, clone(cv)) } // 同一次請求後面再存這個對話時用最新的（Gemini 第三輪 B）
