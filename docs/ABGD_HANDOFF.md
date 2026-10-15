@@ -23,10 +23,11 @@
 | 銷售設定（F29 人改四份） | ✅ 10-15 17:08 已切（關卡 3：OpenAI 七輪、Gemini 兩輪、Claude 一輪；GD 真實入口端到端；17:16 拆閘門） | posmeta（pos_hidden／alias／prices／costs；入口仍在 GD，經命令橋） |
 | 聊天室 F22 | ✅ 10-15 18:27 已切（關卡 3：OpenAI 九輪、Gemini 六輪、Claude 一輪；當班兩次回切演練；epoch 3；19:50 拆閘門、30 分鐘監看乾淨） | chat（pm_chat_rooms、pm_chatm_、pm_chat_read_） |
 | 錯誤日誌（App 錯誤自動回報，F33 下半） | ✅ 10-15 20:17 已切（關卡 3：OpenAI 兩輪、Gemini 三輪、Claude 一輪；當班＋回切演練；epoch 2；20:23 拆閘門） | issues（只剩 sp_finance_pm_errlog；pm_issues 改歸 dd 域；沒有入口，GD ?errlog 經命令橋） |
-| 工時成本試算＋AB 模組班表（F15 第 B 段） | 🟡 新殼 v0.4.102～103 已上（影子期唯讀）、對帳 0、P95 0.36／0.45 秒；關卡 3 第一輪審查中 | shiftplan（sp_finance_pm_labor、sp_finance_pm_abmod；主 App 已停寫 labor） |
+| 工時成本試算＋AB 模組班表（F15 第 B 段） | ✅ 10-15 21:1x 已切（關卡 3：OpenAI 五輪、Gemini 六輪、Claude 一輪；當班 19 項含 GD 下游、主 App／DD 欄位不變、回切演練；epoch 2；拆閘門後 30 分鐘監看乾淨）。**班表回切前要先回切 shiftplan**（畫面只掛在新殼班表頁） | shiftplan（sp_finance_pm_labor、sp_finance_pm_abmod；主 App 已停寫 labor） |
+| 法規薪資 F41 | 🟡 新殼 v0.4.110～116 已上（影子期）、paycmp 正式 8～10 月 11 項一致、P95 0.46 秒；關卡 3 第二輪（OpenAI 剩 A7 當班實測）；入口 pay→/finance/payroll（GD 側欄沒有這分頁：舊頁按鈕與違規通知連結先轉新版） | payroll（只 sp_finance_pm_payrates、sp_finance_pm_vio_res） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.103（main）、GD v4.71.102（main，已部署）。
+版本：新殼 v0.4.116（main）、GD v4.71.105（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
