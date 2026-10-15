@@ -122,7 +122,7 @@ async function _setStatus ({ who, id, status }) {
   else return { ok: false, error: '不認識的狀態' }
   log(o, who.name, C.STATUS_LABEL[o.status] || status)
   await putOrder(o, '團體訂餐(' + who.name + ')')
-  if (earn) { let msg; try { const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); msg = r && r.n ? `會員入點：${r.n} 人共 ${r.pts} 點` : '' } catch (e) { msg = '會員入點失敗：' + String(e.message || e).slice(0, 60) } if (msg) { try { const bad = /失敗/.test(msg); const o2 = await commit(o.id, (x) => { log(x, '系統', msg); if (bad) x.earnErr = { at: nowIso(), msg }; else delete x.earnErr }, '團體訂餐(入點)'); return { ok: true, order: o2, totals: C.totals(menu, o2) } } catch (e) { console.error('[grporder] 入點結果留痕沒存進去', o.id, msg) } } }
+  if (earn) { let msg = '', bad = false; try { const MB = await import('./_member.js'); const r = await MB.earnFromOrder(o); msg = r && r.n ? `會員入點：${r.n} 人共 ${r.pts} 點` : '' } catch (e) { bad = true; msg = '會員入點失敗：' + String(e.message || e).slice(0, 60) } { try { const o2 = await commit(o.id, (x) => { if (!msg && !bad && !x.earnErr) return false; if (msg) log(x, '系統', msg); if (bad) x.earnErr = { at: nowIso(), msg }; else delete x.earnErr }, '團體訂餐(入點)'); return { ok: true, order: o2, totals: C.totals(menu, o2) } } catch (e) { console.error('[grporder] 入點結果留痕沒存進去', o.id, msg) } } }
   return { ok: true, order: o, totals: C.totals(menu, o) }
 }
 // ── 發連結給客人（走收件匣 sendOut：50 秒內 reply 免費，否則 push）──
@@ -213,7 +213,7 @@ async function markPaid (id, { amount, method, ref, env, extra }) { // v4.71.132
     if (paidRef(x, ref)) return false // 入帳過的交易號都記在 pay.txIds（不只最後一筆；關卡 3 第一輪 OpenAI A）
     const t = C.totals(menu, x)
     const paid = Math.round(Number((x.pay || {}).amount) || 0) + amount; const total = x.frozen && x.lockedTotal != null ? x.lockedTotal : t.total
-    x.pay = { ...(x.pay || {}), status: paid >= Math.round(total) ? '已付清' : '已付訂金', method, amount: paid, lastAmt: amount, paidAt: nowIso(), txId: ref, env, pending: null, ...(extra || {}), txIds: [...new Set([...((x.pay || {}).txIds || []), ...((x.pay || {}).txId ? [x.pay.txId] : []), ref])].slice(-50) }
+    x.pay = { ...(x.pay || {}), status: paid >= Math.round(total) ? '已付清' : '已付訂金', method, amount: paid, lastAmt: amount, paidAt: nowIso(), txId: ref, env, pending: null, ...(extra || {}), txIds: [...new Set([...((x.pay || {}).txIds || []), ...((x.pay || {}).txId ? [x.pay.txId] : []), ref])] } // 全部保留（不截斷；關卡 3 第二輪 OpenAI A）
     delete x.pay.tx; delete x.pay.ecp
     log(x, '客人', `${method} 付款 ${amount} 元（${env}）`); did = true
   }, '團體訂餐(付款)')
@@ -336,11 +336,13 @@ async function _payConfirm ({ code, transactionId }) {
   if (transactionId && paidRef(o, transactionId)) return { ok: true, dup: true, amount: (o.pay || {}).lastAmt || (o.pay || {}).amount || 0, status: (o.pay || {}).status } // 導回頁被重新整理：已確認過就直接回成功，不再打 LINE Pay
   if (!tx || !transactionId || tx.id !== transactionId) return { ok: false, error: '付款資料對不上，請回點餐單重新付款' }
   { const g = await goGate(); if (g) return { ...gateOut(g), error: '系統維護中（幾分鐘），付款還沒扣，請稍後重新整理這一頁完成付款' } }
-  const L = await LP(); let r = await L.confirm({ transactionId, amount: tx.amount })
-  if (!r.ok && r.code === '1172') { // 已確認過（上次扣款成功但沒存進去、或兩個導回同時到）：向 LINE Pay 查狀態，確定「付款已完成」才補入帳（關卡 3 第一輪 OpenAI／Gemini A）
+  const L = await LP(); let r
+  try { r = await L.confirm({ transactionId, amount: tx.amount }) } catch (e) { r = { ok: false, code: 'unknown', error: String(e && e.message || e).slice(0, 80) } } // 確認請求逾時／斷線＝扣款結果不明 → 跟 1172 一樣先查狀態（關卡 3 第二輪 OpenAI A）
+  if (!r.ok && (r.code === '1172' || r.code === 'unknown')) { // 已確認過（上次扣款成功但沒存進去、或兩個導回同時到）：向 LINE Pay 查狀態，確定「付款已完成」才補入帳（關卡 3 第一輪 OpenAI／Gemini A）
     const st = await L.checkStatus({ transactionId }).catch((e) => ({ ok: false, error: String(e && e.message || e) }))
     if (st.ok && st.code === '0123') r = { ok: true, info: { payType: '' }, recovered: true }
-    else { const why = st.ok ? `LINE Pay 狀態 ${st.code}` : st.error; try { await commit(o.id, (x) => { x.pay = { ...(x.pay || {}), review: { tx: transactionId, at: nowIso(), why } }; log(x, '系統', `LINE Pay 已確認過但查不到完成狀態（${why}），待人工核對`) }, '團體訂餐(付款)') } catch (_) {} notifyStaff(o, { title: '團體訂餐：LINE Pay 付款要人工核對', body: `${o.company || o.custName}｜交易號 ${transactionId}｜${tx.amount} 元｜${why}` }).catch(() => {}); return { ok: false, error: '付款狀態需要店家核對，店家會盡快跟你確認（不用重複付款）' } }
+    else if (r.code === 'unknown' && st.ok && st.code === '0110') return { ok: false, error: '付款確認沒有完成（尚未扣款），請重新整理這一頁再試' } // 查得到「已授權、還沒確認」＝確認沒成功，可以安全再確認
+    else { const why = st.ok ? `LINE Pay 狀態 ${st.code}` : st.error; try { await commit(o.id, (x) => { x.pay = { ...(x.pay || {}), review: { tx: transactionId, at: nowIso(), why } }; log(x, '系統', `LINE Pay 付款結果不明（${why}），待人工核對`) }, '團體訂餐(付款)') } catch (e) { console.error('[grporder] 待核對標記沒存進去（已通知店家）', o.id, transactionId, String(e && e.message || e).slice(0, 80)) } notifyStaff(o, { title: '團體訂餐：LINE Pay 付款要人工核對', body: `${o.company || o.custName}｜交易號 ${transactionId}｜${tx.amount} 元｜${why}` }).catch(() => {}); return { ok: false, error: '付款狀態需要店家核對，店家會盡快跟你確認（不用重複付款）' } }
   }
   if (!r.ok) { await commit(o.id, (x) => { log(x, '系統', `LINE Pay 確認失敗：${r.error}`) }, '團體訂餐(付款)'); return r }
   let o2; try { o2 = await markPaid(o.id, { amount: tx.amount, method: 'LINE Pay', ref: transactionId, env: L.isProd() ? '正式' : 'LINE Pay 沙盒', extra: { orderNo: tx.orderNo, payType: r.info.payType || '' } }) // v4.71.3 與綠界共用
