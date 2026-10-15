@@ -64,7 +64,7 @@ export async function awardPtsStrict(person, act, ref, atIso) { // atIso：行�
     const cap = Number(rule.cap) || 0
     if (cap > 0 && doc.list.filter(e => e.person === person && e.act === act && e.date === dnow).length >= cap) return { write: false, value: { awarded: false, reason: 'cap' } }
     doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(t0 + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '', ...(atIso ? { late: true } : {}) })
-    if (doc.list.length > 40000) { const keep = (e) => e.act === 'redeem' || e.act === 'adjust'; let over = doc.list.length - 40000; const cut = []; doc.list = doc.list.filter(e => { if (over > 0 && !keep(e)) { over--; cut.push(e); return false } return true }); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真；兌換扣點、主管加扣分永不折（去重憑證；關卡 3 積分第二輪 A5）
+    if (doc.list.length > 40000) { const old30 = new Date(Date.now() + 8 * 3600e3 - 30 * 86400e3).toISOString().slice(0, 10); const keep = (e) => e.act === 'redeem' || e.act === 'adjust' || !(String(e.date || '') < old30); let over = doc.list.length - 40000; const cut = []; doc.list = doc.list.filter(e => { if (over > 0 && !keep(e)) { over--; cut.push(e); return false } return true }); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真；兌換扣點、主管加扣分永不折，30 天內的紀錄也不折（補分佇列只保留 7 天，重放時去重憑證與每日計數一定還在；關卡 3 積分第二、三輪 A5／A6）
     return { write: true, value: { awarded: true, reason: 'ok' } }
   }, '行為分(' + person + ')', person) // 操作者＝得分的人（新殼命令橋留痕、驗收閘門看得到是誰）
 }
