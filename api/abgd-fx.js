@@ -405,6 +405,14 @@ const ACTIONS = {
     }
     return { ok: true, sent: sent9 }
   },
+  async mailhub_op(a) { // 信箱中樞（新殼畫面 → 這裡執行；IMAP、密碼加解密只在 GD）：新殼已驗身分與主管資格；讀寫依資料歸屬走 GD 或新殼（_mailhubkv.js）
+    const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
+    if (!who.name) return { ok: false, error: '缺操作者' }
+    const { mailhubDispatch } = await import('./_mailhubop.js'); const { mhKv } = await import('./_mailhubkv.js')
+    const kv = await mhKv(kvGet, kvSet, who.name)
+    try { return await mailhubDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || ''), q: a.q || {}, body: a.body || {}, who, kvGet: kv.kvGet, kvPut: kv.kvPut }) }
+    catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 300) } }
+  },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
@@ -463,7 +471,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen'
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

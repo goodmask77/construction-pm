@@ -5684,7 +5684,7 @@ export default async function handler(req, res) {
       const mkM = (process.env.MENU_PROBE_KEY || '').trim(), ckM = (process.env.CRON_SECRET || '').trim()
       const kM = String(req.query.mailhubrun)
       if (!((mkM && kM === mkM) || (ckM && kM === ckM))) return res.status(403).json({ ok: false })
-      try { return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' } })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+      try { const whoR = { name: req.query.by ? String(req.query.by).slice(0, 20) : '每日自動' }; const { mhKv } = await import('./_mailhubkv.js'); const kvR = await mhKv(kvGet, kvPut, whoR.name); return res.status(200).json(await MH.applyAll({ kvGet: kvR.kvGet, kvPut: kvR.kvPut, days: +req.query.days || 7, dry: req.query.dry === '1', who: whoR })) } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
     }
     const okM = (process.env.OPS_BOARD_KEY || '').trim()
     if (!okM || String(req.query.mailhub) !== okM) return res.status(403).json({ ok: false })
@@ -5698,27 +5698,11 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store')
     const opM = String(req.method === 'POST' ? (bM.op || '') : (req.query.op || 'list'))
     try {
-      if (req.method !== 'POST') {
-        if (opM === 'list') return res.status(200).json({ ...(await MH.overview({ kvGet })), me: { name: whoM.name } })
-        if (opM === 'scan') return res.status(200).json(await MH.scanBox({ kvGet, kvPut, id: String(req.query.box || ''), days: Math.min(60, +req.query.days || 7), who: whoM }))
-        if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: String(req.query.rule || ''), boxId: String(req.query.box || '') || null }))
-        if (opM === 'scanget') return res.status(200).json({ ok: true, scan: await MH.loadScan(kvGet, String(req.query.box || '')) })
-        return res.status(400).json({ ok: false, error: '不認得的操作' })
-      }
-      if (opM === 'boxadd') return res.status(200).json(await MH.boxAdd({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'boxset') return res.status(200).json(await MH.boxSet({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'boxdel') return res.status(200).json(await MH.boxDel({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'boxtest') { const hubT = await MH.loadHub(kvGet); const bxT = MH.boxById(hubT, String(bM.id || '')); if (!bxT) return res.status(200).json({ ok: false, error: '找不到這個信箱' }); const t = await MH.testBox(bxT); return res.status(200).json(t) }
-      if (opM === 'ruleadd') return res.status(200).json(await MH.ruleAdd({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'ruleset') return res.status(200).json(await MH.ruleSet({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'ruledel') return res.status(200).json(await MH.ruleDel({ kvGet, kvPut, body: bM, who: whoM }))
-      if (opM === 'preview') return res.status(200).json(await MH.previewRule({ kvGet, ruleId: bM.id, rule: bM.rule, boxId: bM.box || null }))
-      if (opM === 'apply') {
-        const daysA = Math.min(60, +bM.days || 7), idsA = Array.isArray(bM.ids) && bM.ids.length ? bM.ids : null
-        if (!bM.box || bM.box === '*') return res.status(200).json(await MH.applyAll({ kvGet, kvPut, days: daysA, dry: !!bM.dry, who: whoM }))
-        return res.status(200).json(await MH.applyBox({ kvGet, kvPut, id: String(bM.box), days: daysA, dry: !!bM.dry, onlyIds: idsA, who: whoM, requireConfirmed: !idsA })) // 手動指定規則＝人在現場按＝不必先勾「已確認」
-      }
-      return res.status(400).json({ ok: false, error: '不認得的操作' })
+      // v4.71.108 操作分派抽到 _mailhubop.js（新殼經代發口共用）；讀寫依資料歸屬走 GD 或新殼（_mailhubkv.js）
+      const { mailhubDispatch } = await import('./_mailhubop.js'); const { mhKv } = await import('./_mailhubkv.js')
+      const kvM = await mhKv(kvGet, kvPut, whoM.name)
+      const rM = await mailhubDispatch({ method: req.method === 'POST' ? 'POST' : 'GET', op: opM, q: req.query, body: bM, who: whoM, kvGet: kvM.kvGet, kvPut: kvM.kvPut })
+      return res.status(rM && rM.ok === false && rM.error === '不認得的操作' ? 400 : 200).json(rM)
     } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
   }
   // ── 🥬 菜商報價比價（v4.70.67，api/_vegquote.js）──
