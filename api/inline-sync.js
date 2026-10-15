@@ -556,7 +556,7 @@ export default async function handler(req, res) {
         const title = String(b.title || '').replace(/\*\*/g, '').slice(0, 80); if (!title) return res.status(400).json({ ok: false, error: '缺標題' })
         const owner = String(b.owner || '').slice(0, 30) || undefined, due = /^\d{4}-\d{2}-\d{2}$/.test(b.due || '') ? b.due : ''
         const id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), now = new Date().toISOString()
-        await kvPut('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')')
+        { const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: w.name, label: '任務' }); await kvT.kvPut('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')') } // v4.71.115 依資料歸屬：任務域搬到新殼後走命令橋
         try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvPut('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }, ...arr].slice(0, 200), '/prep inline') } catch (_) {}
         await announceChanged()
         st.keys[key] = { st: 'task', by: w.name, at: now, tid: id, owner }

@@ -297,13 +297,16 @@ export async function handleDDCards(ev, operators) {
       const pfx = TK_PFX[b]
       if (!pfx || !c) { await reply(txt('按鈕資料對不上，等下一次提醒再操作。')); return true }
       const key = pfx + c
-      const rec = await kvGet(key)
+      // v4.71.115 團隊任務依資料歸屬讀寫（任務域搬到新殼後走 gdread＋命令橋；_abgdkv.js）；其他空間照舊
+      const kvT = b === '團' ? await (await import('./_abgdkv.js')).abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: operators[uid]?.name || '操作者', label: '任務' }) : null
+      const kget = kvT ? kvT.kvGet : kvGet, kset = kvT ? kvT.kvPut : kvSet, kdel = kvT ? kvT.kvDel : delRow
+      const rec = await kget(key)
       // 工程空間可能還是舊版整包 pm_tasks —— 兩種都支援
       let legacy = null, legIdx = -1
       if (!rec && b === '工') { legacy = await kvGet('pm_tasks'); legIdx = Array.isArray(legacy) ? legacy.findIndex(t => t && t.id === c) : -1 }
       const task = rec || (legIdx >= 0 ? legacy[legIdx] : null)
       if (!task) { await reply(txt('找不到這件任務（可能已經被刪掉或銷掉了）。')); return true }
-      const save = async (patch) => { const nx = { ...task, ...patch, updatedAt: new Date().toISOString() }; if (rec) await kvSet(key, nx); else { legacy[legIdx] = nx; await kvSet('pm_tasks', legacy) } }
+      const save = async (patch) => { if (rec) { const run = async () => { const cur = (await kget(key)) || task; await kset(key, { ...cur, ...patch, updatedAt: new Date().toISOString() }) }; await (kvT ? kvT.retry(run) : run()) } else { legacy[legIdx] = { ...task, ...patch, updatedAt: new Date().toISOString() }; await kvSet('pm_tasks', legacy) } } // 讀最新再合併（不蓋掉別人剛改的）
       const showT = `「${task.title}」（${TK_SP[b]}${task.due ? '｜原截止 ' + task.due : ''}）`
       // 操作留痕到該空間的活動紀錄（App 活動面板看得到；與 D哥 動作引擎同一格式）
       const act = async (label, detail) => { try { const akey = b === '工' ? 'pm_activity' : pfx.replace('pm_task_', 'pm_activity'); const cur = await kvGet(akey); const arr = Array.isArray(cur) ? cur : []; await kvSet(akey, [{ ts: new Date().toISOString(), user: (operators[uid]?.name || '操作者') + '(任務按鈕)', action: label, detail }, ...arr].slice(0, 200)) } catch (_) {} }
@@ -311,13 +314,13 @@ export async function handleDDCards(ev, operators) {
       if (a === 'd1') { const base = task.due && task.due >= todayTW() ? task.due : todayTW(); const nd = addDays(base, 1); await save({ due: nd }); await act('修改', `按鈕延期任務${showT}→${nd}`); await reply(txt(`⏭ 延好了：${showT}\n新截止日：${nd}`)); return true }
       if (a === 'pick') { const nd = ev.postback?.params?.date; if (!/^\d{4}-\d{2}-\d{2}$/.test(nd || '')) { await reply(txt('沒收到日期，再按一次「📅 改日期」選一下。')); return true } await save({ due: nd }); await act('修改', `按鈕改期任務${showT}→${nd}`); await reply(txt(`📅 改好了：${showT}\n新截止日：${nd}`)); return true }
       if (a === 'del') { await reply(flex('確定要取消這件任務？', bubble('確定要取消（刪除）？', `${String(task.title).slice(0, 60)}（${TK_SP[b]}）— 刪了 App 也會移除、不再提醒`, [btn('🗑 確定刪除', `tk|del2|${b}|${c}`, `確定刪除 ${String(task.title).slice(0, 12)}`), btn('↩️ 留著好了', `tk|keep|${b}|${c}`, '留著')], '#B42318'))); return true }
-      if (a === 'del2') { if (rec) await delRow(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
+      if (a === 'del2') { if (rec) await kdel(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
       if (a === 'keep') { await reply(txt(`好，${showT} 留著，我繼續追 💪`)); return true }
       // ── 快速設定：標超急 / 選分類（跳大項按鈕）/ 設負責人（跳夥伴按鈕）──
       if (a === 'urg') { await save({ priority: 'urgent' }); await act('修改', `按鈕標超急${showT}`); await reply(txt(`🔥 標好超急：${showT}\n每天早上簡報會置頂追這件。`)); return true }
       if (a === 'cat' || a === 'cat2') {
         const dkey = b === '工' ? 'pm_data' : pfx.replace('pm_task_', 'pm_data')
-        const cats = await kvGet(dkey)
+        const cats = await kget(dkey)
         const list = Array.isArray(cats) ? cats : []
         if (a === 'cat') {
           if (!list.length) { await reply(txt(`${TK_SP[b]}空間還沒有大項分類，先跟我說「在${TK_SP[b]}建大項 XX」。`)); return true }
