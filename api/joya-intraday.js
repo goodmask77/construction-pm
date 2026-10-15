@@ -196,7 +196,8 @@ export default async function handler(req, res) {
   try {
     const tpe2 = new Date(Date.now() + 8 * 3600e3)
     const wd2 = tpe2.getUTCDay(), todayInv = tpe2.toISOString().slice(0, 10)
-    if (wd2 >= 1 && wd2 <= 5 && hm >= '11:00' && hm < '11:20') {
+    const { abgdOwnerOf: ownInv } = await import('./mail-sync.js')
+    if (wd2 >= 1 && wd2 <= 5 && hm >= '11:00' && hm < '11:20' && (await ownInv('sp_finance_pm_inv')) === 'gd') { // abgd 搬家（F05）：盤點切新殼後低水位提醒改新殼排程 /api/ops/cron/inv-low
       const invDoc = (await kvGet('sp_finance_pm_inv')) || {}
       invDoc.notified = invDoc.notified || {}
       if (!invDoc.notified[todayInv]) {
@@ -217,9 +218,9 @@ export default async function handler(req, res) {
               if (pr2.ok) sent2 = true
             }
             try { if (await wpPush(null, { title: '📉 庫存低水位', body: lows.map(x => x.name).join('、'), url: '/prep' })) sent2 = true } catch (_) {}
-            if (sent2) { invDoc.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', invDoc, '低水位提醒') } // 只留今天鍵，一天一次
+            if (sent2) { { const fresh = (await kvGet('sp_finance_pm_inv')) || {}; fresh.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', fresh, '低水位提醒') } } // 只留今天鍵，一天一次
           }
-        } else { invDoc.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', invDoc, '低水位檢查(無警報)') }
+        } else { { const fresh = (await kvGet('sp_finance_pm_inv')) || {}; fresh.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', fresh, '低水位檢查(無警報)') } }
       }
     }
   } catch (e) { console.log('inv check err', e?.message) }

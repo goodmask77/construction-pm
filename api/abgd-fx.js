@@ -323,6 +323,30 @@ const ACTIONS = {
     if (!ok) return { ok: false, retry: true }
     try { await logPush(po.lineUserId, 1, '任務指派通知') } catch (_) {} return { ok: true, sent: true }
   },
+  async buy_group(a) { // 採購需求 → DD 自動訊息 buy 設定的群（原 ?buyadd，文字照抄；abgd 盤點／採購 F05～07）
+    if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
+    const cfgB = await ddGet('buy')
+    if (!TK() || !cfgB.on) return { ok: true, skipped: true }
+    const it = a.it || {}
+    const gidB = await ddGroupGid(cfgB.group)
+    const mem = await groupMembers(gidB)
+    const media = Array.isArray(it.media) ? it.media : []
+    const ok = await linePush(gidB, [{ type: 'text', text: ddFill(cfgB.text, { content: it.text || '（見附件）', by: it.by, url: (it.url ? '\n🔗 ' + it.url : '') + (media.length ? `・附${media.length}圖` : '') }) + await quotaFoot(mem) }], 'buy-add:' + (it.id || '') + ':' + gidB)
+    return ok ? { ok: true, sent: true } : { ok: false, retry: true }
+  },
+  async low_stock(a) { // 盤點／包材低水位 → DD 自動訊息 lowStock 群＋全員推播（原 joya-intraday 每日 11:00 場次，文字照抄）
+    if (a.ts && Date.now() - Date.parse(a.ts) > 12 * 3600e3) return { ok: true, skipped: 'expired' } // 當天的提醒，隔太久就不發
+    const cfgLS = await ddGet('lowStock')
+    if (!cfgLS.on) return { ok: true, skipped: true }
+    let sent = false
+    if (TK()) {
+      const gidLS = await ddGroupGid(cfgLS.group)
+      const mem = await groupMembers(gidLS)
+      if (await linePush(gidLS, [{ type: 'text', text: ddFill(cfgLS.text, { list: String(a.list || '') }) + await quotaFoot(mem) }], 'low-stock:' + (a.date || '') + ':' + gidLS)) sent = true
+    }
+    try { if (await wpPush(null, { title: '📉 庫存低水位', body: String(a.names || ''), url: '/prep' })) sent = true } catch (_) {}
+    return sent ? { ok: true, sent: true } : { ok: false, retry: true }
+  },
   async meet_nudge_group(a) { // 3 次沒簽→大群點名（DD 自動訊息 meet_nudge）
     const cfg = await ddGet('meet_nudge')
     if (!cfg.on || !TK()) return { ok: true, skipped: true }

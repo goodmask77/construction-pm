@@ -3557,6 +3557,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.invset) { // 品項增改刪：{kind, op:'save'|'del', item}
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.invset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_inv')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F05～07 盤點／包材／採購）：切新殼後舊入口不寫
     let bn = {}
     try { bn = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoN = await permWho(bn.token, (bn.kind === 'pack' ? 'pack' : 'food'))
@@ -3585,6 +3586,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.invcount) { // 盤點：{kind, id, qty}
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.invcount) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_inv')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F05～07 盤點／包材／採購）：切新殼後舊入口不寫
     let bc = {}
     try { bc = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoC = await permWho(bc.token, (bc.kind === 'pack' ? 'pack' : 'food'))
@@ -6268,6 +6270,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.buyadd) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.buyadd) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_buy')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F05～07 盤點／包材／採購）：切新殼後舊入口不寫
     let bb = {}
     try { bb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     if (!(bb.text || '').trim() && !(bb.media || []).length) return res.status(400).json({ ok: false, error: '至少寫要買什麼' })
@@ -6288,6 +6291,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.buyop) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.buyop) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_buy')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F05～07 盤點／包材／採購）：切新殼後舊入口不寫
     let bo = {}
     try { bo = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoO = await permWho(bo.token, 'buy') // v4.34.0 權限表「採購 編」生效
