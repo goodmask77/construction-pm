@@ -22,7 +22,7 @@ export async function inboxDispatch({ method, op: opI, q = {}, body: bodyI = {},
       }
       if (['send', 'sendfile', 'connect'].includes(opI)) { const g = await IB.ibGate(); if (g) return ({ status: 409, ok: false, error: g, code: 'smoke' }) } // v4.71.122 對外動作前先問切換驗收閘門（關卡 3 inbox 第一輪 A5）
       if (opI === 'send') return await IB.ibSendOnce(bodyI.cid, () => IB.sendOut({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), text: bodyI.text }), { id: String(bodyI.id || ''), text: String(bodyI.text || '') }, fromShell) // cid：同一次送出只送一次；綁對話＋內容
-      if (opI === 'sendfile') return await IB.ibSendOnce(bodyI.cid, () => IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }), { id: String(bodyI.id || ''), name: String(bodyI.name || ''), n: String(bodyI.dataUrl || '').length }, fromShell)
+      if (opI === 'sendfile') return await IB.ibSendOnce(bodyI.cid, () => IB.sendMedia({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), dataUrl: bodyI.dataUrl, name: bodyI.name }), { id: String(bodyI.id || ''), name: String(bodyI.name || ''), sha: (await import('crypto')).createHash('sha256').update(String(bodyI.dataUrl || '')).digest('hex') }, fromShell)
       if (opI === 'ai') return (await IB.inboxAi({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), q: bodyI.q, hist: bodyI.hist })) // v4.71.11 收件匣問 AI
       if (opI === 'import') return (await IB.importChat({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || ''), csv: bodyI.csv, dry: !!bodyI.dry })) // v4.71.20 匯入舊帳號聊天記錄 CSV
       if (opI === 'cust') return (await IB.inboxCust({ who: whoI, mgr: mgrI, cfg: cfgI, id: String(bodyI.id || '') })) // v4.71.12 客戶資料側欄
