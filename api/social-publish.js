@@ -2,7 +2,7 @@
 // 規則：status='approved' 且（無排程時間 或 排程時間已到）→ 發到貼文指定的目的地 dests
 // dests 格式：['fb:<pageId>', 'ig:<igUserId>']。FB 有圖走 /photos、純文字走 /feed；IG 兩步驟(建container→輪詢→publish)，IG 一定要有圖
 // 安全：人工核可才會到 approved（審核即人工閘門）；DRY_RUN=true 只記 log 不真發
-import { getPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady } from './_social.js'
+import { getPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady, oauthPending } from './_social.js'
 import { socTx, socGate } from './_socialkv.js'
 const P_KEY = 'sp_finance_pm_social_posts'
 
@@ -58,6 +58,7 @@ export default async function handler(req, res) {
   try {
     if (!metaReady()) return res.status(200).json({ ok: false, skipped: '未設 META env' })
     { const g = await socGate(); if (g) return res.status(200).json({ ok: true, skipped: '驗收閘門：' + g }) } // 切換驗收期間不發（下一輪再看）
+    { const op0 = await oauthPending(); if (op0) return res.status(200).json({ ok: true, skipped: op0 }) } // 授權沒做完不發（第七輪 A2）
     const doc = await getPosts(); const now = Date.now()
     const due = (doc.list || []).filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now)) // 沒排程時間＝核准後立即發（原設計）；時間格式壞掉＝NaN＝不發
     if (!due.length) return res.status(200).json({ ok: true, published: 0 })

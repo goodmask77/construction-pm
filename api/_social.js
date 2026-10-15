@@ -29,6 +29,8 @@ export async function fbPageToken(pageId) {
   if (pageId) return t[pageId] || ''
   return Object.values(t)[0] || (s.facebook && s.facebook.pageToken) || ''
 }
+// 授權是否做完（第七輪 A2）：帳號與權杖兩份文件的授權世代不同＝某次授權只寫了一份（中斷），發文前擋下
+export async function oauthPending() { const [a, s] = await Promise.all([getAccounts(), getSecret()]); const ga = Number(a && a._oauthGen) || 0, gs = Number(s && s._oauthGen) || 0; return ga !== gs ? '粉專授權還沒做完（帳號與權杖不是同一次授權），先不發——請重新整理「連接 Facebook」那一頁或重新連接' : null }
 export async function fbPages() { const a = await getAccounts(); return (a.facebook && a.facebook.pages) || {} }
 
 // Graph API：GET（查詢）／POST（發文）。錯誤統一丟 Error 帶 .code（190=token失效、4/17/32/613=rate limit）
