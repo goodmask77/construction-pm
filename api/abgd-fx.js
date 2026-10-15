@@ -10,6 +10,7 @@ import { wpPush, wpPushUids, prepLink } from './_webpush.js'
 import { awardPtsStrict } from './_points.js'
 import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
 import { aiCall } from './_ai.js'
+const isTestErr = it => /^cc-/i.test(String(it.page || '')) || /^v?test$/i.test(String(it.ver || '')) // 驗收測試的錯誤回報不通知人
 
 const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 // 冪等：每個事件（含逐收件人的子事件）一個鍵 pm_abgd_fxk_<sha1>，用「insert 不覆寫」原子佔位（pm_abgd_ 前綴不屬於任何資料域）
@@ -345,6 +346,7 @@ const ACTIONS = {
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
     const it = a.it || {}
+    if (isTestErr(it)) return { ok: true, skipped: 'test' } // 驗收測試（頁面 cc- 開頭或版本 test）只記日誌不私訊（張良 10-15）
     const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
     const ppl = ((rosterE || {}).people || []) // 同原 ?errlog：不另外過濾在職（關卡 3 issues 第一輪獨立 Claude B2）
     const to = (((defE || {}).ground || {}).approvers || ['張良瑋']).map(an => ppl.find(p2 => p2 && p2.name === an && p2.lineUserId)).filter(Boolean)
