@@ -322,10 +322,12 @@ async function bossPush(id, text) { // 回 true＝LINE 確定收下（2xx，或 
   catch (e) { console.log('[inbox] 通知主管失敗', e && e.message); return false }
 }
 // 建通知工作（只新增）：回 true＝工作已存在（這次建的或之前建過）
-async function noteCreate(id, text) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), at: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !!(r && (r.ok || r.status === 409)) }
-const noteId = (key) => 'pm_ibnote_' + String(key).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60)
-export async function ibAlert(key, text) { // 立即通知：先建工作、再送（帶重試鍵）；回 true＝確定送出
-  const id = noteId(key); const made = await noteCreate(id, text)
+async function noteCreate(id, text, key) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), key: String(key || '').slice(0, 200), at: nowIso(), firstAt: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !!(r && (r.ok || r.status === 409)) }
+const noteId = (key) => 'pm_ibnote_' + crypto.createHash('sha256').update('ibnote:' + String(key)).digest('hex').slice(0, 40) // 完整鍵＋命名空間雜湊（不截斷、不刪字元＝不撞號；第七輪）
+const NOTE_TTL = 20 * 3600e3 // LINE 重試鍵 24 小時有效：超過 20 小時還沒確認就停自動推播、改人工核對（留安全餘裕；第七輪）
+export async function ibAlert(key, text) { // 立即通知：通知工作一定先存成功才推播（存不上＝不推，回 false，由畫面提示店員告訴主管；第七輪）；回 true＝確定送出
+  const id = noteId(key); const made = await noteCreate(id, text, key)
+  if (!made) return false
   const sent = await bossPush(id, text)
   if (sent && made) await qPut(id, { st: 'done', text: String(text).slice(0, 900), at: nowIso() }).catch(() => {}) // 標記沒寫上也沒關係：重送時 LINE 依重試鍵不會再送
   return sent
@@ -369,7 +371,12 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
     }
     { // 通知工作沒送成功的：重試
       const like = encodeURIComponent('*"st":"pending"*'); const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibnote%5C_*&data->>v=like.${like}&select=id,data&order=updated_at.asc&limit=20`, { headers: H() }).catch(() => null)
-      for (const row of (r && r.ok ? await r.json() : [])) { let n = null; try { n = JSON.parse(row.data.v) } catch (_) { continue } if (n && n.st === 'pending' && await bossPush(row.id, n.text)) await qPut(row.id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) } // 帶重試鍵：同時跑或標記沒寫上，LINE 都只送一次
+      for (const row of (r && r.ok ? await r.json() : [])) {
+        let n = null; try { n = JSON.parse(row.data.v) } catch (_) { continue }
+        if (!n || n.st !== 'pending') continue
+        if (Date.now() - Date.parse(n.firstAt || n.at || 0) > NOTE_TTL) { await qPut(row.id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作超過 20 小時未確認，改人工核對', row.id); continue } // 超過重試鍵有效期限前就停
+        if (await bossPush(row.id, n.text)) await qPut(row.id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) // 帶重試鍵：同時跑或標記沒寫上，LINE 都只送一次
+      }
     }
     { // 已送完的送出標記留 2 天（防重用）後清掉
       const like = encodeURIComponent('*"st":"sent"*'); await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibsend%5C_*&data->>v=like.${like}&updated_at=lt.${encodeURIComponent(new Date(Date.now() - 2 * 86400e3).toISOString())}`, { method: 'DELETE', headers: H() }).catch(() => {})
