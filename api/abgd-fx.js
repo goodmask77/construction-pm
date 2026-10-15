@@ -341,6 +341,49 @@ const ACTIONS = {
     }
     return { ok: true, n }
   },
+  async vio_notify(a, idem) { // 班表違規清單通知（原 mail-sync ?vionotify，文字照抄；新殼法規薪資頁排）：to='group' 發 ABpeople 群／'mgrs' 私訊班表主管（新殼已篩 rids，這裡再照權限表核一次）
+    if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
+    const items9 = (Array.isArray(a.items) ? a.items : []).slice(0, 8)
+    if (!items9.length) return { ok: true, skipped: 'no-items' }
+    if (!TK()) return { ok: false, retry: false, error: '缺 LINE token' }
+    // 短網址：代碼由事件編號＋序號固定推出（重試不會多生新代碼）
+    const slDoc9 = (await kvGet('pm_shortlinks')) || { map: {} }; slDoc9.map = slDoc9.map || {}
+    const withShort = items9.map((it, i) => { const c9 = crypto.createHash('sha1').update(String(idem) + '|' + i).digest('hex').slice(0, 6); if (!slDoc9.map[c9]) slDoc9.map[c9] = { u: String(it.link || ''), ts: Date.now() }; return { ...it, short: 'https://ground-pm.vercel.app/v/' + c9 } })
+    { const es9 = Object.entries(slDoc9.map); if (es9.length > 500) { es9.sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0)); es9.slice(0, es9.length - 500).forEach(([k9]) => delete slDoc9.map[k9]) } }
+    if (!(await kvSet('pm_shortlinks', slDoc9))) throw new Error('短網址存不進去，稍後重試')
+    const txt9 = `⚠️ 班表違規清單（${String(a.by || '').slice(0, 30)} 發送）\n` + withShort.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${it.short}`).join('\n') + `\n\n處理完到 /prep 班表「🔴 違規」按 ✅ 填處理內容 → 張良審核通過才銷案。`
+    const quota9 = async () => { try { const H9 = { authorization: 'Bearer ' + TK() }; const [q9, c9] = await Promise.all([fetch('https://api.line.me/v2/bot/message/quota', { headers: H9 }).then(x => x.json()), fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H9 }).then(x => x.json())]); return { used: (c9 && c9.totalUsage != null) ? c9.totalUsage : -1, total: (q9 && q9.type === 'limited') ? q9.value : -1 } } catch (_) { return { used: -1, total: -1 } } }
+    const qv9 = await quota9()
+    const foot9 = (billed) => qv9.used < 0 ? '' : `\n\n📊 本次 ${billed} 則｜本月 ${qv9.used + billed}${qv9.total > 0 ? '/' + qv9.total : ''} 則`
+    const sent9 = []
+    if (a.to === 'group') {
+      let gid9 = ''
+      const seen9b = (await kvGet('pm_group_seen')) || {}
+      for (const [g2, gg] of Object.entries(seen9b)) if (/abpeople|ab people/i.test(gg?.name || '')) { gid9 = g2; break }
+      if (!gid9) return { ok: false, retry: false, error: '找不到 ABpeople 群（DD 要先在群裡收過訊息）' }
+      const r9 = await once(idem + ':g', async () => { const mem9 = await groupMembers(gid9); const ok = await linePush(gid9, [{ type: 'text', text: txt9 + foot9(mem9) }]); if (!ok) return { ok: false, retry: true }; try { await logPush(gid9, 1, '違規清單群發', mem9) } catch (_) {} return { ok: true } })
+      if (!r9 || r9.ok === false) return { ok: false, retry: true, error: 'LINE 發送失敗' }
+      sent9.push('ABpeople 群')
+    } else { // mgrs＝權限表「班表・編」有勾的人（含管理者），要綁定過才有 LINE；只發新殼指定的 rids
+      const [pmN9, rosN9, bindN9] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+      const ppl9 = ((rosN9 || {}).people) || []
+      const pickR = new Set((Array.isArray(a.rids) ? a.rids : []).map(String))
+      let fail = 0
+      for (const [rid9, u9] of Object.entries(((pmN9 || {}).users) || {})) {
+        if (!pickR.has(String(rid9))) continue
+        if (!u9.edit) continue
+        if (!u9.admin && u9.tabs && u9.tabs.shift === 0) continue // 班表編沒勾=跳過
+        let uid9 = (ppl9.find(p9 => p9.id === rid9) || {}).lineUserId
+        if (!uid9) uid9 = (Object.values((bindN9 || {}).tokens || {}).find(t9 => (t9.rid || t9.uid) === rid9) || {}).uid
+        if (!uid9) continue
+        const r9 = await once(idem + ':' + rid9, async () => { const ok = await linePush(uid9, [{ type: 'text', text: txt9 + foot9(1) }]); if (!ok) return { ok: false, retry: true }; try { await logPush(uid9, 1, '違規清單私訊') } catch (_) {} return { ok: true } })
+        if (r9 && r9.ok !== false) sent9.push(u9.name); else fail++
+      }
+      if (fail) return { ok: false, retry: true, error: '有人沒送到，稍後重試（已送到的人不會重收）' }
+      if (!sent9.length) return { ok: false, retry: false, error: '找不到可通知的班表主管（要有班表編輯權＋綁定過 LINE）' }
+    }
+    return { ok: true, sent: sent9 }
+  },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
