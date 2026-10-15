@@ -445,6 +445,8 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   }
   // 🖼 匯出圖（張良 2026-10-08 v4.66.0）：img=直式整張(動態) / tv=四張電視橫式(官方定稿含照片)
   // v4.70.8 四張電視圖改走網頁模板 menu-tv.html（同直式那套字體版式／官方照片截出獨立檔可調位置／一鍵下載 4 張）；舊 canvas 版 menuPosterTVDynamic 保留備用
+  const mvU = (window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.menu) || '' // abgd 搬家（F18）：菜單切新殼後出圖頁改開新殼（舊出圖頁存不了版面）
+  if (mvU && (kind === 'tv' || kind === 'img')) { window.open(String(mvU).replace(/\/+$/, '') + (kind === 'tv' ? '/tv.html?screen=0' : '/poster.html'), '_blank'); return }
   if (kind === 'tv') { window.open('/ops/menu-tv.html?screen=0&k=' + encodeURIComponent(K), '_blank'); return }
   if (kind === 'tvphoto') { menuExportTV(); return } // 官方定稿橫式(含照片,靜態)
   if (kind === 'imgsec') { menuPosterSections(d, secs); return } // 舊：一分類一張(保留備用)

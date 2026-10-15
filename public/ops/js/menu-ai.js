@@ -5,7 +5,7 @@ window.MAI = (() => {
   const Q = new URLSearchParams(location.search)
   const K = Q.get('k') || '7ea362bae1f0274372d4ec7b27c78852'
   const TK = () => Q.get('me') || (() => { try { return localStorage.getItem('prepToken') || '' } catch (e) { return '' } })()
-  const api = (ep, body) => fetch('/api/mail-sync?' + ep + '=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }).then(r => r.json())
+  const api = (ep, body) => fetch('/api/mail-sync?' + ep + '=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }).then(r => r.json()).then(j => { if (j && j.moved && !window._maiMoved) { window._maiMoved = 1; alert('菜單已搬到新版：這一頁的修改不會存。請從 GD 側欄點「菜單」進新版，再按出圖。') } return j }) // abgd 搬家（F18）：切換後舊出圖頁存檔會 409，提示一次
   let assets = { photos: {}, art: [], tvcfg: null, poster: {}, vers: [] }
   let _which = null // v4.70.81 「這裡由哪家 AI 處理」小標籤（張良 2026-10-12）
   function aiTagFill() { (_which || (_which = fetch('/api/mail-sync?aiwhich=' + K).then(r => r.json()).then(d => (d && d.ok && d.routes) || {}).catch(() => ({})))).then(R => { const el = document.getElementById('maiAiTag'); const a = R.app, b = R.image; if (!el || !a || !b) return; el.textContent = `寫指令：${a.model} → 畫圖：${b.model}`; el.title = `寫指令由 ${a.co}「${a.model}」、畫圖由 ${b.co}「${b.model}」處理；設定頁「AI 模型」可切換` }) }
