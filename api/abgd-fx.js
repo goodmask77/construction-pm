@@ -346,8 +346,8 @@ const ACTIONS = {
     if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
     const it = a.it || {}
     const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
-    const alive = ((rosterE || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
-    const to = (((defE || {}).ground || {}).approvers || ['張良瑋']).map(an => alive.find(p2 => p2.name === an && p2.lineUserId)).filter(Boolean)
+    const ppl = ((rosterE || {}).people || []) // 同原 ?errlog：不另外過濾在職（關卡 3 issues 第一輪獨立 Claude B2）
+    const to = (((defE || {}).ground || {}).approvers || ['張良瑋']).map(an => ppl.find(p2 => p2 && p2.name === an && p2.lineUserId)).filter(Boolean)
     if (!to.length) return { ok: true, skipped: 'no-recipient' } // 沒有可私訊的審核人＝不重試（留原因）
     let n = 0
     // 逐人送；任一人送不出去＝丟錯讓新殼重試（LINE 重試鍵依事件＋收件人固定，已送到的人重試不會再收到一次）
