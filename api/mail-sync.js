@@ -1790,6 +1790,7 @@ export default async function handler(req, res) {
     let pb2 = {}
     try { pb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const stP = pb2.store === 'abeach' ? 'abeach' : 'ground'
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_prices'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'price', { store: stP, set: pb2.set || {}, del: Array.isArray(pb2.del) ? pb2.del : [] }, '金鑰(priceset)'); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, set: cr.set, del: cr.del, total: cr.total } : { ok: false, error: cr.text }) } } // abgd 搬家（銷售設定 posmeta）：切新殼後轉命令橋
     const doc = (await kvGet('sp_finance_pm_pos_prices')) || {}
     doc[stP] = doc[stP] || {}
     let nSet = 0, nDel = 0
@@ -1813,6 +1814,7 @@ export default async function handler(req, res) {
     try { body2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const st2 = body2.store === 'ground' ? 'ground' : body2.store === 'abeach' ? 'abeach' : null
     if (!st2) return res.status(400).json({ ok: false, error: 'store 要是 abeach 或 ground' })
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_alias'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'alias', { store: st2, set: body2.set || {}, del: Array.isArray(body2.del) ? body2.del : [] }, '金鑰(aliasset)'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, store: st2, n: cr.total } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）
     const cur2 = (await kvGet('sp_finance_pm_pos_alias')) || {}
     const m3 = { ...(cur2[st2] || {}) }
     for (const [o3, n3] of Object.entries(body2.set || {})) { if (typeof n3 === 'string' && n3.trim()) m3[o3] = n3 }
@@ -2392,6 +2394,7 @@ export default async function handler(req, res) {
     const stH = ph.store === 'abeach' ? 'abeach' : 'ground'
     const keyH = String(ph.key || '').slice(0, 80)
     if (!keyH) return res.status(400).json({ ok: false })
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_hidden'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'hide', { store: stH, key: keyH, hide: !!ph.hide }, whoH ? whoH.name : '系統'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, viaAbgd: true } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）：隱藏鈕留在 GD 銷售頁，切新殼後經命令橋寫
     const doc = (await kvGet('sp_finance_pm_pos_hidden')) || {}
     doc[stH] = doc[stH] || {}
     if (ph.hide) doc[stH][keyH] = 1; else delete doc[stH][keyH]
