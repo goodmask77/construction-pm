@@ -212,35 +212,18 @@ export default async function handler(req, res) {
     return 'fail'
   }
   // ── 盤點/包材低水位提醒（張良 2026-09-21）：每天第一輪（11:00 場次）查一次，低於最低水位 → DD 發內部群一則彙整 ──
+  // v4.71.88 拆成 _invlow.js（行為不變，方便用替身測「因今天已處理而跳過」；abgd 關卡 3 盤點第四輪 A8）
   try {
-    const tpe2 = new Date(Date.now() + 8 * 3600e3)
-    const wd2 = tpe2.getUTCDay(), todayInv = tpe2.toISOString().slice(0, 10)
+    const { gdInvLow } = await import('./_invlow.js')
     const { abgdOwnerOf: ownInv } = await import('./mail-sync.js')
-    if (wd2 >= 1 && wd2 <= 5 && hm >= '11:00' && hm < '11:20' && (await ownInv('sp_finance_pm_inv')) === 'gd') { // abgd 搬家（F05）：盤點切新殼後低水位提醒改新殼排程 /api/ops/cron/inv-low
-      const invDoc = (await kvGet('sp_finance_pm_inv')) || {}
-      if (!(invDoc.notified || {})[todayInv]) {
-        const [f2, p2] = await Promise.all([invStatus('food'), invStatus('pack')])
-        const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
-        if (lows.length) {
-          const listLS = lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n')
-          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(lowStock)：開關(相容舊 pm_notify.lowStock)/群/文字
-          const cfgLS = await ddGet('lowStock')
-          if (cfgLS.on && (await invMark(todayInv, '低水位提醒(認領)')) === 'ok') { // v4.33.0 LINE＋GD推播同開關、同一天一次；先認領再發（沒認領到＝別的場次已處理）
-            const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-            let sent2 = false
-            if (tk2) {
-              const gidLS = await ddGroupGid(cfgLS.group)
-              const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
-              const _mem = await _gm(gidLS)
-              const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: gidLS, messages: [{ type: 'text', text: ddFill(cfgLS.text, { list: listLS }) + await _qf(_mem) }] }) })
-              if (pr2.ok) sent2 = true
-            }
-            try { if (await wpPush(null, { title: '📉 庫存低水位', body: lows.map(x => x.name).join('、'), url: '/prep' })) sent2 = true } catch (_) {}
-            if (!sent2) await invMark(todayInv, '低水位提醒(發送失敗收回)', false) // 都沒送出＝收回認領，下一場次重試（同 GD 原本「送出才標記」的語意）
-          }
-        } else { await invMark(todayInv, '低水位檢查(無警報)') }
-      }
-    }
+    const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(lowStock)
+    const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+    const r9 = await gdInvLow({
+      now: new Date(), hm, owner: () => ownInv('sp_finance_pm_inv'), kvGet, invStatus, invMark, ddGet,
+      sendLine: async (list) => { const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim(); if (!tk2) return false; const cfgLS = await ddGet('lowStock'); const gidLS = await ddGroupGid(cfgLS.group); const _mem = await _gm(gidLS); const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: gidLS, messages: [{ type: 'text', text: ddFill(cfgLS.text, { list }) + await _qf(_mem) }] }) }); return pr2.ok },
+      sendPush: async (names) => !!(await wpPush(null, { title: '📉 庫存低水位', body: names, url: '/prep' })),
+    })
+    if (r9 && r9.ran) console.log('[inv-low]', JSON.stringify(r9))
   } catch (e) { console.log('inv check err', e?.message) }
   if (!hit && !abHit && !force && !manual) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
   if (manual && !hit && !force && (nowM < toMin('11:00') || nowM >= toMin('19:30'))) {
