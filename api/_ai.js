@@ -106,7 +106,7 @@ function toGemini(system, messages) {
 
 // ── 三家文字呼叫（單次，不含備援） ──
 // v4.70.78 張良 2026-10-12「要知道是什麼版本」：每次呼叫都在提示詞最前面告訴模型它現在是哪家哪版（換模型自動跟著變；放最前面＝固定前綴，不影響快取）
-const PROV_CO = { anthropic: 'Anthropic 的 Claude', openai: 'OpenAI 的 ChatGPT', gemini: 'Google 的 Gemini' }
+const PROV_CO = { anthropic: 'Anthropic 的 Claude', openai: 'OpenAI 的 ChatGPT', gemini: 'Google 的 Gemini', typesafe: 'TypeSafe 的 Jev' }
 export function identityLine(provider, model) { return `【你的身分】你現在由 ${PROV_CO[provider] || provider} 系列的「${model}」模型驅動（App 設定頁「AI 模型」可切換）。有人問你是什麼模型／哪一版／哪家 AI，就照這行如實回答，不要說無法確認。\n\n` }
 async function callOnce({ provider, model }, { system, messages, maxTokens, cache, timeoutMs, effort, identify }) {
   if (identify !== false) system = identityLine(provider, model) + sysText(system) // effort='low'|'medium'|'high'（v4.70.77 推理深度；省時省錢的功能給 low）
@@ -296,6 +296,7 @@ export const AI_PRICES = { // key 用「前綴」比對（最長前綴優先）�
   'gemini-2.5-flash-image': { in: 0.3, out: 0, img: 0.039 },
   'gpt-image-2':      { in: 5, out: 0, img: 0.04 },
   'gpt-image-1':      { in: 5, out: 0, img: 0.04 },
+  'jev':              { in: 0.042, out: 0 },   // v4.71.122 TypeSafe Jev 決策模型（官方價：輸入 0.042／百萬，輸出免費）
 }
 const PROV_DEFAULT_PRICE = { anthropic: { in: 3, out: 15 }, openai: { in: 1.25, out: 10 }, gemini: { in: 0.3, out: 2.5 } }
 export function priceOf(model, provider, prices) {
@@ -310,6 +311,7 @@ function normUsage(provider, u) {
   u = u || {}
   if (provider === 'anthropic') return { it: +u.input_tokens || 0, ot: +u.output_tokens || 0, cr: +u.cache_read_input_tokens || 0, cw: +u.cache_creation_input_tokens || 0 }
   if (provider === 'openai') { const cr = +((u.prompt_tokens_details || {}).cached_tokens) || 0; return { it: Math.max(0, (+u.prompt_tokens || +u.input_tokens || 0) - cr), ot: +u.completion_tokens || +u.output_tokens || 0, cr, cw: 0 } }
+  if (provider === 'typesafe') return { it: +u.input_tokens || 0, ot: +u.output_tokens || 0, cr: 0, cw: 0 }
   if (provider === 'gemini') { const cr = +u.cachedContentTokenCount || 0; return { it: Math.max(0, (+u.promptTokenCount || 0) - cr), ot: (+u.candidatesTokenCount || 0) + (+u.thoughtsTokenCount || 0), cr, cw: 0 } }
   return { it: 0, ot: 0, cr: 0, cw: 0 }
 }
@@ -477,4 +479,30 @@ export async function aiCallAB(route, opts, ctx) {
   } catch (e) { console.log('[ai-ab] log failed', e.message) }
   if (chosen.err) throw Object.assign(new Error(chosen.err), { tried: chosen.tried || [] })
   return { ...chosen, ab: { replied: chosen === A ? 'a' : 'b' } }
+}
+
+// ── Jev 決策模型（v4.71.122 張良 2026-10-16「幫我串接 jev」）──
+// 不寫文字、只從給定選項裡挑：適合「量大、答案範圍固定」的判斷（分類、是非、評分），約 0.3 秒、極便宜。要寫文字的工作照舊走 aiCall。
+// 金鑰 env JEV_API_KEY（只在伺服器端）。questions = { 題名: 題目 }，題目三種：
+//   { type:'choice', instructions:'哪一類？', criteria:{ 選項名: '何時選它', ..., 以上皆非: null } }  → { choice, confidence, probabilities }
+//   { type:'noul',   instructions:'是否…？' }                                                     → { noul: 0~1 是的機率 }
+//   { type:'score',  instructions:'…程度', criteria:{ 等級名: 說明, ... } }                       → 分數
+// state = 要判斷的內容（字串或物件）。中文效果官方說比英文弱：上線前要拿真資料對照；choice 一律加「以上皆非」，confidence 低於門檻轉人工或退回 aiCall。
+// 回 { ok, answers, model, ms } 或 { ok:false, error }；不丟例外，呼叫端自己決定失敗時怎麼退
+export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
+export const hasJev = () => !!clean(process.env.JEV_API_KEY)
+export async function jevDecide(route, { state, questions, model = 'jev-latest', timeoutMs = 15000 } = {}) {
+  const key = clean(process.env.JEV_API_KEY)
+  if (!key) return { ok: false, error: 'no JEV_API_KEY' }
+  const t0 = Date.now(); const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs)
+  try {
+    const r = await fetch(JEV_URL, { method: 'POST', signal: ctl.signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, state, questions }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { await logUsage({ route, provider: 'typesafe', model, err: 1 }); return { ok: false, error: 'HTTP ' + r.status + ' ' + JSON.stringify(j.detail || j).slice(0, 300) } }
+    await logUsage({ route, provider: 'typesafe', model: j.model || model, usage: j.usage })
+    return { ok: true, answers: j.answers || {}, model: j.model || model, usage: j.usage, ms: Date.now() - t0 }
+  } catch (e) {
+    await logUsage({ route, provider: 'typesafe', model, err: 1 })
+    return { ok: false, error: e.name === 'AbortError' ? 'timeout' : String(e.message || e) }
+  } finally { clearTimeout(tm) }
 }
