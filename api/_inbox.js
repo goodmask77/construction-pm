@@ -322,14 +322,24 @@ async function bossPush(id, text) { // 回 true＝LINE 確定收下（2xx，或 
   catch (e) { console.log('[inbox] 通知主管失敗', e && e.message); return false }
 }
 // 建通知工作（只新增）：回 true＝工作已存在（這次建的或之前建過）
-async function noteCreate(id, text, key) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), key: String(key || '').slice(0, 200), at: nowIso(), firstAt: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !!(r && (r.ok || r.status === 409)) }
-const noteId = (key) => 'pm_ibnote_' + crypto.createHash('sha256').update('ibnote:' + String(key)).digest('hex').slice(0, 40) // 完整鍵＋命名空間雜湊（不截斷、不刪字元＝不撞號；第七輪）
+// 建通知工作（只新增）：回 'new'＝這次建的、'exists'＝已經有（409）、''＝建不起來
+async function noteCreate(id, text, key) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify({ st: 'pending', text: String(text).slice(0, 900), key: String(key || '').slice(0, 200), at: nowIso(), firstAt: nowIso() }) }, editor: '收件匣通知', updated_at: nowIso() }) }).catch(() => null); return !r ? '' : r.ok ? 'new' : r.status === 409 ? 'exists' : '' }
+// 送出判斷（立即通知與排程共用；第八輪）：讀回工作 → 已完成／人工＝不推；超過 20 小時＝轉人工不推；讀不到＝不推；可以推才回工作內容
+async function noteGate(id) {
+  const rows = await kvGetManyRaw([id]).catch(() => null); const n = rows && rows[id]
+  if (!n || typeof n !== 'object' || !n.text) return null
+  if (n.st !== 'pending') return null
+  if (Date.now() - Date.parse(n.firstAt || n.at || 0) > NOTE_TTL) { await qPut(id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作超過 20 小時未確認，改人工核對', id); return null }
+  return n
+}
+const noteId = (key) => 'pm_ibnote_' + crypto.createHash('sha256').update('ibnote:' + String(key)).digest('hex').slice(0, 40) // 完整鍵＋命名空間 SHA-256 取 160 位元（不截斷、不刪字元；碰撞機率極低；第七輪）
 const NOTE_TTL = 20 * 3600e3 // LINE 重試鍵 24 小時有效：超過 20 小時還沒確認就停自動推播、改人工核對（留安全餘裕；第七輪）
 export async function ibAlert(key, text) { // 立即通知：通知工作一定先存成功才推播（存不上＝不推，回 false，由畫面提示店員告訴主管；第七輪）；回 true＝確定送出
   const id = noteId(key); const made = await noteCreate(id, text, key)
   if (!made) return false
-  const sent = await bossPush(id, text)
-  if (sent && made) await qPut(id, { st: 'done', text: String(text).slice(0, 900), at: nowIso() }).catch(() => {}) // 標記沒寫上也沒關係：重送時 LINE 依重試鍵不會再送
+  const n = await noteGate(id); if (!n) return false // 已存在的工作：讀回確認狀態與時間才推（第八輪）
+  const sent = await bossPush(id, n.text)
+  if (sent) await qPut(id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) // 標記沒寫上也沒關係：重送時 LINE 依重試鍵不會再送
   return sent
 }
 
@@ -366,15 +376,13 @@ async function _ibRetry({ limit = 5 } = {}) { // 套用本身會判斷「這個�
       if (Date.now() - Date.parse(row.updated_at) < 600e3) continue
       const d = await docGet(row.id); const m = d && d.v; if (!m || m.st !== stx) continue
       const made = await noteCreate(noteId('c_' + row.id.slice(10)), `收件匣：有一則送出結果不確定（${(acctOf(m.acct) || {}).name || m.acct || ''}・${String(m.uid || (m.job || {}).id || '').slice(-6)}）：「${String(m.lastText || (m.job || {}).text || '').slice(0, 40)}」。請到 LINE 官方帳號後台確認客人有沒有收到；系統不會自動重送。`)
-      if (!made) continue // 通知工作沒建好＝不轉待核對（下輪再來）
+      if (!made) continue // 通知工作沒建好＝不轉待核對（下輪再來）；new／exists 都算建好
       await docCas(row.id, d.rev, { ...m, st: 'review', reviewAt: nowIso() }) // 版本對不上＝不動（通知工作已在，下輪 409＝已存在）
     }
     { // 通知工作沒送成功的：重試
       const like = encodeURIComponent('*"st":"pending"*'); const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.pm%5C_ibnote%5C_*&data->>v=like.${like}&select=id,data&order=updated_at.asc&limit=20`, { headers: H() }).catch(() => null)
       for (const row of (r && r.ok ? await r.json() : [])) {
-        let n = null; try { n = JSON.parse(row.data.v) } catch (_) { continue }
-        if (!n || n.st !== 'pending') continue
-        if (Date.now() - Date.parse(n.firstAt || n.at || 0) > NOTE_TTL) { await qPut(row.id, { ...n, st: 'manual', manualAt: nowIso() }).catch(() => {}); console.log('[inbox] 通知工作超過 20 小時未確認，改人工核對', row.id); continue } // 超過重試鍵有效期限前就停
+        const n = await noteGate(row.id); if (!n) continue // 同一個送出判斷（第八輪）
         if (await bossPush(row.id, n.text)) await qPut(row.id, { ...n, st: 'done', doneAt: nowIso() }).catch(() => {}) // 帶重試鍵：同時跑或標記沒寫上，LINE 都只送一次
       }
     }
