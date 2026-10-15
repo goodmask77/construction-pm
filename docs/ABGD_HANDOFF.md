@@ -17,12 +17,13 @@
 | 成本總覽 F13 | ✅ 10-15 03:22 已切（epoch 1，關卡 3 六輪；冒煙 24 項全過；03:27 拆驗收閘門） | cost |
 | 食譜 F10 | ✅ 10-15 04:15 已切（epoch 1，關卡 3 兩輪；冒煙 21 項全過；04:17 拆驗收閘門） | recipe |
 | 菜單成本 F12 | ✅ 10-15 04:53 已切（從 menu 拆出 pricing 域；關卡 3 兩輪；冒煙 12 項＋正式回切演練 10 項；epoch 2；04:57 拆驗收閘門） | pricing |
+| 菜單 F18（菜單本體＋出圖版面） | ✅ 10-15 12:20 已切（關卡 3 三輪；冒煙 24 項＋正式回切演練 12 項；epoch 2；12:25 拆驗收閘門） | menu（只剩 sp_finance_pm_menu 前綴） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
 版本：新殼 v0.4.84（main）、GD v4.71.79（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
- ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ 菜單 F18＋POS 牌價／成本／改名／隱藏（menu 域剩 5 鍵：GET ?menu 讀不到會寫種子要先停；pos_costs 主 App Finance.jsx:218 與 Supply.jsx:1147 用前端直寫、吞錯誤、兩個寫入者；團訂 _grporder、會員 _member、DD 即時讀 menu.draft；建議先拆 pos_alias／hidden／prices，再 pos_costs，最後 menu＋menu_assets）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
+ ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ 盤點／包材／採購（inv 域；joya-intraday 低水位段；invcount 會寫積分）→ 菜單（menu 域；GET ?menu 讀不到會寫種子要先修；團訂、會員、DD 讀）→ boss（boss-sync 每小時；matcat 由 UI 寫；boss_inc_ 與 incidents 域重複登記）→ 銷售數據 pos（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
 - **前綴注意**：pos_prices／costs／alias／hidden 目前登記在 menu 域，建議移到 pos 域；絕不登記裸前綴 sp_finance_pm_ab；未歸屬鍵要先登記：sp_finance_pm_stale、sp_finance_pm_prep_act_、sp_supply_pm_*。
 - 班表剩下：shiftplan 域（labor＋abmod；labor 主 App Finance.jsx 也整份寫，要先拆鍵）、NUEiP 班表（crew 域，等 hr.js 拆段 F42）。
 
@@ -86,3 +87,13 @@
 - 版本記號不能用時間戳或會被刪掉的欄位：用每個項目「只增不減、刪除也加」的版本號（doc.gen[key]），否則刪除後舊畫面能把內容寫回（ABA）。
 - 畫面編輯框的初值要從「原設定」讀，不能從計算結果反推（GD 套餐池原本每次從空白開始、一存就清掉；加價從計算結果來，池子空時變 0）。
 - 回切演練可以在正式環境、拆閘門前做：回切→新殼被擋、GD 可寫（用沒設定過的品項寫了再清）→其他域不變→再切回→版本號保留＋GD 期間的寫入讀得到→GD 再被擋。scratchpad cost-test/prdrill.mjs 是樣板。
+
+## 10-15 菜單學到的（下一個功能照做）
+- **「主 App」和「GD」是兩套**：主 App＝ground-pm.vercel.app 首頁那套（src/，張良 10-15 確認不要了、不搬）；GD＝/prep（public/ops/）。兩邊共用同一個資料庫，所以主 App 要「關掉寫入」而不是搬；講話不要把主 App 當成要保留的東西。
+- 一個鍵的「修改入口在哪個頁面」決定它跟哪個功能一起搬：POS 隱藏／改名／牌價的入口在銷售數據頁，先搬會讓 GD 那頁壞掉。
+- 版本記號優先用**引擎修訂號 rev**（GD 影子期投影、回切再切都會推進），不要自己在文件裡加計數器（GD 寫入不會幫你加）。
+- 非草稿操作（換圖）不能把新版本號交給拿著舊草稿的畫面：只有「送來的版本號＝讀到的 rev」才回新號，否則回 stale。
+- 兩份文件要一起變（版本存檔→菜單頂端圖）：用「發布序號只增不減＋補同步只套更新的」，失敗下次自動補，不叫人重按；建立類操作帶操作編號 rid。
+- 冒煙比對用逐欄比（jsonb 會重排欄位順序，字串比會誤判）。
+- 送審附 diff 要附完整 hunk（含檔名），只 grep 改動行會讓審查者看錯檔。
+
