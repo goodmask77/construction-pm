@@ -2971,7 +2971,9 @@ export default async function handler(req, res) {
       if (!it) return res.status(404).json({ ok: false })
       const qT = String(mb.q || '').trim().slice(0, 300)
       if (!qT) return res.status(400).json({ ok: false, error: '要寫問題' })
-      it.asks = [...(it.asks || []), { id: 'ak' + Date.now().toString(36), q: qT, by: whoM.name, ts: now8(), status: 'open' }]
+      const akId = 'ak' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) // v4.71.117 發問編號只產生一次，任務編號跟著它（同新路徑 abgd-fx mq<askId>）
+      const akRow = { id: akId, q: qT, by: whoM.name, ts: now8(), status: 'open' }
+      it.asks = [...(it.asks || []), akRow]
       try { // DD 私訊老闆群操作者
         const tkQ = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
         const opsQ = (await kvGet('pm_bot_operators')) || {}
@@ -2980,8 +2982,8 @@ export default async function handler(req, res) {
       } catch (_) {}
       try { // 收件匣任務（主App任務中心同步可見）
         const { abgdKv } = await import('./_abgdkv.js'); const kvQ = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: whoM.name, label: '任務' }) // v4.71.116 依資料歸屬
-        await kvQ.kvPut('sp_team_pm_task_mq' + Date.now().toString(36), { id: 'mq' + Date.now().toString(36), title: '❓會議發問：' + qT.slice(0, 40) + '（' + whoM.name + '）', note: '【' + it.type + ' ' + it.date + '】' + qT, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: whoM.name, createdAt: new Date().toISOString() }, '會議發問(' + whoM.name + ')')
-      } catch (_) {}
+        if (!(await kvQ.kvGet('sp_team_pm_task_mq' + akId))) await kvQ.kvPut('sp_team_pm_task_mq' + akId, { id: 'mq' + akId, title: '❓會議發問：' + qT.slice(0, 40) + '（' + whoM.name + '）', note: '【' + it.type + ' ' + it.date + '】' + qT, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: whoM.name, createdAt: new Date().toISOString() }, '會議發問(' + whoM.name + ')')
+      } catch (e) { akRow.taskErr = String(e && e.message || e).slice(0, 80); console.log('[meet ask] 建收件匣任務失敗', akId, akRow.taskErr) } // 失敗記在發問上（跟會議文件一起存），不吞掉
     } else if (mb.op === 'answer') { // 老闆/主管回覆 → DD 通知提問人
       const it = (doc.list || []).find(x => x.id === mb.id)
       const ak = it && (it.asks || []).find(x => x.id === mb.askId)

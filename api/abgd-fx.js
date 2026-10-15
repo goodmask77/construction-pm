@@ -211,9 +211,9 @@ const ACTIONS = {
   async meet_ask(a) { // 發問→DD 私訊老闆群操作者＋收件匣任務
     const ops = (await kvGet('pm_bot_operators')) || {}
     for (const u of Object.keys(ops)) { if (await linePush(u, [{ type: 'text', text: '❓ 會議宣達發問【' + a.type + ' ' + a.date + '】\n' + a.by + '：' + a.q + '\n到 /prep → 會議 回覆（他會收到通知）' }])) { try { await logPush(u, 1, '會議發問通知') } catch (_) {} } }
-    const id = 'mq' + Date.now().toString(36)
+    const id = 'mq' + (a.askId || Date.now().toString(36)) // v4.71.117 有發問編號就用它（重試不多建）
     const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: String(a.by || '會議'), label: '任務' }) // v4.71.115 依資料歸屬
-    await kvT.kvPut('sp_team_pm_task_' + id, { id, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
+    if (!(await kvT.kvGet('sp_team_pm_task_' + id))) await kvT.kvPut('sp_team_pm_task_' + id, { id, title: '❓會議發問：' + String(a.q).slice(0, 40) + '（' + a.by + '）', note: '【' + a.type + ' ' + a.date + '】' + a.q, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: a.by, createdAt: new Date().toISOString() })
     return { ok: true }
   },
   async meet_answer(a) { // 回覆→DD 通知提問人

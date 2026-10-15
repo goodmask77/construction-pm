@@ -11,7 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { abgdKv } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
+import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
@@ -1595,7 +1595,7 @@ async function executeActions(actions, operator) {
         const keyGuess = /task|todo/.test(t) ? pfx0 + 'pm_task_' : /category|item|payment/.test(t) ? pfx0 + 'pm_data' : /finance|petty/.test(t) ? 'sp_finance_pm_fin_' : /log/.test(t) ? 'pm_worklog' : ''
         if (pfx0 === 'sp_team_' && /^(add_task|add_todo|update_task|delete_task|add_category)$/.test(t)) {
           const kv = await abgdKv({ domain: 'tasks', lockKey: keyGuess, operator, label: '任務' })
-          io = { abgd: true, get: kv.kvGet, prefix: async (pf) => Object.values(await kv.kvPrefix(pf)), set: (k, v) => kv.kvPut(k, v, 'D哥'), del: kv.kvDel }
+          io = { abgd: true, kv, get: kv.kvGet, prefix: async (pf) => Object.values(await kv.kvPrefix(pf)), set: (k, v) => kv.kvPut(k, v, 'D哥'), del: kv.kvDel }
         } else if (keyGuess) { const ow = await abgdOwner(keyGuess); if (ow.owner === 'abgd') { const cr = await abgdCommand(ow.domain, t, a, operator); results.push((cr.ok ? '✅ ' : '⚠️ ') + cr.text + '（新版）'); continue } if (ow.owner === 'frozen') { results.push('⚠️ 這項資料正在搬家中（暫時凍結），幾分鐘後再試'); continue } } }
       if (t === 'add_category') {
         // 跨空間建大項（張良 2026-09-01：叫D哥在團隊工作建「採購/營運/表單/SOP」被拒——以前只會寫工程 pm_data）
@@ -1728,9 +1728,10 @@ async function executeActions(actions, operator) {
           const list3 = await io.prefix(pfx3 + 'pm_task_')
           const tg3 = findTask(list3, a.task || a.title)
           if (!tg3) { results.push(`⚠️ ${spName3}空間找不到任務「${a.task || a.title || '?'}」`); continue }
-          await io.del(pfx3 + 'pm_task_' + tg3.id)
+          if (io.kv) await delTaskClean(io.kv, pfx3, tg3.id) // 團隊空間：先清引用、最後刪本體（中途失敗可重做；關卡 3 tasks 第一輪 A3）
+          else { await io.del(pfx3 + 'pm_task_' + tg3.id)
           // 清掉同空間其他任務對它的 dependsOn 引用（跟 App 的 removeTaskAndRefs 同一套規則）
-          for (const x of list3) if ((x.dependsOn || []).includes(tg3.id)) await io.set(pfx3 + 'pm_task_' + x.id, { ...x, dependsOn: x.dependsOn.filter(d => d !== tg3.id), updatedAt: new Date().toISOString() })
+          for (const x of list3) if ((x.dependsOn || []).includes(tg3.id)) await io.set(pfx3 + 'pm_task_' + x.id, { ...x, dependsOn: x.dependsOn.filter(d => d !== tg3.id), updatedAt: new Date().toISOString() }) }
           results.push(`🗑️ 刪除任務「${tg3.title.slice(0, 20)}」（${spName3}空間）`)
           audits.push([pfx3 + 'pm_activity', '刪除', `刪除任務「${tg3.title.slice(0, 20)}」（D哥）`])
         } else {
