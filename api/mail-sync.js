@@ -5379,7 +5379,7 @@ export default async function handler(req, res) {
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
     const { buildMatlib } = await import('./_matlib.js') // v4.71.89 抽成共用（abgd 物料庫 F08 逐字共用）
-    const mlOut = await buildMatlib({ kvGet })
+    const mlOut = await buildMatlib({ kvGet: orderedKvGet(kvGet) }) // 讀取鍵順序同 jsonb（新殼讀鏡像是 jsonb，順序一致才對得上）
     const canEditM = !!(await permWho(meTk, 'buy'))
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...mlOut })
   }
@@ -5762,7 +5762,7 @@ export default async function handler(req, res) {
     const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '叫貨單屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
     const { buildMatord } = await import('./_matlib.js')
-    const moOut = await buildMatord({ kvGet })
+    const moOut = await buildMatord({ kvGet: orderedKvGet(kvGet) })
     const canEditO = !!(await permWho(meTk, 'buy'))
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditO }, ...moOut })
   }
