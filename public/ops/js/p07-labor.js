@@ -381,7 +381,7 @@ async function posHide(kEnc, hide){
   if (!TK()) { alert('要先綁定才能改隱藏：跟 DD 說「綁定GD」'); return }
   const r = await fetch('/api/mail-sync?poshide=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ store: (window._bd||{}).store, key: decodeURIComponent(kEnc), hide, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) { if (d.viaAbgd) setTimeout(()=>load(curStore, true), 3000); else load(curStore, true) } else alert((d&&d.error)||'失敗') // abgd 搬家（posmeta）：新版寫入後要幾秒反推回來，晚 3 秒再重讀
+  if (d && d.ok) { if (d.viaAbgd) { setTimeout(()=>load(curStore, true), 3000); setTimeout(()=>load(curStore, true), 10000) } else load(curStore, true) } else alert((d&&d.error)||'失敗') // abgd 搬家（posmeta）：新版寫入後要幾秒反推回來，晚 3 秒再重讀
 }
 function itemsRender(){
   const d = window._bd, el = document.getElementById('itemsec')
