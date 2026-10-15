@@ -2224,9 +2224,17 @@ export default async function handler(req, res) {
     let eb = {}
     try { eb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoE = await sopWho(eb.token).catch(() => null)
-    const doc = (await kvGet('sp_finance_pm_errlog')) || { list: [] }
     const msg = String(eb.msg || '').slice(0, 300)
     if (!msg) return res.status(400).json({ ok: false })
+    { // abgd issues 域：搬到新殼後轉命令（新殼寫錯誤日誌、排 LINE 通知）；切換中＝這筆略過（錯誤日誌非業務資料）
+      const ow = await abgdOwnerOf('sp_finance_pm_errlog')
+      if (ow !== 'gd') {
+        if (ow !== 'abgd') return res.status(200).json({ ok: false, skipped: 'switching' })
+        const cr = await abgdCmd('issues', 'report', { msg, src: String(eb.src || '').slice(0, 120), page: String(eb.page || '').slice(0, 60), ver: String(eb.ver || '').slice(0, 20), stack: String(eb.stack || '').slice(0, 600) }, whoE ? whoE.name : '訪客')
+        return res.status(200).json({ ok: !!cr.ok })
+      }
+    }
+    const doc = (await kvGet('sp_finance_pm_errlog')) || { list: [] }
     const fp = (msg + '|' + String(eb.src || '').slice(0, 80)).slice(0, 200) // 指紋＝訊息+來源
     const today3 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     let it = doc.list.find(x => x.fp === fp)
@@ -2249,7 +2257,7 @@ export default async function handler(req, res) {
         }
       } catch (_) {}
     }
-    await kvPut('sp_finance_pm_errlog', doc, 'App錯誤回報')
+    if (!(await kvPut('sp_finance_pm_errlog', doc, 'App錯誤回報'))) return res.status(200).json({ ok: false, skipped: 'switching' })
     return res.status(200).json({ ok: true })
   }
   if (req.query?.errs) { // 檢視（主管/審核人）
