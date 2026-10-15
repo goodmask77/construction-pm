@@ -4,7 +4,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 寫：POST ?social=<OPS_BOARD_KEY> body={op,token,...}  op: save/del/submit/approve/reject/disconnect
 // 發文本身在 social-collect / 未來 social-publish；本檔只管內容庫與審核流程（Phase 1 先不自動發）
 import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
-import { getAccounts, setAccounts, getSecret, setSecret, getPosts, setPosts, metricsKey, whoSocial, canEditSocial, metaReady, GV, graphGet, oauthPending } from './_social.js'
+import { getAccounts, setAccounts, getSecret, setSecret, getPosts, setPosts, metricsKey, whoSocial, canEditSocial, metaReady, GV, graphGet, pubSnapshot } from './_social.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const ymOf = (iso) => String(iso || '').slice(0, 7)
@@ -310,13 +310,13 @@ async function handlerInner(req, res) {
         if (!(p.dests && p.dests.length)) return res.status(200).json({ ok: false, error: '還沒勾選要發到哪個平台（下面「發布到哪裡」）' })
         // v4.71.146：① 先問驗收閘門 ② 版本比對認領（發布中＝不發：結果不明的不自動重發，要先到 FB／IG 確認；已發布的照原本可再發）③ 發 ④ 結果只改這一則（重讀最新、只重做寫入）
         { const g = await socGate(); if (g) return res.status(200).json({ ok: false, error: g, code: 'smoke' }) }
-        { const op0 = await oauthPending(); if (op0) return res.status(200).json({ ok: false, error: op0 }) } // 授權沒做完不發（第七輪 A2）
+        const snap = await pubSnapshot(); if (snap.err) return res.status(200).json({ ok: false, error: snap.err }) // 同代快照：授權沒做完不發；這次發文只用這份帳號與權杖（第七、八輪）
         const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false, value: { err: '找不到貼文' } }; if (x.status === 'publishing') return { write: false, value: { err: '這則正在發布中或上次結果不明——請先到 FB／IG 確認有沒有發出去，再找 CC 重設' } }; if (x.status === 'published' && x.publishedAt && Date.now() - Date.parse(x.publishedAt) < 10 * 60e3) return { write: false, value: { err: '這則 ' + Math.max(1, Math.round((Date.now() - Date.parse(x.publishedAt)) / 60e3)) + ' 分鐘前剛發布過；要再發一次請 10 分鐘後再按（避免逾時重按發兩次）' } }; if (Object.values(x.pub || {}).some(v => v && v.status === 'unknown')) return { write: false, value: { err: '上次發布結果不明（可能已發出）——請先到 FB／IG 確認，再找 CC 重設後重發' } }; const now = new Date().toISOString(); x.status = 'publishing'; x.claimAt = now; x.claimBy = who.name; x.updatedAt = now; return { write: true, doc: d, value: { post: JSON.parse(JSON.stringify(x)) } } }, '立即發布中')
         if (claim.err) return res.status(200).json({ ok: false, error: claim.err })
         const { publishPost } = await import('./social-publish.js')
-        const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
+        const pages = snap.pages
         const p2 = claim.post; let okPub = false
-        try { okPub = await publishPost(p2, pages) } catch (e) { p2.pub = p2.pub || {}; p2.pub._err = String(e && e.message || e).slice(0, 200) }
+        try { okPub = await publishPost(p2, pages, snap) } catch (e) { p2.pub = p2.pub || {}; p2.pub._err = String(e && e.message || e).slice(0, 200) }
         const nowR = new Date().toISOString()
         try { await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false }; x.pub = p2.pub; x.status = okPub ? 'published' : 'failed'; x.updatedAt = nowR; delete x.claimAt; if (okPub) { x.publishedAt = nowR; x.approvedBy = who.name; x.approvedAt = nowR } return { write: true, doc: d } }, '立即發布結果') }
         catch (e) { console.error('[social] 立即發布結果沒存進去（貼文停在發布中）', body.id, String(e && e.message || e).slice(0, 80)); return res.status(200).json({ ok: okPub, status: okPub ? 'published' : 'failed', pub: p2.pub, error: '發布' + (okPub ? '成功' : '失敗') + '，但結果沒存進去（貼文停在發布中），請重新整理並找 CC 核對' }) }

@@ -2,14 +2,15 @@
 // 規則：status='approved' 且（無排程時間 或 排程時間已到）→ 發到貼文指定的目的地 dests
 // dests 格式：['fb:<pageId>', 'ig:<igUserId>']。FB 有圖走 /photos、純文字走 /feed；IG 兩步驟(建container→輪詢→publish)，IG 一定要有圖
 // 安全：人工核可才會到 approved（審核即人工閘門）；DRY_RUN=true 只記 log 不真發
-import { getPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady, oauthPending } from './_social.js'
+import { getPosts, fbPageToken, graphGet, graphPost, DRY_RUN, metaReady, pubSnapshot } from './_social.js'
 import { socTx, socGate } from './_socialkv.js'
 const P_KEY = 'sp_finance_pm_social_posts'
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 // 發一則到它指定的 dests（FB／IG）。更新 p.pub，回傳是否全部成功。不負責存檔（caller 存）＝立即發與 cron 共用
-export async function publishPost(p, pages) {
+export async function publishPost(p, pages, snap) { // snap：同代快照（有就只用快照裡的權杖，不中途重讀；第八輪 A1）
+  const tokOf = async (pid) => snap ? (pid ? (snap.tokens[pid] || '') : (Object.values(snap.tokens)[0] || snap.legacy || '')) : fbPageToken(pid)
   p.pub = p.pub || {}
   const dests = (p.dests && p.dests.length) ? p.dests : []
   let allOk = dests.length > 0
@@ -18,7 +19,7 @@ export async function publishPost(p, pages) {
     const i = dest.indexOf(':'); const type = dest.slice(0, i), id = dest.slice(i + 1)
     try {
       if (type === 'fb') {
-        const token = await fbPageToken(id); if (!token) throw new Error('無粉專權杖')
+        const token = await tokOf(id); if (!token) throw new Error('無粉專權杖')
         const img = (p.media && p.media[0] && p.media[0].url)
         let r
         if (DRY_RUN) r = { id: 'DRYRUN', post_id: 'DRYRUN' }
@@ -30,7 +31,7 @@ export async function publishPost(p, pages) {
         p.pub.facebook = { postId, permalink, publishedAt: new Date().toISOString(), status: 'published', dest: id }
       } else if (type === 'ig') {
         const ownPage = Object.values(pages).find(pg => pg.igUserId === id)
-        const token = ownPage ? await fbPageToken(ownPage.pageId) : ''
+        const token = ownPage ? await tokOf(ownPage.pageId) : ''
         if (!token) throw new Error('IG 無權杖')
         const img = (p.media && p.media[0] && p.media[0].url); if (!img) throw new Error('IG 一定要有圖片')
         if (DRY_RUN) { p.pub.instagram = { mediaId: 'DRYRUN', status: 'published', publishedAt: new Date().toISOString(), dest: id } }
@@ -58,11 +59,11 @@ export default async function handler(req, res) {
   try {
     if (!metaReady()) return res.status(200).json({ ok: false, skipped: '未設 META env' })
     { const g = await socGate(); if (g) return res.status(200).json({ ok: true, skipped: '驗收閘門：' + g }) } // 切換驗收期間不發（下一輪再看）
-    { const op0 = await oauthPending(); if (op0) return res.status(200).json({ ok: true, skipped: op0 }) } // 授權沒做完不發（第七輪 A2）
+    const snap = await pubSnapshot(); if (snap.err) return res.status(200).json({ ok: true, skipped: snap.err }) // 同代快照：授權沒做完不發；整輪只用這份帳號與權杖（第七、八輪 A2／A1）
     const doc = await getPosts(); const now = Date.now()
     const due = (doc.list || []).filter(p => p.status === 'approved' && (!p.scheduledAt || new Date(p.scheduledAt).getTime() <= now)) // 沒排程時間＝核准後立即發（原設計）；時間格式壞掉＝NaN＝不發
     if (!due.length) return res.status(200).json({ ok: true, published: 0 })
-    const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
+    const pages = snap.pages
     const out = []
     for (const p0 of due.slice(0, 5)) { // 一次最多 5 則
       { const g = await socGate(); if (g) break } // 每則發前都問閘門（關卡 3 行銷大師第一輪 A1）
@@ -70,7 +71,7 @@ export default async function handler(req, res) {
       const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved' || (x.scheduledAt && !(new Date(x.scheduledAt).getTime() <= Date.now())) || !(x.dests && x.dests.length)) return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
       if (!claim) continue // 已被別人（立即發布、畫面修改）處理
       let allOk = false
-      try { allOk = await publishPost(claim, pages) } catch (e) { claim.pub = claim.pub || {}; claim.pub._err = String(e && e.message || e).slice(0, 200) }
+      try { allOk = await publishPost(claim, pages, snap) } catch (e) { claim.pub = claim.pub || {}; claim.pub._err = String(e && e.message || e).slice(0, 200) }
       const t2 = new Date().toISOString()
       try { await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x) return { write: false }; x.pub = claim.pub; x.status = allOk ? 'published' : 'failed'; x.updatedAt = t2; delete x.claimAt; if (allOk) x.publishedAt = t2; return { write: true, doc: d } }, '發布結果') }
       catch (e) { console.error('[social-publish] 發布結果沒存進去（貼文停在發布中，不會自動重發）', p0.id, allOk, String(e && e.message || e).slice(0, 80)) }

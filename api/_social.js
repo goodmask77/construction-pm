@@ -30,6 +30,8 @@ export async function fbPageToken(pageId) {
   return Object.values(t)[0] || (s.facebook && s.facebook.pageToken) || ''
 }
 // 授權是否做完（第七輪 A2）：帳號與權杖兩份文件的授權世代不同＝某次授權只寫了一份（中斷），發文前擋下
+// 發文用的同代快照（第八輪 A1）：一次讀帳號與權杖、確認同一次授權（世代相同），之後整個發文只用這份（不中途重讀權杖）；不同代＝回 { err }
+export async function pubSnapshot() { const [a, s] = await Promise.all([getAccounts(), getSecret()]); const ga = Number(a && a._oauthGen) || 0, gs = Number(s && s._oauthGen) || 0; if (ga !== gs) return { err: '粉專授權還沒做完（帳號與權杖不是同一次授權），先不發——請重新整理「連接 Facebook」那一頁或重新連接' }; const t = (s.facebook && s.facebook.tokens) || {}; return { pages: (a.facebook && a.facebook.pages) || {}, tokens: { ...t }, legacy: (s.facebook && s.facebook.pageToken) || '', gen: ga } }
 export async function oauthPending() { const [a, s] = await Promise.all([getAccounts(), getSecret()]); const ga = Number(a && a._oauthGen) || 0, gs = Number(s && s._oauthGen) || 0; return ga !== gs ? '粉專授權還沒做完（帳號與權杖不是同一次授權），先不發——請重新整理「連接 Facebook」那一頁或重新連接' : null }
 export async function fbPages() { const a = await getAccounts(); return (a.facebook && a.facebook.pages) || {} }
 
