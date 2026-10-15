@@ -2262,6 +2262,15 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
+  // 🧭 Jev 決策模型測試口（v4.71.122）：POST ?jevtest=<MENU_PROBE_KEY> body { state, questions[, model] } → 原樣轉 jevDecide；給上線前用真資料對照中文準確度
+  if (req.query?.jevtest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.jevtest) !== mk) return res.status(403).json({ ok: false })
+    const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
+    if (!b.state || !b.questions) return res.status(400).json({ ok: false, error: 'need state + questions' })
+    const { jevDecide } = await import('./_ai.js'); res.setHeader('Cache-Control', 'no-store')
+    return res.status(200).json(await jevDecide('jevtest', { state: b.state, questions: b.questions, model: b.model || 'jev-latest' }))
+  }
   if (req.query?.aiwhich) { // v4.70.81 每個 AI 功能頁角落「這裡由哪家 AI 處理」小標籤；只回供應商＋模型名，不含金鑰
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.aiwhich) !== ok2) return res.status(403).json({ ok: false })
