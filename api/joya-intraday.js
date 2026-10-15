@@ -192,19 +192,24 @@ export default async function handler(req, res) {
       await fcDaily(kvGet, kvPut, tpeF.toISOString().slice(0, 10))
     }
   } catch (e) { console.log('fc snapshot err', e?.message) }
-  // 低水位「今天已處理」標記：只改 notified、條件寫入（資料在讀和寫之間被別人改過就重讀再試）＝不會把同時進來的盤點整份蓋掉（abgd 關卡 3 盤點第一輪 OpenAI A5）
-  const invMark = async (day, why) => {
+  // 低水位「今天已處理」標記：條件寫入（帶讀到的 updated_at；GD kvPut 每次都更新 updated_at，被別人改過＝0 列 → 重讀再試）＝不會把同時進來的盤點蓋掉
+  // set=true：認領（今天已有標記回 'already'）；set=false：發送失敗時收回認領，讓下一輪重試（abgd 關卡 3 盤點第二輪 OpenAI A5：先認領再發，不是發完才標記）
+  const invMark = async (day, why, set = true) => {
     const { SB_URL: U, svc: H } = await import('./_onboard.js')
     for (let i = 0; i < 5; i++) {
       const r = await fetch(`${U}/rest/v1/pm_documents?id=eq.sp_finance_pm_inv&select=data,updated_at`, { headers: H }); const rows = r.ok ? await r.json() : []
-      if (!rows.length) return false
-      let d = {}; try { d = JSON.parse(rows[0].data.v) || {} } catch (_) { return false }
-      d.notified = { [day]: 1 }
+      if (!rows.length) return 'fail'
+      let d = {}; try { d = JSON.parse(rows[0].data.v) || {} } catch (_) { return 'fail' }
+      const has = !!(d.notified && d.notified[day])
+      if (set && has) return 'already'
+      if (!set && !has) return 'ok'
+      d.notified = set ? { [day]: 1 } : {}
       const p = await fetch(`${U}/rest/v1/pm_documents?id=eq.sp_finance_pm_inv&updated_at=eq.${encodeURIComponent(rows[0].updated_at)}`, { method: 'PATCH', headers: { ...H, 'content-type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify({ data: { v: JSON.stringify(d) }, editor: why, updated_at: new Date().toISOString() }) })
-      if (p.ok && (await p.json()).length === 1) { try { await announceChanged() } catch (_) {} return true }
+      if (p.ok && (await p.json()).length === 1) { try { await announceChanged() } catch (_) {} return 'ok' }
       await new Promise(res => setTimeout(res, 120 * (i + 1)))
     }
-    return false
+    console.error('[inv-low] 標記寫不進去（' + why + '）') // Vercel 日誌查得到
+    return 'fail'
   }
   // ── 盤點/包材低水位提醒（張良 2026-09-21）：每天第一輪（11:00 場次）查一次，低於最低水位 → DD 發內部群一則彙整 ──
   try {
@@ -213,15 +218,14 @@ export default async function handler(req, res) {
     const { abgdOwnerOf: ownInv } = await import('./mail-sync.js')
     if (wd2 >= 1 && wd2 <= 5 && hm >= '11:00' && hm < '11:20' && (await ownInv('sp_finance_pm_inv')) === 'gd') { // abgd 搬家（F05）：盤點切新殼後低水位提醒改新殼排程 /api/ops/cron/inv-low
       const invDoc = (await kvGet('sp_finance_pm_inv')) || {}
-      invDoc.notified = invDoc.notified || {}
-      if (!invDoc.notified[todayInv]) {
+      if (!(invDoc.notified || {})[todayInv]) {
         const [f2, p2] = await Promise.all([invStatus('food'), invStatus('pack')])
         const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
         if (lows.length) {
           const listLS = lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n')
           const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(lowStock)：開關(相容舊 pm_notify.lowStock)/群/文字
           const cfgLS = await ddGet('lowStock')
-          if (cfgLS.on) { // v4.33.0 LINE＋GD推播同開關、同一天一次標記
+          if (cfgLS.on && (await invMark(todayInv, '低水位提醒(認領)')) === 'ok') { // v4.33.0 LINE＋GD推播同開關、同一天一次；先認領再發（沒認領到＝別的場次已處理）
             const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             let sent2 = false
             if (tk2) {
@@ -232,7 +236,7 @@ export default async function handler(req, res) {
               if (pr2.ok) sent2 = true
             }
             try { if (await wpPush(null, { title: '📉 庫存低水位', body: lows.map(x => x.name).join('、'), url: '/prep' })) sent2 = true } catch (_) {}
-            if (sent2) { await invMark(todayInv, '低水位提醒') } // 只留今天鍵，一天一次
+            if (!sent2) await invMark(todayInv, '低水位提醒(發送失敗收回)', false) // 都沒送出＝收回認領，下一場次重試（同 GD 原本「送出才標記」的語意）
           }
         } else { await invMark(todayInv, '低水位檢查(無警報)') }
       }
