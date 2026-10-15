@@ -18,6 +18,7 @@ export default async function handler(req, res) {
     if (!isCron && !keyOk) return res.status(403).json({ ok: false, error: 'forbidden' })
     await (async () => { try { const r9 = await (await import('./_inbox.js')).inboxRemind(); console.log('[inbox] remind', JSON.stringify(r9)) } catch (e) { console.log('[inbox] remind err', e?.message) } })()
     await (async () => { try { const IB = await import('./_inbox.js'); const m7 = await IB.inboxMediaRead(); console.log('[inbox] media', JSON.stringify(m7)); const d7 = await IB.bkDetect(); const w7 = await IB.bkWatch(); console.log('[inbox] bk', JSON.stringify(d7), JSON.stringify(w7)) } catch (e) { console.log('[inbox] bk err', e?.message) } })() // v4.71.23 確定訂位日期偵測＋inline 有沒有訂＋提醒
+    await (async () => { try { const rq = await (await import('./_inbox.js')).ibRetry({ limit: 30 }); if (rq.seen) console.log('[inbox] 補存', JSON.stringify(rq)) } catch (e) { console.log('[inbox] 補存 err', e?.message) } })() // v4.71.120 待補存佇列
     await (async () => { try { const r8 = await (await import('./_inbox.js')).inboxClassify(); console.log('[inbox] classify', JSON.stringify(r8)) } catch (e) { console.log('[inbox] classify err', e?.message) } })() // v4.71.12 收件匣 AI 補分類 // v4.70.47 收件匣未回覆提醒（每小時整點順便跑，fail-safe）
 
     // 台灣時間：星期與整點（+8 後用 UTC 取值）

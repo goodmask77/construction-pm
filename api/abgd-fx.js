@@ -416,6 +416,13 @@ const ACTIONS = {
     try { return await mailhubDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || ''), q: a.q || {}, body: a.body || {}, who, kvGet: kv.kvGet, kvPut: kv.kvPut, guard: kv.guard }) }
     catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 300) } }
   },
+  async inbox_op(a) { // 收件匣（新殼畫面 → 這裡執行；LINE 收發、AI、媒體簽名只在 GD）：新殼已驗身分；分派同 GD 舊頁（_inboxop.js）；讀寫依資料歸屬走 GD 或新殼
+    const who = { name: String((a.who || {}).name || '').slice(0, 30), role: String((a.who || {}).role || ''), rid: String((a.who || {}).rid || '') }
+    if (!who.name) return { ok: false, error: '缺操作者' }
+    const { inboxDispatch } = await import('./_inboxop.js')
+    try { return await inboxDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || 'list'), q: a.q || {}, body: a.body || {}, who, origin: 'https://ground-pm.vercel.app' }) }
+    catch (e) { return { ok: false, error: '收件匣暫時出錯：' + String(e && e.message || e).slice(0, 120) } }
+  },
   async task_notify(a) { // 任務通知（新殼任務頁 → 這裡發；文字照抄 GD ?tasknotify，_tasknotify.js 共用）；新殼已驗任務編輯權限，a.actor＝操作者
     const { taskNotify } = await import('./_tasknotify.js')
     const r = await taskNotify(a, String(a.actor || '').slice(0, 30))
@@ -492,7 +499,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

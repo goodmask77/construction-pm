@@ -9,6 +9,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 //  - 權限：pm_inbox_cfg.perm[帳號]=姓名清單；主管（審核人／張良瑋／角色主管／perm admin）全看；清單空＝只有主管
 //  - 通知：新訊息→wpPush 給有權限的人（鈴鐺＋推播，點了直達 #inbox=對話）；超過 remindMin 分鐘沒人回→每小時 cron 再提醒＋LINE 私訊審核人
 import crypto from 'crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -27,7 +28,14 @@ export const configured = (a) => { const c = creds(a); return !!(c.secret && c.t
 const H = () => ({ apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json' })
 const esc = (s) => String(s).replace(/[\\%_]/g, (m) => '\\' + m)
 const nowIso = () => new Date().toISOString()
-async function kvGetMany(ids) {
+// v4.71.120 收件匣搬新殼準備（B 模式，同信箱中樞／任務）：pm_inbox_ 開頭的鍵依資料歸屬讀寫（_abgdkv：域在 GD＝原表；搬到新殼＝讀走 gdread、寫走命令橋）；
+//   其他鍵（訂位 sp_finance_pm_inline_、包場 sp_finance_pm_em）照舊讀 GD。寫入失敗一律丟錯（不再默默失敗）。歸屬查詢暫存 5 秒（切換中兩邊都有閘門擋，不會寫錯邊）
+const IBP = 'pm_inbox_'
+const _ibAls = new AsyncLocalStorage()
+export const ibAs = (name, fn) => _ibAls.run({ op: String(name || '收件匣').slice(0, 30) }, fn) // 以操作者姓名執行（存檔帶操作者）；webhook／排程沒包＝「收件匣」
+const _ibKv = new Map()
+async function ibKv() { const op = (_ibAls.getStore() || {}).op || '收件匣'; const c = _ibKv.get(op); if (c && Date.now() - c.t < 5000) return c.kv; const kv = await (await import('./_abgdkv.js')).abgdKv({ domain: 'inbox', lockKey: 'pm_inbox_x', operator: op, label: '收件匣' }); _ibKv.set(op, { t: Date.now(), kv }); if (_ibKv.size > 50) _ibKv.clear(); return kv }
+async function kvGetManyRaw(ids) {
   if (!SB_URL || !SB_KEY || !ids.length) return {}
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,data`, { headers: H() })
@@ -35,21 +43,23 @@ async function kvGetMany(ids) {
     const out = {}; rows.forEach((row) => { if (row?.data?.v) { try { out[row.id] = JSON.parse(row.data.v) } catch (_) {} } }); return out
   } catch (_) { return {} }
 }
+async function kvGetMany(ids) {
+  const ib = ids.filter(k => k.startsWith(IBP)), other = ids.filter(k => !k.startsWith(IBP))
+  const out = other.length ? await kvGetManyRaw(other) : {}
+  if (ib.length) Object.assign(out, await (await ibKv()).kvGetMany(ib))
+  return out
+}
 const kvGet = async (id) => (await kvGetMany([id]))[id] || null
-async function kvSet(id, obj, editor) {
-  await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: editor || '收件匣', updated_at: nowIso() }) })
+async function kvSet(id, obj, editor) { // 整份覆蓋（同 GD 原本）；新殼模式先讀版本再存，撞到同時修改就重讀版本重存
+  const kv = await ibKv()
+  if (kv.mode === 'gd') { await kv.kvPut(id, obj, editor || '收件匣'); return }
+  await kv.retry(async () => { await kv.kvGet(id); await kv.kvPut(id, obj, editor || '收件匣') })
 }
-async function kvInsert(id, obj, editor) {
-  await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: editor || '收件匣', updated_at: nowIso() }) })
-}
+async function kvInsert(id, obj, editor) { await (await ibKv()).kvInsert(id, obj, editor || '收件匣') } // 只新增（已存在不覆蓋，同 GD 原本 POST 不帶 merge）
 async function kvLike(prefix, limit, order) {
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(prefix))}*&select=id,data&order=${order || 'id.desc'}&limit=${limit || 300}`, { headers: H() })
-    const rows = r.ok ? await r.json() : []
-    const out = []; rows.forEach((row) => { if (row?.data?.v) { try { out.push(JSON.parse(row.data.v)) } catch (_) {} } }); return out
-  } catch (_) { return [] }
+  const m = await (await ibKv()).kvPrefix(prefix, { order: /^updated_at/.test(order || '') ? 'updated' : 'id', limit: limit || 300 })
+  return Object.values(m).filter(v => v != null)
 }
-
 const CFG_KEY = 'pm_inbox_cfg'
 // v4.71.12 對話分類（張良 2026-10-14 參考小夏 EM「一般訂位／大型訂位／包場／婚禮」）：設定頁可增刪改；新訊息先用關鍵字猜，猜不到每小時 AI 補；人改過（catBy=man）就不再自動改
 export const DEF_CATS = ['一般訂位', '大型訂位', '包場', '婚禮', '會員／點數', '其他']
@@ -144,7 +154,7 @@ export async function forwardRaw(a, raw, sig) {
 }
 
 // ── 收訊：一個 webhook 事件 → 存訊息＋更新對話＋通知 ──
-export async function ingestEvent(a, ev, destination) {
+export async function ingestEvent(a, ev, destination, opt = {}) { // opt.retry＝待補存佇列重跑（v4.71.120）：不再自動回覆（第一次已試過、replyToken 也過期）
   const src = ev.source || {}
   const uid = src.userId && src.type === 'user' ? src.userId : (src.groupId || src.roomId || src.userId || '')
   if (!uid) return null
@@ -161,7 +171,7 @@ export async function ingestEvent(a, ev, destination) {
     const m = ev.message || {}
     msg = { id: '', convId: conv.id, t: new Date(t).toISOString(), dir: 'in', type: m.type || 'text', name: conv.name }
     if (m.type === 'text') { msg.text = String(m.text || '').slice(0, 5000); text = msg.text
-      if (a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user') { if (text === '門市與客服' || text === '我要團體訂餐') { conv.replyUsed = true; cardAutoReply(a, uid, ev.replyToken, conv, text).catch(() => {}) } else if (/會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } } // v4.70.96 圖文選單第 6 格／團訂卡片 // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
+      if (!opt.retry && a.key === 'gd' && ev.replyToken && (ev.source || {}).type === 'user') { if (text === '門市與客服' || text === '我要團體訂餐') { conv.replyUsed = true; cardAutoReply(a, uid, ev.replyToken, conv, text).catch(() => {}) } else if (/會員|點數|集點|積分|累點/.test(text) && text.length <= 40) { conv.replyUsed = true; memberAutoReply(a, uid, ev.replyToken, conv).catch(() => {}) } } } // v4.70.96 圖文選單第 6 格／團訂卡片 // v4.70.92 客人問「點數／會員」→ 免費 reply 目前點數＋會員卡連結（張良 2026-10-12「官方目前不會回覆問題」）
     else if (m.type === 'sticker') { msg.sticker = { pkg: m.packageId, id: m.stickerId }; text = '（貼圖）' }
     else if (m.type === 'location') { msg.text = [m.title, m.address].filter(Boolean).join(' '); msg.loc = { lat: m.latitude, lng: m.longitude }; text = '（位置）' + (m.address || '') }
     else if (['image', 'video', 'audio', 'file'].includes(m.type)) {
@@ -180,19 +190,40 @@ export async function ingestEvent(a, ev, destination) {
     if (msg.text && !conv.phone) { const pm = String(msg.text).match(PHONE_RE); if (pm) { conv.phone = pm[0].replace(/[\s-]/g, ''); conv.phoneBy = 'auto' } }
     if (conv.status === 'done' || conv.status === 'wait') { conv.status = 'new'; conv.waitUntil = '' } // v4.71.11 等待中的客人又傳訊息＝要處理，回到待處理
     conv.lastInT = msg.t
-  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
+  } else if (ev.type === 'follow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: (ev.follow && ev.follow.isUnblocked) ? '解除封鎖，重新加入好友' : '加入好友' }; text = msg.text; conv.follow = true; conv.unread = (conv.unread || 0) + 1; if (conv.status === 'done') conv.status = 'new'; if (!opt.retry && a.key === 'gd' && ev.replyToken) { conv.replyUsed = true; welcomeReply(a, ev.replyToken).catch(() => {}) } } // v4.70.83 GD 加好友：用 replyToken 免費回歡迎＋會員卡連結（加好友≠入會，點開會員卡按同意才入會）
   else if (ev.type === 'unfollow') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '封鎖／刪除好友' }; text = msg.text; conv.follow = false }
   else if (ev.type === 'join') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號被加入這個群' }; text = msg.text }
   else if (ev.type === 'leave') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'sys', type: 'sys', text: '官方帳號離開這個群' }; text = msg.text }
   else if (ev.type === 'postback') { msg = { convId: conv.id, t: new Date(t).toISOString(), dir: 'in', type: 'text', text: '（按了按鈕）' + String((ev.postback || {}).data || '').slice(0, 200), name: conv.name }; text = msg.text; conv.unread = (conv.unread || 0) + 1 }
   else return null
-  const mk = msgKey(a.key, uid, t); msg.id = mk
+  const mk = ev.webhookEventId ? `pm_inbox_m_${a.key}_${uid}_${t.toString(36)}e${djb(String(ev.webhookEventId))}` : msgKey(a.key, uid, t); msg.id = mk // 有事件編號＝固定鍵（重存不會變兩則）
   conv.last = { text: text.slice(0, 80), t: msg.t, dir: msg.dir }
   conv.lastT = msg.t
   await Promise.all([kvInsert(mk, msg), kvSet(ck, conv)])
   bumpStat(a.key, { lastEventT: nowIso(), destination: destination || undefined, lastEventType: ev.type }).catch(() => {})
   if ((msg.dir === 'in' || ev.type === 'follow') && !a.relay) notifyNew(a, conv, text).catch(() => {}) // relay 帳號（DD）不推播：DD 私訊量大且 DD 自己會答，有要插手的人自己到收件匣看
   return { conv, msg }
+}
+
+// ── v4.71.120 待補存佇列：webhook 存檔失敗（例：收件匣切換凍結那幾秒、新殼暫時連不上）時原始事件先放 GD 的 pm_ibq_<事件編號>
+//   （不屬收件匣域，凍結期也寫得進去），之後每次 webhook 結束前與每小時排程補存；訊息鍵由事件編號固定，重存不會變兩則；重存不再自動回覆
+const IBQ = 'pm_ibq_'
+export async function ibQueue(a, ev, destination, err) {
+  const id = String(ev.webhookEventId || (a.key + '_' + (ev.timestamp || Date.now()) + '_' + Math.random().toString(36).slice(2, 6))).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: IBQ + id, data: { v: JSON.stringify({ acct: a.key, ev, destination: destination || '', at: nowIso(), tries: 0, err: String(err || '').slice(0, 200) }) }, editor: '收件匣待補存', updated_at: nowIso() }) })
+  if (!r.ok) console.log('[inbox] 待補存也存不進去', id, r.status)
+  return r.ok
+}
+export async function ibRetry({ limit = 5 } = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(IBQ))}*&select=id,data&order=updated_at.asc&limit=${limit}`, { headers: H() })
+  const rows = r.ok ? await r.json() : []; let ok = 0, bad = 0
+  for (const row of rows) {
+    let q = null; try { q = JSON.parse(row.data.v) } catch (_) { continue }
+    const a = acctOf(q.acct); if (!a) continue
+    try { await ingestEvent(a, q.ev, q.destination, { retry: true }); await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(row.id)}`, { method: 'DELETE', headers: H() }); ok++ }
+    catch (e) { bad++; q.tries = (q.tries || 0) + 1; q.err = String(e && e.message || e).slice(0, 200); await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: row.id, data: { v: JSON.stringify(q) }, editor: '收件匣待補存', updated_at: nowIso() }) }).catch(() => {}) }
+  }
+  return { ok, bad, seen: rows.length }
 }
 
 // ── v4.70.61 DD 私訊轉進收件匣：line-webhook 每個事件先 ddInboxBegin(ev)；DD 回話處（lineReply／linePush／卡片）呼叫 ddInboxOut(text, to)；回 200 前 ddInboxFlush() 等寫完 ──
@@ -442,9 +473,15 @@ export async function importChat({ who, mgr, cfg, id, csv, dry }) {
   const sum = { n: p.msgs.length, nIn: p.msgs.filter(m => m.dir === 'in').length, nOut: p.msgs.filter(m => m.dir === 'out').length, skipAuto: p.skipAuto, bad: p.bad, acctName: p.acctName, from: new Date(p.msgs[0].ms).toISOString(), to: new Date(p.msgs[p.msgs.length - 1].ms).toISOString() }
   if (dry) return { ok: true, dry: true, ...sum }
   const docs = p.msgs.map(m => ({ id: `pm_inbox_m_${acct}_${uid}_${m.ms.toString(36)}i${djb(m.dir + m.text)}`, data: { v: JSON.stringify({ id: 'imp', convId: conv.id, t: new Date(m.ms).toISOString(), dir: m.dir, type: 'text', text: m.text, ...(m.dir === 'in' ? { name: conv.name } : { by: (m.name && m.name !== 'Unknown') ? m.name : p.acctName }), imp: p.acctName }) }, editor: '收件匣匯入', updated_at: nowIso() }))
-  for (let i = 0; i < docs.length; i += 200) {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(docs.slice(i, i + 200)) })
-    if (!r.ok) return { ok: false, error: '寫入失敗：' + r.status }
+  const kvI = await ibKv()
+  if (kvI.mode === 'gd') {
+    for (let i = 0; i < docs.length; i += 200) {
+      const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...H(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(docs.slice(i, i + 200)) })
+      if (!r.ok) return { ok: false, error: '寫入失敗：' + r.status }
+    }
+  } else { // 已搬新殼：逐筆經命令橋存（鍵固定＝重匯不重複；8 筆並行）
+    let k = 0; const work = async () => { while (k < docs.length) { const d = docs[k++]; await kvI.retry(async () => { await kvI.kvGet(d.id); await kvI.kvPut(d.id, JSON.parse(d.data.v), '匯入舊紀錄') }) } }
+    try { await Promise.all(Array.from({ length: Math.min(8, docs.length) }, work)) } catch (e) { return { ok: false, error: '寫入失敗：' + String(e && e.message || e).slice(0, 80) } }
   }
   conv.imports = [...(conv.imports || []), { t: nowIso(), by: who.name, acctName: p.acctName, n: sum.n, from: sum.from, to: sum.to }].slice(-20)
   await kvSet(ck, conv)
@@ -678,8 +715,9 @@ export async function inboxClassify() {
 }
 // ── v4.71.26 讀照片／檔案內容（張良 2026-10-14「summer 的照片跟檔案內容讀取得到嗎」＋「Word、Excel 怎麼會讀不了」）──
 // 每張只讀一次，結果存在那則訊息的 ai 欄位（張良同意）；照片、PDF 給 AI 看（路由 mediaread）；Word／Excel／PowerPoint 直接拆檔取文字，不花 AI 錢
-async function kvLikeRows(prefix, limit) {
-  try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc(prefix))}*&select=id,data&order=id.desc&limit=${limit || 300}`, { headers: H() }); const rows = r.ok ? await r.json() : []; return rows.map(x => { try { return { id: x.id, v: JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean) } catch (_) { return [] }
+async function kvLikeRows(prefix, limit) { // 依歸屬讀（同 kvLike），回 [{id, v}]，編號新到舊
+  const m = await (await ibKv()).kvPrefix(prefix, { order: 'id', limit: limit || 300 })
+  return Object.entries(m).filter(([, v]) => v != null).map(([id, v]) => ({ id, v }))
 }
 async function unzipText(buf, want) { // 極簡 zip 讀取（Office 檔就是 zip）：只解 want(name) 為真的檔
   const zlib = await import('node:zlib'); const out = {}
