@@ -29,10 +29,21 @@ async function nDel(k) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?i
 async function nPrefix(pf, opt = {}) { const like = pf.replace(/[\\%_]/g, m => '\\' + m); const ord = opt.order === 'updated' ? '&order=updated_at.desc' : opt.order === 'id' ? '&order=id.desc' : ''; const lim = opt.limit ? '&limit=' + Number(opt.limit) : ''; const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(like)}*&select=id,data${ord}${lim}`, { headers: svc, signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const rows = await r.json(); const out = {}; for (const row of rows) { if (!String(row.id).startsWith(pf) || row?.data?.v == null) continue; try { out[row.id] = JSON.parse(row.data.v) } catch (_) { throw new Error('資料內容壞掉：' + row.id) } } return out }
 
 export async function abgdOwner(lockKey) { return owner(lockKey) } // 只查歸屬（呼叫端可暫存歸屬、每次另建 abgdKv 物件，版本號不跨請求共用）
-export async function abgdKv({ domain, lockKey, operator, label = '這項資料', owner: knownOwner }) {
+// GD 版本化讀寫（v4.71.132；團體訂餐用）：讀用 pm_doc_get 記版本、改用 pm_doc_cas（版本對不上＝丟 stale）、原本沒有的用「只新增」（已存在＝丟 stale）
+async function vGet(k) { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_get`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json' }, body: JSON.stringify({ p_id: k }), signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const j = await r.json(); if (!j || !j.data) return { exists: false, rev: 0, v: null }; if (j.data.v == null) return { exists: true, rev: Number(j.rev) || 0, v: null }; try { return { exists: true, rev: Number(j.rev) || 0, v: JSON.parse(j.data.v) } } catch (_) { throw new Error('資料內容壞掉：' + k) } }
+const staleErr = (label) => { const e = new Error(`有人同時在改${label}，請重新整理再試一次`); e.code = 'stale'; return e }
+async function vCas(k, rev, v, editor, label) { const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_doc_cas`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json' }, body: JSON.stringify({ p_id: k, p_rev: rev, p_data: { v: JSON.stringify(v) }, p_editor: String(editor || 'abgdkv').slice(0, 40) }), signal: AbortSignal.timeout(15000) }); if (!r.ok) { const tx = await r.text().catch(() => ''); console.log('[abgdkv] 版本寫入失敗', k, r.status, tx.slice(0, 160)); throw new Error(BUSY(label)) } const j = await r.json(); if (j && j.ok) return Number(j.rev) || rev + 1; if (j && (j.conflict || j.error === 'not_found')) throw staleErr(label); throw new Error(BUSY(label)) }
+export async function abgdKv({ domain, lockKey, operator, label = '這項資料', owner: knownOwner, versioned = false }) {
   const ow = knownOwner || await owner(lockKey)
   const isStale = (e) => !!(e && e.code === 'stale') // 看錯誤代碼，不靠中文字（關卡 3 tasks 第一輪 OpenAI B3）
   const retry = async (fn) => { for (let i = 0; ; i++) { try { return await fn() } catch (e) { if (i >= 4 || !isStale(e)) throw e; await new Promise(r => setTimeout(r, 150 + Math.random() * 400)) } } }
+  if (ow === 'gd' && versioned) { // 版本化：同一個物件內，寫入比對「這個物件上次讀到」的版本（沒讀過＝先讀）
+    const seen = {} // k → { exists, rev }
+    const kvGet = async (k) => { const g = await vGet(k); seen[k] = { exists: g.exists, rev: g.rev }; return g.v }
+    const kvPut = async (k, v, ed) => { if (!(k in seen)) await kvGet(k); const s = seen[k]; if (s.exists) { seen[k] = { exists: true, rev: await vCas(k, s.rev, v, ed, label) }; return true } if (!(await nInsert(k, v, ed))) throw staleErr(label); delete seen[k]; return true } // 新增後版本由觸發器給，下次寫前重讀
+    const kvGetMany = async (keys) => { const out = {}; for (const k of keys) { const v = await kvGet(k); if (v != null) out[k] = v } return out }
+    return { mode: 'gd', retry, kvGet, kvPrefix: nPrefix, kvGetMany, kvInsert: nInsert, kvPut, kvDel: async (k) => { if (!(await nDel(k))) throw new Error(BUSY(label)); return true } }
+  }
   if (ow === 'gd') return {
     mode: 'gd', retry,
     kvGet: nGet, kvPrefix: nPrefix, kvGetMany: nGetMany, kvInsert: nInsert,

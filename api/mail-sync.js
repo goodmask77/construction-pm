@@ -4682,38 +4682,12 @@ export default async function handler(req, res) {
     const whoG = await sopWho(tkG)
     if (!whoG) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
     const canG = !!(await permWho(tkG, 'gorder'))
-    const GO = await import('./_grporder.js')
     const opG = String(req.method === 'POST' ? bG.op : req.query.op || 'list')
     res.setHeader('Cache-Control', 'private, no-store')
     try {
-      if (req.method !== 'POST') {
-        if (opG === 'list') return res.status(200).json({ ok: true, ver: GO.GO_VER, me: { name: whoG.name, canEdit: canG }, list: await GO.listOrders(), cfg: await GO.loadCfg(), menu: await GO.loadMenu() })
-        if (opG === 'get') { const o = await GO.getOrder(String(req.query.id || '')); if (!o) return res.status(404).json({ ok: false, error: '找不到這張單' }); return res.status(200).json({ ok: true, order: o, menu: await GO.loadMenu(), cfg: await GO.loadCfg(), link: GO.linkOf(o.id), me: { name: whoG.name, canEdit: canG } }) }
-        if (opG === 'cfg') return res.status(200).json({ ok: true, cfg: await GO.loadCfg() })
-        return res.status(400).json({ ok: false, error: '不認識的操作' })
-      }
-      if (!canG) return res.status(403).json({ ok: false, error: '沒有「團體訂餐」的編輯權限（請主管在權限頁開）' })
-      if (opG === 'create') return res.status(200).json(await GO.createOrder({ who: whoG, ...bG }))
-      if (opG === 'save') return res.status(200).json(await GO.saveOrder({ who: whoG, id: String(bG.id || ''), patch: bG.patch || {} }))
-      if (opG === 'status') return res.status(200).json(await GO.setStatus({ who: whoG, id: String(bG.id || ''), status: String(bG.status || '') }))
-      if (opG === 'parse') return res.status(200).json(await GO.parseText({ text: bG.text }))
-      if (opG === 'cfg') return res.status(200).json(await GO.saveCfg(bG.cfg || {}, whoG))
-      if (opG === 'imgsave') return res.status(200).json(await GO.saveImgs({ who: whoG, id: String(bG.id || ''), p1: bG.p1, p2: bG.p2 }))
-      if (opG === 'invoice') return res.status(200).json(await GO.invoiceIssue({ who: whoG, id: String(bG.id || ''), taxId: bG.taxId, title: bG.title, addr: bG.addr, email: bG.email, phone: bG.phone })) // 🧾 v4.71.3 手動開發票
-      if (opG === 'invoicevoid') return res.status(200).json(await GO.invoiceVoid({ who: whoG, id: String(bG.id || ''), reason: bG.reason }))
-      if (opG === 'sendimgs') {
-        const IB = await import('./_inbox.js')
-        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
-        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
-        return res.status(200).json(await GO.sendImgs({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
-      }
-      if (opG === 'sendlink') {
-        const IB = await import('./_inbox.js')
-        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
-        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
-        return res.status(200).json(await GO.sendLink({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
-      }
-      return res.status(400).json({ ok: false, error: '不認識的操作' })
+      const { grporderDispatch } = await import('./_grporderop.js') // v4.71.132 分派抽成共用（新殼代發口 gorder_op 用同一份）
+      const out = await grporderDispatch({ method: req.method === 'POST' ? 'POST' : 'GET', op: opG, q: req.query, body: bG, who: whoG, canEdit: canG })
+      const { status, ...rest } = out || {}; return res.status(typeof status === 'number' ? status : 200).json(rest)
     } catch (e) { return res.status(200).json({ ok: false, error: '團體訂餐暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
   }
   if (req.query?.gorder) {
