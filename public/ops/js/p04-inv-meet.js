@@ -16,6 +16,7 @@ function invRender(){
   const d = window._invD; if (!d || (curStore !== 'food' && curStore !== 'pack')) return
   const lbl = d.kind === 'pack' ? '包材' : '食材'
   document.getElementById('upd').textContent = `${d.kind==='pack'?'📦':'🥩'} ${lbl}盤點・預估現量＝最後盤點 − 盤後銷售×每份用量`
+  { const mv = window._tabCfg && window._tabCfg.routes && window._tabCfg.routes[d.kind==='pack'?'pack':'food']; if (mv) document.getElementById('upd').textContent = lbl + '盤點已搬到新版：這裡只能看，要盤點或改品項請從側欄重新點進去' } // abgd 搬家（F05／F06）
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const cats = Array.isArray(d.cats) ? d.cats : [] // 🧱 物料庫脊椎（張良 2026-10-06）：分類看；食譜/採購之後共用同一份物料庫
   const hasUncat = d.items.some(x=>!(x.cat&&String(x.cat).trim()))
@@ -157,6 +158,7 @@ async function buyLoad(){
 function buyRender(){
   const d = window._buyD; if (!d || curStore !== 'buy') return
   document.getElementById('upd').textContent = '採購・提需求 → 已購買 → 收貨拍照'
+  if (window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.buy) document.getElementById('upd').textContent = '採購已搬到新版：這裡只能看，要提需求或收貨請從側欄重新點進去' // abgd 搬家（F07）
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const stOf = x => x.status==='done' ? 'bought' : x.status // 舊資料 done=已購買(待收貨)
   const open = d.list.filter(x=>stOf(x)==='open'), bought = d.list.filter(x=>stOf(x)==='bought'), recvd = d.list.filter(x=>stOf(x)==='received')
