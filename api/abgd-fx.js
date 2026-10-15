@@ -68,7 +68,7 @@ const gdNames = (rosterDoc) => {
 
 // 新殼借用 GD 的 AI 出口（唯讀動作，2026-10-14 第 2 波耗損 F09 起）：金鑰、路由（AI 中樞設定）、用量紀錄都留在 GD；
 // 只允許登記過的路由，避免新殼任意呼叫；回 { text, provider, model }
-const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr'])
+const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr']) // menuocr：菜單拍照建檔（F18）
 const ACTIONS = {
   async ai_call(a) {
     const route = String(a.route || '')
@@ -88,9 +88,17 @@ const ACTIONS = {
       }
     }
     if (nImg > 14) throw new Error('圖片太多')
-    const mt = Math.trunc(Number(a.maxTokens)); const maxTokens = Number.isFinite(mt) && mt >= 1 ? Math.min(4000, mt) : 600
-    const r = await aiCall(route, { system: String(a.system || ''), messages: msgs, maxTokens })
+    const mt = Math.trunc(Number(a.maxTokens)); const maxTokens = Number.isFinite(mt) && mt >= 1 ? Math.min(route === 'menuocr' ? 8000 : 4000, mt) : 600 // 菜單抄寫（F18）整份菜單 JSON 較長：同 GD ?menuocr 8000
+    const r = await aiCall(route, { system: String(a.system || ''), messages: msgs, maxTokens, ...(route === 'menuocr' ? { timeoutMs: 150000 } : {}) })
     return { text: r.text || '', provider: r.provider || '', model: r.model || '' }
+  },
+  // 菜單 AI 生圖（abgd F18 菜單；2026-10-15）：跟 GD ?menuai 同一份程式（_menuai.js）；只產圖存 photos/menu/raw/、回網址，不寫任何資料文件
+  // 參數只收 kind／sub／imgs（≤3 張 data URL）／hint／slogan／n／brief_en／brief_zh；整包 ≤4.3MB
+  async menu_ai_gen(a) {
+    if (Buffer.byteLength(JSON.stringify(a || {})) > 4_300_000) throw new Error('送 AI 的內容太大')
+    const { menuAiGen } = await import('./_menuai.js')
+    const pick = { kind: a.kind, sub: a.sub, imgs: Array.isArray(a.imgs) ? a.imgs.slice(0, 3) : [], hint: a.hint, slogan: a.slogan, n: a.n, brief_en: a.brief_en, brief_zh: a.brief_zh }
+    return await menuAiGen(pick)
   },
   // 讀：會議頁需要的名單（與 GD ?meet 同算法）
   async meet_meta() {
@@ -335,7 +343,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call'
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen'
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

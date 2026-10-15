@@ -837,6 +837,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuen) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.menuen) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let mb = {}; try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const map = mb.map || {}
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
@@ -854,6 +855,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menunote) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.menunote) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let nb = {}; try { nb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
     let nC = 0
@@ -869,6 +871,7 @@ export default async function handler(req, res) {
   if (req.query?.menumv) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.menumv) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     const itemQ = String(req.query.item || ''), toQ = String(req.query.to || '')
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
     const secs = ((doc.draft || {}).sections) || []
@@ -2448,57 +2451,16 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuai) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuai) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
-    const { aiCall, aiImage } = await import('./_ai.js')
-    const kind = b.kind === 'art' ? 'art' : 'photo'
-    const sub = ['sticker', 'logo', 'slogan'].includes(b.sub) ? b.sub : 'sticker'
-    const hint = String(b.hint || '').slice(0, 400), slogan = String(b.slogan || '').slice(0, 60)
-    const n = Math.max(1, Math.min(4, Number(b.n) || 2))
-    const imgs = (Array.isArray(b.imgs) ? b.imgs : []).slice(0, 3).map(u => { const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(String(u || '')); return m ? { media_type: m[1].toLowerCase(), data: m[2] } : null }).filter(Boolean)
-    const t0 = Date.now()
-    try {
-      // 第一段：寫指令（Claude／設定頁選的文字模型看圖）
-      let brief_en = String(b.brief_en || '').slice(0, 2000), brief_zh = String(b.brief_zh || '').slice(0, 300)
-      if (!brief_en) {
-        const ask = kind === 'photo'
-          ? `你是餐廳菜單的食物攝影指令師。附圖是一張「被上下裁切」的餐點照片（來自我們的菜單）。請用英文寫一段給圖像生成模型的指令，要它「重新畫一份完整、未裁切、同一道餐點的產品照」：精確描述餐點內容（每個元素、數量、由左到右的擺放）、容器／盤子／紙盒、拍攝角度、光線與色調，要求跟原圖一致。不要寫背景要求（系統會自動加）。${hint ? '老闆補充要求：' + hint + '。' : ''}另外用繁體中文 60 字內摘要這段指令給老闆看。回覆格式固定兩段、不要其他文字：\n===EN===\n（英文指令）\n===ZH===\n（中文摘要）`
-          : `你是品牌插畫美術指導。${imgs.length ? '附圖是老闆喜歡的風格參考，先分析它的風格（線條粗細、配色、質感、筆觸、時代感、是否有外框／貼紙白邊）。' : '沒有參考圖，請用溫暖活潑、手繪感的扁平插畫風。'}品牌：GROUN:D（海邊的披薩／漢堡／早午餐小店，品牌紅 #CE1611 配奶油色 #F5EADA）。${sub === 'logo' ? '任務：做「Logo 變化版」——以附上的官方 logo 為基礎做風格變化／加小元素，文字 GROUN:D 必須清楚可讀、拼字正確。' : sub === 'slogan' ? `任務：做一張「標語圖」——把文字「${slogan || hint}」原樣畫進圖裡（拼字、標點必須完全正確，不可多字少字），搭配風格化的裝飾。` : '任務：做一個「小插圖」（單一主體、可貼在菜單上的貼紙感）。'}老闆想要的概念／感覺：${hint || '活潑、生動、可愛'}。請用英文寫給圖像生成模型的指令：具體寫出風格、主體、配色、構圖（單一主體置中、四周留白、乾淨）。不要寫背景要求（系統會自動加）。另外用繁體中文 60 字內摘要給老闆看。回覆格式固定兩段、不要其他文字：\n===EN===\n（英文指令）\n===ZH===\n（中文摘要）`
-        const content = [...imgs.map(im => ({ type: 'image', media_type: im.media_type, data: im.data })), { type: 'text', text: ask }]
-        const r1 = await aiCall('app', { messages: [{ role: 'user', content }], maxTokens: 900, timeoutMs: 60000 })
-        const tx = String(r1.text || '')
-        const mEn = /===\s*EN\s*===\s*([\s\S]*?)(?:===\s*ZH\s*===|$)/i.exec(tx), mZh = /===\s*ZH\s*===\s*([\s\S]*?)$/i.exec(tx)
-        let j = { en: mEn ? mEn[1].trim() : '', zh: mZh ? mZh[1].trim() : '' }
-        if (!j.en) { const mj = /\{[\s\S]*\}/.exec(tx); try { j = JSON.parse(mj ? mj[0] : '{}') } catch (_) { j = { en: tx.replace(/```[a-z]*/g, '').slice(0, 1500), zh: '' } } } // 備援：模型硬要回 JSON／純文字
-        brief_en = String(j.en || '').replace(/```[a-z]*/g, '').trim().slice(0, 2000); brief_zh = String(j.zh || '').replace(/```/g, '').trim().slice(0, 300)
-        if (!brief_en) throw new Error('指令沒寫出來，再試一次')
-      }
-      // 第二段：畫圖（固定背景規格接在指令後面）
-      const tail = kind === 'photo'
-        ? ' Isolated on a flat, uniform cream background (#F5EADA) with only a soft natural shadow directly under the dish. Every item fully visible from top to bottom with generous plain margin on all sides. No text, no table surface, no props, no border, no extra items. Professional food product photography.'
-        : (sub === 'slogan'
-          ? ` Render the exact text "${slogan || hint}" with perfect spelling, centered, as the main element. Flat uniform cream background (#F5EADA), no drop shadow, no border, no watermark, nothing else in the frame.`
-          : ' Single centered subject with generous margin, flat uniform cream background (#F5EADA), no drop shadow, no border, no watermark, no extra text. Clean edges suitable for cutting out as a sticker.')
-      const prompt = brief_en + tail
-      const aspect = kind === 'photo' ? '16:9' : (sub === 'slogan' ? '16:9' : '1:1')
-      const size = kind === 'photo' ? '2K' : '1K'
-      const refImages = kind === 'photo' ? imgs.slice(0, 1) : imgs
-      const outs = await Promise.all(Array.from({ length: n }, () => aiImage('image', { prompt, refImages, aspect, size, timeoutMs: 150000 }).catch(e => ({ err: e.message }))))
-      const urls = []
-      for (const o of outs) {
-        if (!o || o.err || !o.data) continue
-        const ext = (o.mime || 'image/png').split('/')[1] === 'jpeg' ? 'jpg' : 'png'
-        const path = `menu/raw/${new Date().toISOString().slice(0, 10)}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`
-        const ur = await fetch(`${SB_URL}/storage/v1/object/photos/${path}`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': o.mime || 'image/png', 'x-upsert': 'true' }, body: Buffer.from(o.data, 'base64') })
-        if (ur.ok) urls.push(`${SB_URL}/storage/v1/object/public/photos/${path}`)
-      }
-      if (!urls.length) throw new Error('Gemini 沒有回圖：' + (outs.map(o => o && o.err).filter(Boolean)[0] || '未知'))
-      return res.status(200).json({ ok: true, ms: Date.now() - t0, brief_en, brief_zh, urls, model: (outs.find(o => o && o.model) || {}).model || '' })
-    } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, error: e.message || '失敗' }) }
+    const { menuAiGen } = await import('./_menuai.js')
+    return res.status(200).json(await menuAiGen(b))
   }
   if (req.method === 'POST' && req.query?.menuaisign) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuaisign) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
     const ext = String(b.ext || 'png').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'png'
@@ -2511,6 +2473,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuaisave) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuaisave) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
     const url = String(b.url || ''); if (!/^https:\/\//.test(url) || url.length > 400) return res.status(400).json({ ok: false, error: '網址不對' })
@@ -2532,6 +2495,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuassetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuassetset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
     const d = await menuAssetsGet(); const whats = []
@@ -2574,6 +2538,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuocr) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuocr) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
     const imgs = (Array.isArray(b.imgs) ? b.imgs : []).slice(0, 4).map(u => { const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(String(u || '')); return m ? { type: 'image', media_type: m[1].toLowerCase(), data: m[2] } : null }).filter(Boolean)
@@ -2596,6 +2561,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuimgset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuimgset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let bi = {}; try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoI = await permWho(bi.token, 'menu')
     if (!whoI) return res.status(403).json({ ok: false, error: permDeny() })
@@ -2618,6 +2584,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.menuset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuset) !== ok2) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_finance_pm_menu')) !== 'gd' || (await abgdOwnerOf('sp_finance_pm_menu_assets')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F18 菜單）：菜單切新殼後舊入口不寫
     let mb2 = {}
     try { mb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoM2 = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(mb2.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['menu'] !== 0)) ? w : null })())
