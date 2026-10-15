@@ -160,10 +160,19 @@ export async function scanBox({ kvGet, kvPut, id, days = 7, who, connectFn = con
   await markBox(kvGet, kvPut, id, { lastScan: scan.scannedAt, lastOk: scan.scannedAt, lastErr: '' }, who)
   return { ok: true, scan: { ...scan, mails: scan.mails.slice(0, 200) } }
 }
+// 讀→改→存，撞到「有人同時在改」（新殼版本號比對）就重讀重做，最多 5 次（搬信後的紀錄與狀態不能因為別人剛好在改設定就丟掉；關卡 3 mailhub 第四輪 Gemini）
+export async function updateHub(kvGet, kvPut, mutate, who) {
+  for (let i = 0; ; i++) {
+    const hub = await loadHub(kvGet)
+    mutate(hub)
+    try { await saveHub(kvPut, hub, who); return hub } catch (e) {
+      if (i >= 4 || !/同時在改/.test(String(e && e.message || e))) throw e
+      await new Promise(r => setTimeout(r, 150 + Math.random() * 400))
+    }
+  }
+}
 async function markBox(kvGet, kvPut, id, patch, who) {
-  const hub = await loadHub(kvGet)
-  if (/^env[12]$/.test(id)) { hub.envMeta = hub.envMeta || {}; hub.envMeta[id] = { ...(hub.envMeta[id] || {}), ...patch } } else { const b = hub.boxes.find(x => x.id === id); if (b) Object.assign(b, patch) }
-  await saveHub(kvPut, hub, who)
+  await updateHub(kvGet, kvPut, (hub) => { if (/^env[12]$/.test(id)) { hub.envMeta = hub.envMeta || {}; hub.envMeta[id] = { ...(hub.envMeta[id] || {}), ...patch } } else { const b = hub.boxes.find(x => x.id === id); if (b) Object.assign(b, patch) } }, who)
 }
 export async function loadScan(kvGet, id) { return (await kvGet(SCAN_KEY(id))) || null }
 
@@ -275,7 +284,7 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
             else if (g.action === 'archive') dest = sp.all || '' // Gmail：移到「所有郵件」＝拿掉收件匣標籤；非 Gmail 沒有 \All → 移到「封存」資料夾
             else if (g.action === 'label') dest = g.folder
             if (g.action === 'archive' && !dest) dest = '封存'
-            if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (e) { g.err = '無法建立資料夾「' + dest + '」：' + errText(e); g.moved = 0; continue } } // 建不起來就不搬（第三輪 Gemini）
+            if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (e) { if (/ALREADYEXISTS|already exists/i.test(String(e && (e.responseText || e.message) || '') + errText(e))) sp.folders.push(dest); else { g.err = '無法建立資料夾「' + dest + '」：' + errText(e); g.moved = 0; continue } } } // 已存在＝當成功繼續搬 // 建不起來就不搬（第三輪 Gemini）
             g.moved = 0
             if (dest) for (let i9 = 0; i9 < g.uids.length; i9 += 500) {
               const gb = guard ? await guard() : null // 每批再查一次（縮小切換空隙；不取代切換前排空）
@@ -292,10 +301,10 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
   } catch (e) { const err = errText(e); await markBox(kvGet, kvPut, id, { lastErr: err }, who); return { ok: false, error: err } } finally { if (client) await client.logout().catch(() => {}) }
   if (stopped) return { ok: false, box: id, error: stopped, scanned }
   const gs = Object.values(groups).map(g => ({ rule: g.rule, action: g.action, folder: g.folder, kw: g.kw, n: g.uids.length, moved: dry ? 0 : (g.moved || 0), samples: g.samples, err: g.err }))
-  const hub2 = await loadHub(kvGet)
-  for (const g of gs) if (g.n && !dry) pushLog(hub2, { box: id, rule: g.rule, action: g.action, n: g.n, moved: g.moved, samples: g.samples, dry: !!dry, by: (who && who.name) || '每日自動', err: g.err })
-  if (!dry && !aborted) { const b2 = hub2.boxes.find(x => x.id === id); if (b2) { b2.lastApply = now(); b2.lastOk = now(); b2.lastErr = '' } } // 中途被擋＝不算完整成功
-  await saveHub(kvPut, hub2, who)
+  await updateHub(kvGet, kvPut, (hub2) => {
+    for (const g of gs) if (g.n && !dry) pushLog(hub2, { box: id, rule: g.rule, action: g.action, n: g.n, moved: g.moved, samples: g.samples, dry: !!dry, by: (who && who.name) || '每日自動', err: g.err })
+    if (!dry && !aborted) { const b2 = hub2.boxes.find(x => x.id === id); if (b2) { b2.lastApply = now(); b2.lastOk = now(); b2.lastErr = '' } } // 中途被擋＝不算完整成功
+  }, who)
   return { ok: !aborted, box: id, scanned, n: gs.reduce((t, g) => t + g.n, 0), groups: gs, dry: !!dry, ...(aborted ? { error: aborted + '（已搬的照紀錄，其餘這次沒動）' } : {}) }
 }
 export async function applyAll({ kvGet, kvPut, days = 7, dry = false, who = { name: '每日自動' }, guard = null }) {
