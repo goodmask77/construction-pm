@@ -101,7 +101,7 @@ export default async function handler(req, res) {
         for (const [pid, pg] of Object.entries(extra)) if (acc.facebook.pages[pid]) { acc.facebook.pages[pid].igUserId = (pg.instagram_business_account || {}).id || acc.facebook.pages[pid].igUserId; acc.facebook.pages[pid].tokenStatus = 'ok'; acc.facebook.pages[pid].tokenCheckedAt = now }
         if (!acc.facebook.defaultPageId) acc.facebook.defaultPageId = list[0].id
         return { write: true, doc: acc } }, 'FB連接')) === 'newer') return gone()
-      await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: {} } : { write: false }, 'oauth-done') // 只清同一次授權的紀錄（第一輪 A5）
+      await socTx('sp_finance_pm_social_oauth', (cur) => (cur && cur.state === state) ? { write: true, doc: { gen: Number(cur.gen) || gen } } : { write: false }, 'oauth-done') // 只清同一次授權的紀錄（第一輪 A5），保留序號計數（不歸零；第六輪 A1）
       const names = list.map(p => esc(p.name)).join('、')
       return res.status(200).send(page('連接成功', `已連上粉專：<b style="color:#4DA3FF">${names}</b><br><br>可以關掉這一頁，回 App 的「社群」分頁。<br>要加「別的帳號」管理的粉專（例如同事管的 GROUN:D），用那個帳號再連一次就好，不會蓋掉這個。`, true))
     }
