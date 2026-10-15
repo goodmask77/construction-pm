@@ -429,12 +429,14 @@ async function abgdTry(tab, hash) {
   const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
     const hs = location.hash || ''
     const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/), mV = hs.match(/vio=([^&]+)/)
-    if (mV) { // v4.36.3 違規深層連結（群通知點進來直達該格金光）
-      try { const [stV, nmV, dtV, dt2V] = decodeURIComponent(mV[1]).split('|')
-        shiftLoad(dtV.slice(0,7))
-        let tryN = 0; const go9 = () => { if (document.getElementById('shBox')) { shVioGo(stV, nmV, dtV, dt2V||'') } else if (++tryN < 25) setTimeout(go9, 400) }
-        setTimeout(go9, 800)
-      } catch(_) {}
+    if (mV) { // v4.36.3 違規深層連結（群通知點進來直達該格金光）；v4.71.104 法規薪資已搬新殼＝先開新版，沒搬才照舊
+      abgdTry('pay', '#vio=' + mV[1]).then(ok => { if (ok) return
+        try { const [stV, nmV, dtV, dt2V] = decodeURIComponent(mV[1]).split('|')
+          shiftLoad(dtV.slice(0,7))
+          let tryN = 0; const go9 = () => { if (document.getElementById('shBox')) { shVioGo(stV, nmV, dtV, dt2V||'') } else if (++tryN < 25) setTimeout(go9, 400) }
+          setTimeout(go9, 800)
+        } catch(_) {}
+      })
       return true
     }
     const mI9 = hs.match(/(?:^|#|&)inbox(?:=([^&]+))?/) // v4.70.47 收件匣深層連結（通知點進來直接開那個對話）
