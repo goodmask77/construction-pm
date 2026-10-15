@@ -64,7 +64,7 @@ async function latestMetrics(postIds) {
 
 // v4.71.146 入口包 socRun（一次請求一個讀寫物件；撞版本整段重做——有對外動作的操作（立即發布、上傳、AI 生圖）動作後一律 socTx 只重做寫入）
 // 新殼頁經代發口 social_req 呼叫：req._who＝新殼已驗身分（同 whoSocial 格式），req._fromShell＝true
-export default async function handler(req, res) { return socRun((req && req._who && req._who.name) || '社群', () => handlerInner(req, res)) }
+export default async function handler(req, res) { try { return await socRun((req && req._who && req._who.name) || '社群', () => handlerInner(req, res)) } catch (e) { return res.status(200).json({ ok: false, error: (e && e.code === 'stale') ? '社群資料一直有人同時在改，請重新整理再試一次' : String((e && e.message) || e).slice(0, 200) }) } } // 重試耗盡也回清楚訊息（Gemini 第一輪 B）
 async function handlerInner(req, res) {
   try {
     const ok2 = clean(process.env.OPS_BOARD_KEY)
@@ -109,6 +109,7 @@ async function handlerInner(req, res) {
       const who = req._who !== undefined ? req._who : await whoSocial(String(body.token || ''))
       if (!canEditSocial(who)) return res.status(200).json({ ok: false, error: '沒有編輯權限——請找張良開通' })
       const op = body.op
+      if (['upload', 'genimg', 'gen', 'imgbrief', 'pinimport', 'pinboardadd', 'pinsync', 'sync', 'addpage', 'publishnow'].includes(op)) { const g = await socGate(); if (g) return res.status(200).json({ ok: false, error: g, code: 'smoke' }) } // 有對外動作（上傳、AI、Pinterest、Meta）先問驗收閘門（關卡 3 行銷大師第一輪 A1）
       const doc = await getPosts(); doc.list = doc.list || []
       const act = async (action, detail) => { try { const a = (await kvGet('pm_activity')) || []; a.unshift({ ts: new Date().toISOString(), user: who.name, action, detail }); await kvPut('pm_activity', a.slice(0, 500), '社群') } catch (_) {} }
 
@@ -309,7 +310,7 @@ async function handlerInner(req, res) {
         if (!(p.dests && p.dests.length)) return res.status(200).json({ ok: false, error: '還沒勾選要發到哪個平台（下面「發布到哪裡」）' })
         // v4.71.146：① 先問驗收閘門 ② 版本比對認領（發布中＝不發：結果不明的不自動重發，要先到 FB／IG 確認；已發布的照原本可再發）③ 發 ④ 結果只改這一則（重讀最新、只重做寫入）
         { const g = await socGate(); if (g) return res.status(200).json({ ok: false, error: g, code: 'smoke' }) }
-        const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false, value: { err: '找不到貼文' } }; if (x.status === 'publishing') return { write: false, value: { err: '這則正在發布中或上次結果不明——請先到 FB／IG 確認有沒有發出去，再找 CC 重設' } }; const now = new Date().toISOString(); x.status = 'publishing'; x.claimAt = now; x.claimBy = who.name; x.updatedAt = now; return { write: true, doc: d, value: { post: JSON.parse(JSON.stringify(x)) } } }, '立即發布中')
+        const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false, value: { err: '找不到貼文' } }; if (x.status === 'publishing') return { write: false, value: { err: '這則正在發布中或上次結果不明——請先到 FB／IG 確認有沒有發出去，再找 CC 重設' } }; if (x.status === 'published' && x.publishedAt && Date.now() - Date.parse(x.publishedAt) < 10 * 60e3) return { write: false, value: { err: '這則 ' + Math.max(1, Math.round((Date.now() - Date.parse(x.publishedAt)) / 60e3)) + ' 分鐘前剛發布過；要再發一次請 10 分鐘後再按（避免逾時重按發兩次）' } }; if (Object.values(x.pub || {}).some(v => v && v.status === 'unknown')) return { write: false, value: { err: '上次發布結果不明（可能已發出）——請先到 FB／IG 確認，再找 CC 重設後重發' } }; const now = new Date().toISOString(); x.status = 'publishing'; x.claimAt = now; x.claimBy = who.name; x.updatedAt = now; return { write: true, doc: d, value: { post: JSON.parse(JSON.stringify(x)) } } }, '立即發布中')
         if (claim.err) return res.status(200).json({ ok: false, error: claim.err })
         const { publishPost } = await import('./social-publish.js')
         const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
@@ -319,8 +320,8 @@ async function handlerInner(req, res) {
         try { await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === body.id); if (!x) return { write: false }; x.pub = p2.pub; x.status = okPub ? 'published' : 'failed'; x.updatedAt = nowR; delete x.claimAt; if (okPub) { x.publishedAt = nowR; x.approvedBy = who.name; x.approvedAt = nowR } return { write: true, doc: d } }, '立即發布結果') }
         catch (e) { console.error('[social] 立即發布結果沒存進去（貼文停在發布中）', body.id, String(e && e.message || e).slice(0, 80)); return res.status(200).json({ ok: okPub, status: okPub ? 'published' : 'failed', pub: p2.pub, error: '發布' + (okPub ? '成功' : '失敗') + '，但結果沒存進去（貼文停在發布中），請重新整理並找 CC 核對' }) }
         await act(okPub ? '社群立即發布' : '社群發布失敗', (p2.caption || '').slice(0, 20))
-        const igErr = p2.pub && p2.pub.instagram && p2.pub.instagram.status === 'failed' ? p2.pub.instagram.error : ''
-        const fbErr = p2.pub && p2.pub.facebook && p2.pub.facebook.status === 'failed' ? p2.pub.facebook.error : ''
+        const igErr = p2.pub && p2.pub.instagram && ['failed', 'unknown'].includes(p2.pub.instagram.status) ? p2.pub.instagram.error : ''
+        const fbErr = p2.pub && p2.pub.facebook && ['failed', 'unknown'].includes(p2.pub.facebook.status) ? p2.pub.facebook.error : ''
         return res.status(200).json({ ok: okPub, status: okPub ? 'published' : 'failed', pub: p2.pub, error: okPub ? null : ('發布失敗：' + [igErr && ('IG—' + igErr), fbErr && ('FB—' + fbErr), p2.pub && p2.pub._err].filter(Boolean).join('；')) })
       }
       if (op === 'addpage') {

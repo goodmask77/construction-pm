@@ -46,7 +46,8 @@ export async function publishPost(p, pages) {
       }
     } catch (e) {
       allOk = false
-      p.pub[type === 'ig' ? 'instagram' : 'facebook'] = { status: 'failed', error: e.message || '發布失敗', dest: id }
+      const unknown = !e.graph && e.code == null // 沒拿到 Meta 回應（逾時／斷線）＝結果不明，可能已發出（關卡 3 行銷大師第一輪 A6）
+      p.pub[type === 'ig' ? 'instagram' : 'facebook'] = unknown ? { status: 'unknown', error: '結果不明（' + String(e.message || '連線中斷').slice(0, 60) + '），可能已發出——請先到 FB／IG 確認再重發', dest: id } : { status: 'failed', error: e.message || '發布失敗', dest: id }
     }
   }
   return allOk
@@ -63,7 +64,9 @@ export default async function handler(req, res) {
     const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
     const out = []
     for (const p0 of due.slice(0, 5)) { // 一次最多 5 則
-      const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved') return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
+      { const g = await socGate(); if (g) break } // 每則發前都問閘門（關卡 3 行銷大師第一輪 A1）
+      // 認領同交易重驗：仍核准、已到時間、有目的地（關卡 3 行銷大師第一輪 A2）
+      const claim = await socTx(P_KEY, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === p0.id); if (!x || x.status !== 'approved' || (x.scheduledAt && new Date(x.scheduledAt).getTime() > Date.now()) || !(x.dests && x.dests.length)) return { write: false, value: null }; const t = new Date().toISOString(); x.status = 'publishing'; x.claimAt = t; x.claimBy = '排程'; x.updatedAt = t; return { write: true, doc: d, value: JSON.parse(JSON.stringify(x)) } }, '發布中')
       if (!claim) continue // 已被別人（立即發布、畫面修改）處理
       let allOk = false
       try { allOk = await publishPost(claim, pages) } catch (e) { claim.pub = claim.pub || {}; claim.pub._err = String(e && e.message || e).slice(0, 200) }
