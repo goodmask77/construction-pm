@@ -114,6 +114,8 @@ async function abgdCmd(domain, action, args, operator, idem) {
 const SHIFT_WRITE_QS = ['shiftset', 'shiftcolor', 'shiftfill', 'shiftdedup', 'shiftoff']
 // 工時成本試算＋AB 模組班表（shiftplan 域＝sp_finance_pm_labor／sp_finance_pm_abmod）寫入端點：切新殼後一律 409（班表頁已在新殼）
 const SHIFTPLAN_WRITE_QS = ['laborset', 'abmodset']
+// 法規薪資（payroll 域＝sp_finance_pm_payrates／sp_finance_pm_vio_res）寫入與通知端點：切新殼後一律 409（法規薪資頁已在新殼，違規通知改由新殼排、代發口 vio_notify 發）
+const PAYROLL_WRITE_QS = ['payset', 'vioresset', 'vionotify']
 const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
@@ -430,6 +432,7 @@ async function syncJoya(daysBack) {
 export default async function handler(req, res) {
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
+  if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if ((req.method === 'POST' || (req.query && req.query.sopstamp)) && req.query && SOP_WRITE_QS.some(k => req.query[k]) && !(req.query.sopissue && SOP_WRITE_QS.filter(k => req.query[k]).length === 1 && (() => { try { const b0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); return b0.op === 'pub' } catch (_) { return false } })()) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // sopissue op=pub（GD 首頁「N 筆回報等確認發布」）例外：下面轉新殼
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
@@ -4614,7 +4617,7 @@ export default async function handler(req, res) {
       if (!isApr) return res.status(403).json({ ok: false, error: '只有審核人能復原' })
       delete docV.items[keyV]
     } else return res.status(400).json({ ok: false })
-    await kvPut('sp_finance_pm_vio_res', docV, '違規處理(' + whoV9.name + ' ' + (bv9.op || '') + ')')
+    if (!(await kvPut('sp_finance_pm_vio_res', docV, '違規處理(' + whoV9.name + ' ' + (bv9.op || '') + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true, items: docV.items })
   }
   // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有人打卡紀錄,看出遲到/沒打卡,像營業額那樣好查」）：?abatt=K&me=&from=YYYY-MM；主管限定 ──
@@ -5159,7 +5162,7 @@ export default async function handler(req, res) {
     docP.rates[nm9] = docP.rates[nm9] || {}
     docP.rates[nm9][fd9] = Math.max(0, Math.min(999999, Number(bp9.val) || 0))
     docP.rates[nm9].by = whoP9.name; docP.rates[nm9].ts = new Date().toISOString()
-    await kvPut('sp_finance_pm_payrates', docP, '薪資費率 ' + nm9 + '(' + whoP9.name + ')')
+    if (!(await kvPut('sp_finance_pm_payrates', docP, '薪資費率 ' + nm9 + '(' + whoP9.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED })
     return res.status(200).json({ ok: true, rates: docP.rates })
   }
   // ── 🧮 工時成本試算（張良 2026-10-03：每小時×崗位填金額、右/下自動加總、方案制可存版本切換比較）──
