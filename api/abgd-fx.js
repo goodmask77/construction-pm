@@ -423,6 +423,9 @@ const ACTIONS = {
     try { return await inboxDispatch({ method: a.method === 'POST' ? 'POST' : 'GET', op: String(a.op || 'list'), q: a.q || {}, body: a.body || {}, who, origin: 'https://ground-pm.vercel.app' }) }
     catch (e) { return { ok: false, error: '收件匣暫時出錯：' + String(e && e.message || e).slice(0, 120) } }
   },
+  async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）
+    const IB = await import('./_inbox.js'); return { ok: true, ...(await IB.ibRetry({ limit: Math.min(300, Number(a.limit) || 100) })) }
+  },
   async inbox_quota(a) { // 新殼收件匣讀對話用：官方帳號本月額度（LINE 金鑰只在 GD；GD 端本來就暫存 60 秒）；唯讀
     const IB = await import('./_inbox.js'); const ac = IB.acctOf(String(a.acct || '')); if (!ac) return { ok: false, error: '沒有這個帳號' }
     return { ok: true, quota: await IB.quotaOf(ac).catch(() => ({})) }
@@ -503,7 +506,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

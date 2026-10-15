@@ -28,8 +28,9 @@ async function nInsert(k, v, editor) { const r = await fetch(`${SB_URL}/rest/v1/
 async function nDel(k) { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}`, { method: 'DELETE', headers: svc }); return r.ok }
 async function nPrefix(pf, opt = {}) { const like = pf.replace(/[\\%_]/g, m => '\\' + m); const ord = opt.order === 'updated' ? '&order=updated_at.desc' : opt.order === 'id' ? '&order=id.desc' : ''; const lim = opt.limit ? '&limit=' + Number(opt.limit) : ''; const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(like)}*&select=id,data${ord}${lim}`, { headers: svc, signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error('讀取失敗（' + r.status + '），請稍後再試'); const rows = await r.json(); const out = {}; for (const row of rows) { if (!String(row.id).startsWith(pf) || row?.data?.v == null) continue; try { out[row.id] = JSON.parse(row.data.v) } catch (_) { throw new Error('資料內容壞掉：' + row.id) } } return out }
 
-export async function abgdKv({ domain, lockKey, operator, label = '這項資料' }) {
-  const ow = await owner(lockKey)
+export async function abgdOwner(lockKey) { return owner(lockKey) } // 只查歸屬（呼叫端可暫存歸屬、每次另建 abgdKv 物件，版本號不跨請求共用）
+export async function abgdKv({ domain, lockKey, operator, label = '這項資料', owner: knownOwner }) {
+  const ow = knownOwner || await owner(lockKey)
   const isStale = (e) => !!(e && e.code === 'stale') // 看錯誤代碼，不靠中文字（關卡 3 tasks 第一輪 OpenAI B3）
   const retry = async (fn) => { for (let i = 0; ; i++) { try { return await fn() } catch (e) { if (i >= 4 || !isStale(e)) throw e; await new Promise(r => setTimeout(r, 150 + Math.random() * 400)) } } }
   if (ow === 'gd') return {
@@ -61,7 +62,9 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
   const kvPut = async (k, v) => { if (!(k in revs)) await kvGet(k); const j = await cmd('put', { key: k, doc: v, baseRev: revs[k] }); revs[k] = Number(j.rev) || revs[k] + 1; return true }
   const kvDel = async (k) => { if (!(k in revs)) await kvGet(k); const j = await cmd('del', { key: k, baseRev: revs[k] }); revs[k] = Number(j.rev) || revs[k] + 1; return true }
   const kvInsert = async (k, v) => { try { const j = await cmd('put', { key: k, doc: v, baseRev: 0 }); revs[k] = Number(j.rev) || 1; return true } catch (e) { if (e && e.code === 'stale') return false; throw e } } // 只新增：已存在（版本不是 0）＝不覆蓋
-  return { mode: 'abgd', retry, kvGet, kvPrefix, kvGetMany, kvPut, kvInsert, kvDel }
+  const cmdRaw = (action, args) => cmd(action, args) // 網域自訂命令（例：收件匣 apply）；失敗丟錯（帶 code）
+  const gate = async () => { const body = JSON.stringify({ op: 'gate', domain, operator: String(operator || ''), ts: Date.now() }); const r = await fetch(base() + '/api/core/gdread', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sign(body) }, body, signal: AbortSignal.timeout(10000) }); const j = await r.json().catch(() => ({})); if (!j.ok) return '查不到切換驗收狀態，先不送出'; return j.gate || null } // null＝放行
+  return { mode: 'abgd', retry, kvGet, kvPrefix, kvGetMany, kvPut, kvInsert, kvDel, cmdRaw, gate }
 }
 
 // 刪任務＋清掉同空間其他任務對它的 dependsOn（v4.71.117；關卡 3 tasks 第一輪 OpenAI A3）：
