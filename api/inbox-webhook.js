@@ -2,7 +2,7 @@
 // LINE Developers 每個帳號的 Webhook URL 都填：https://ground-pm.vercel.app/api/inbox-webhook
 // 流程：讀原始 body → 用哪個帳號的 secret 驗得過＝哪個帳號（驗不過一律 401，不處理）→ 事件去重（webhookEventId）→ 存訊息＋更新對話＋通知 → 200
 // 跟 DD（api/line-webhook.js）完全分開：DD 的帳號不會打到這裡，這裡也不會回答任何問題（只收、存、通知；回覆由 app 端點 mail-sync ?inbox= 發）
-import { acctBySignature, ingestEvent, noteSigFail, ACCOUNTS, configured, forwardRaw, ibQueue, ibRetry } from './_inbox.js'
+import { acctBySignature, ingestEvent, noteSigFail, ACCOUNTS, configured, forwardRaw, ibQueue, ibDequeue, ibRetry } from './_inbox.js'
 import { ddEventOnce } from './_ddhealth.js'
 
 export const config = { api: { bodyParser: false } }
@@ -24,16 +24,20 @@ export default async function handler(req, res) {
   const fwdP = forwardRaw(a, raw, sig).catch(() => null) // 有設轉發對象（原本接著的系統）就同時原封轉過去，跟我們自己的存檔並行
   let body = {}; try { body = JSON.parse(raw.toString('utf8') || '{}') } catch (_) {}
   const events = Array.isArray(body.events) ? body.events : []
-  let n = 0
+  let n = 0, lost = 0
   for (const ev of events) {
+    // v4.71.122（關卡 3 inbox 第一輪 A3）：先存原始事件（待補存佇列）再處理、處理完才刪；佇列也存不進去＝不做事件去重標記、處理失敗就回 500 讓 LINE 重送
+    const qok = await ibQueue(a, ev, body.destination, 'recv')
     try {
-      if (ev.webhookEventId) { const once = await ddEventOnce('ib_' + ev.webhookEventId); if (once === false) continue } // 重送＝已處理過就跳過（第一次沒處理完的仍會進來）
+      if (qok && ev.webhookEventId) { const once = await ddEventOnce('ib_' + ev.webhookEventId); if (once === false) continue } // 已處理過（或處理中）：佇列那份交給補存，套用時會判斷重複
       const r = await ingestEvent(a, ev, body.destination)
       if (r) n++
-    } catch (e) { console.log('[inbox] event error', a.key, ev.type, e?.message); await ibQueue(a, ev, body.destination, e?.message).catch(() => {}) } // v4.71.120 存檔失敗＝放待補存佇列（不遺失客人訊息）
+      if (qok) await ibDequeue(a, ev)
+    } catch (e) { console.log('[inbox] event error', a.key, ev.type, e?.message); if (!qok) lost++ } // 佇列有存＝之後補存；沒存＝回 500
   }
   try { const rq = await ibRetry({ limit: 5 }); if (rq.seen) console.log('[inbox] 補存', JSON.stringify(rq)) } catch (_) {} // 順手補存之前沒存上的
   const fwd = await fwdP
   console.log('[inbox] ok', a.key, events.length, n, fwd ? 'fwd=' + (fwd.ok ? fwd.status : 'fail') : '')
+  if (lost) return res.status(500).json({ ok: false, error: '暫時存不進去，請 LINE 重送', n }) // 原始事件連佇列都沒存上＝讓 LINE 重送（沒有標記去重，重送會再處理）
   return res.status(200).json({ ok: true, n, fwd: fwd ? fwd.ok : undefined })
 }
