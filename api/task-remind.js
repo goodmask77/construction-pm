@@ -1,7 +1,7 @@
 import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // ── 任務卡「定期提醒」引擎（張良 2026-10-09；每小時整點 cron）──
 // 前端設定存 task.reminder = { on, freq:'daily'|'weekday'|'custom', days:[0..6], hours:[整點], ch:['push','dm','group'], count, lastSlot }
-// 這支每小時整點跑：挑出「今天這個星期 × 這個整點 該提醒、且本小時還沒提醒過」的任務 → 發 push/LINE私訊/群組 → count+1、記 lastSlot 防重複
+// 這支每小時整點跑：挑出「今天這個星期 × 這個整點 該提醒、且本小時還沒提醒過」的任務 → 先記 lastSlot＋count（認領）→ 成功才發 push/LINE私訊/群組（v4.71.117 改先記後發）
 // 對象＝任務負責人 t.owner（姓名）→ 經 sp_finance_pm_prep_bind 對到 rid(push)/lineUserId(私訊)
 import { kvGet, kvPut } from './mail-sync.js'
 
@@ -52,26 +52,34 @@ export default async function handler(req, res) {
       if (!(rm.hours || []).includes(hr)) continue // 時段不符
       if (rm.lastSlot === slot) continue            // 本小時已提醒過
 
-      const ch = (rm.ch && rm.ch.length) ? rm.ch : ['push']
-      const title = String(t.title || t.name || '任務').slice(0, 80)
+      // v4.71.117 先認領再外送（關卡 3 tasks 第一輪 OpenAI A4）：讀最新那份、重新確認仍該提醒，先寫 lastSlot＋次數；
+      //   寫成功才發（寫不進去＝切換中／被擋／有人同時在改到重試用完 → 這小時不發，寧可漏一次也不重發）
+      let claimed = null
+      try {
+        await kvT.retry(async () => {
+          claimed = null
+          const k = 'sp_team_pm_task_' + t.id; const cur = await kvT.kvGet(k); if (!cur) return
+          const r2 = cur.reminder || {}
+          if (!r2.on || cur.done || cur.status === 'done' || cur.archived || r2.lastSlot === slot) return
+          const f2 = r2.freq === 'weekday' ? (wd >= 1 && wd <= 5) : r2.freq === 'custom' ? (r2.days || []).includes(wd) : true
+          if (!f2 || !(r2.hours || []).includes(hr)) return
+          cur.reminder = { ...r2, count: (Number(r2.count) || 0) + 1, lastSlot: slot }
+          cur.updatedAt = new Date().toISOString()
+          await kvT.kvPut(k, cur, '定期提醒cron')
+          claimed = cur
+        })
+      } catch (e) { console.log('[task-remind] 認領失敗（這小時不發）', t.id, e && e.message); claimed = null }
+      if (!claimed) continue
+      const ch = (claimed.reminder.ch && claimed.reminder.ch.length) ? claimed.reminder.ch : ['push']
+      const title = String(claimed.title || claimed.name || '任務').slice(0, 80)
       const url = '/prep#task=' + t.id
       const lnk = prepLink('task=' + t.id)
-      const owner = String(t.owner || '')
+      const owner = String(claimed.owner || '')
       try {
         if (ch.includes('push')) { const ids = allIdsByName(owner); if (ids.length) await wpPush(ids, { title: '🔔 定期提醒', body: title, url }) }
         if (ch.includes('dm')) { const u = uidByName(owner); if (u) await linePush(u, `🔔 定期提醒｜${title}${owner ? `\n負責人：${owner}` : ''}\n點開直達這張卡 👇\n${lnk}`) }
         if (ch.includes('group')) await linePush(GRP_TASK, `🔔 定期提醒｜${title}${owner ? `（負責人：${owner}）` : ''}\n點開直達這張卡 👇\n${lnk}`)
       } catch (_) {}
-
-      // 只改提醒欄位：讀最新那份再改（撞到同時在改＝重讀重做），不蓋掉別人剛改的內容
-      try {
-        await kvT.retry(async () => {
-          const k = 'sp_team_pm_task_' + t.id; const cur = await kvT.kvGet(k); if (!cur) return
-          cur.reminder = { ...(cur.reminder || rm), count: (Number((cur.reminder || {}).count) || 0) + 1, lastSlot: slot }
-          cur.updatedAt = new Date().toISOString()
-          await kvT.kvPut(k, cur, '定期提醒cron')
-        })
-      } catch (e) { console.log('[task-remind] 寫回提醒次數失敗', t.id, e && e.message) }
       reminded++
     }
     return res.status(200).json({ ok: true, tw: slot, wd, hr, checked, reminded })

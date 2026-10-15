@@ -306,18 +306,21 @@ export async function handleDDCards(ev, operators) {
       if (!rec && b === '工') { legacy = await kvGet('pm_tasks'); legIdx = Array.isArray(legacy) ? legacy.findIndex(t => t && t.id === c) : -1 }
       const task = rec || (legIdx >= 0 ? legacy[legIdx] : null)
       if (!task) { await reply(txt('找不到這件任務（可能已經被刪掉或銷掉了）。')); return true }
-      const save = async (patch) => { if (rec) { const run = async () => { const cur = (await kget(key)) || task; await kset(key, { ...cur, ...patch, updatedAt: new Date().toISOString() }) }; await (kvT ? kvT.retry(run) : run()) } else { legacy[legIdx] = { ...task, ...patch, updatedAt: new Date().toISOString() }; await kvSet('pm_tasks', legacy) } } // 讀最新再合併（不蓋掉別人剛改的）
+      // 讀最新再合併（不蓋掉別人剛改的）；patch 可以是函式＝用最新內容重算（例：延期以最新截止日為準）
+      // v4.71.117 重讀發現已被刪＝不改、回 false（不拿舊內容把刪掉的任務救活；關卡 3 tasks 第一輪 OpenAI A2）
+      const save = async (patch) => { if (rec) { let gone = false; const run = async () => { const cur = await kget(key); if (!cur) { gone = true; return } const p = typeof patch === 'function' ? patch(cur) : patch; await kset(key, { ...cur, ...p, updatedAt: new Date().toISOString() }) }; await (kvT ? kvT.retry(run) : run()); return !gone } else { legacy[legIdx] = { ...task, ...(typeof patch === 'function' ? patch(task) : patch), updatedAt: new Date().toISOString() }; await kvSet('pm_tasks', legacy); return true } }
+      const goneMsg = () => reply(txt('這件任務已經被刪掉了，沒有改動。'))
       const showT = `「${task.title}」（${TK_SP[b]}${task.due ? '｜原截止 ' + task.due : ''}）`
       // 操作留痕到該空間的活動紀錄（App 活動面板看得到；與 D哥 動作引擎同一格式）
       const act = async (label, detail) => { try { const akey = b === '工' ? 'pm_activity' : pfx.replace('pm_task_', 'pm_activity'); const cur = await kvGet(akey); const arr = Array.isArray(cur) ? cur : []; await kvSet(akey, [{ ts: new Date().toISOString(), user: (operators[uid]?.name || '操作者') + '(任務按鈕)', action: label, detail }, ...arr].slice(0, 200)) } catch (_) {} }
-      if (a === 'done') { await save({ status: 'done' }); await act('修改', `按鈕完成任務${showT}`); await reply(txt(`✅ 銷掉了：${showT}\n漂亮 👍`)); return true }
-      if (a === 'd1') { const base = task.due && task.due >= todayTW() ? task.due : todayTW(); const nd = addDays(base, 1); await save({ due: nd }); await act('修改', `按鈕延期任務${showT}→${nd}`); await reply(txt(`⏭ 延好了：${showT}\n新截止日：${nd}`)); return true }
-      if (a === 'pick') { const nd = ev.postback?.params?.date; if (!/^\d{4}-\d{2}-\d{2}$/.test(nd || '')) { await reply(txt('沒收到日期，再按一次「📅 改日期」選一下。')); return true } await save({ due: nd }); await act('修改', `按鈕改期任務${showT}→${nd}`); await reply(txt(`📅 改好了：${showT}\n新截止日：${nd}`)); return true }
+      if (a === 'done') { if (!(await save({ status: 'done' }))) { await goneMsg(); return true } await act('修改', `按鈕完成任務${showT}`); await reply(txt(`✅ 銷掉了：${showT}\n漂亮 👍`)); return true }
+      if (a === 'd1') { let nd = ''; if (!(await save((cur) => { const base = cur.due && cur.due >= todayTW() ? cur.due : todayTW(); nd = addDays(base, 1); return { due: nd } }))) { await goneMsg(); return true } await act('修改', `按鈕延期任務${showT}→${nd}`); await reply(txt(`⏭ 延好了：${showT}\n新截止日：${nd}`)); return true }
+      if (a === 'pick') { const nd = ev.postback?.params?.date; if (!/^\d{4}-\d{2}-\d{2}$/.test(nd || '')) { await reply(txt('沒收到日期，再按一次「📅 改日期」選一下。')); return true } if (!(await save({ due: nd }))) { await goneMsg(); return true } await act('修改', `按鈕改期任務${showT}→${nd}`); await reply(txt(`📅 改好了：${showT}\n新截止日：${nd}`)); return true }
       if (a === 'del') { await reply(flex('確定要取消這件任務？', bubble('確定要取消（刪除）？', `${String(task.title).slice(0, 60)}（${TK_SP[b]}）— 刪了 App 也會移除、不再提醒`, [btn('🗑 確定刪除', `tk|del2|${b}|${c}`, `確定刪除 ${String(task.title).slice(0, 12)}`), btn('↩️ 留著好了', `tk|keep|${b}|${c}`, '留著')], '#B42318'))); return true }
-      if (a === 'del2') { if (rec) await kdel(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
+      if (a === 'del2') { if (rec && kvT) await (await import('./_abgdkv.js')).delTaskClean(kvT, pfx.replace('pm_task_', ''), c); else if (rec) await kdel(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
       if (a === 'keep') { await reply(txt(`好，${showT} 留著，我繼續追 💪`)); return true }
       // ── 快速設定：標超急 / 選分類（跳大項按鈕）/ 設負責人（跳夥伴按鈕）──
-      if (a === 'urg') { await save({ priority: 'urgent' }); await act('修改', `按鈕標超急${showT}`); await reply(txt(`🔥 標好超急：${showT}\n每天早上簡報會置頂追這件。`)); return true }
+      if (a === 'urg') { if (!(await save({ priority: 'urgent' }))) { await goneMsg(); return true } await act('修改', `按鈕標超急${showT}`); await reply(txt(`🔥 標好超急：${showT}\n每天早上簡報會置頂追這件。`)); return true }
       if (a === 'cat' || a === 'cat2') {
         const dkey = b === '工' ? 'pm_data' : pfx.replace('pm_task_', 'pm_data')
         const cats = await kget(dkey)
@@ -329,7 +332,7 @@ export async function handleDDCards(ev, operators) {
         }
         const cx = list.find(x => x.id === d)
         if (!cx) { await reply(txt('找不到這個分類了，再按一次「🏷 選分類」。')); return true }
-        await save({ catId: cx.id }); await act('修改', `按鈕歸類${showT}→${cx.name}`)
+        if (!(await save({ catId: cx.id }))) { await goneMsg(); return true } await act('修改', `按鈕歸類${showT}→${cx.name}`)
         await reply(txt(`🏷 歸好了：${showT} → ${cx.name}`)); return true
       }
       if (a === 'own' || a === 'own2') {
@@ -345,7 +348,7 @@ export async function handleDDCards(ev, operators) {
         }
         const p = people.find(x => x.id === d)
         if (!p) { await reply(txt('找不到這位夥伴，再按一次「👤 設負責人」。')); return true }
-        await save({ owner: p.name }); await act('修改', `按鈕設負責人${showT}→${p.name}`)
+        if (!(await save({ owner: p.name }))) { await goneMsg(); return true } await act('修改', `按鈕設負責人${showT}→${p.name}`)
         await reply(txt(`👤 設好了：${showT} → ${p.name} 負責`)); return true
       }
       return true
