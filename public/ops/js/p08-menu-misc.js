@@ -281,9 +281,10 @@ function menuRender(){
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const df = menuDiff()
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:var(--card);color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
-  const canE = !!(d.me && d.me.canEdit) // v4.70.56（張良 10-11 工具列重整）：編輯類按鈕只給有編輯權的人；一列「看／輸出」、一列「編輯工具」
+  const mvU = (window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.menu) || '' // abgd 搬家（F18）：菜單切新殼後（入口 routes.menu）舊頁只能看
+  const canE = !mvU && !!(d.me && d.me.canEdit) // v4.70.56（張良 10-11 工具列重整）：編輯類按鈕只給有編輯權的人；一列「看／輸出」、一列「編輯工具」
   const edAll = canE && menuMode==='edit' && !!window._mnEditOn // v4.70.57（張良 10-11「鎖住，出一個編輯按鈕打開才出現可以編輯的」）：預設唯讀，按「✎ 編輯菜單」才開
-  let h = `<section><h2>新菜單 <span class="hint">${canE?(edAll?'編輯中：改完按「✓ 完成編輯」':'按「✎ 編輯菜單」才能改，大家都看得到動了什麼'):(meN?'看得到；要編輯先申請編輯權限':'看得到；要編輯先綁定——'+BIND_HINT)}</span></h2>
+  let h = `<section><h2>新菜單 <span class="hint">${mvU?'菜單已搬到新版，這裡只能看；要修改請<a href="'+String(mvU).replace(/["<>]/g,'')+'">到新版菜單</a>':canE?(edAll?'編輯中：改完按「✓ 完成編輯」':'按「✎ 編輯菜單」才能改，大家都看得到動了什麼'):(meN?'看得到；要編輯先申請編輯權限':'看得到；要編輯先綁定——'+BIND_HINT)}</span></h2>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
     ${canE&&menuMode==='edit'?`<button class="mini ${edAll?'on':''}" onclick="window._mnEditOn=!window._mnEditOn;menuRender()" title="${edAll?'收起編輯介面':'打開才會出現新增／修改／拖曳排序'}">${edAll?'✓ 完成編輯':'✎ 編輯菜單'}</button>`:''}
