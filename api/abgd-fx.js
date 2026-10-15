@@ -420,6 +420,19 @@ const ACTIONS = {
     const r = await taskNotify(a, String(a.actor || '').slice(0, 30))
     return r.ok ? { ok: true, sent: r.sent } : { ok: false, retry: false, error: r.error }
   },
+  async tn_groups() { // 新殼任務頁「通知發到哪個群」清單（同 mail-sync ?tngroups：DD 在的群真名）；唯讀
+    const gl = (await ddAll()).groups
+    return { ok: true, groups: gl.map(g => ({ gid: g.gid, label: g.label, tag: g.tag || '', preset: !!g.preset })), def: 'Cf7940efc6517b0c084ad2ad496b45f30' }
+  },
+  async anim_pref(a) { // 新殼任務頁個人動畫偏好（同 mail-sync ?animpref／?animprefset，資料在 GD perm 域 sp_finance_pm_prep_animpref）；新殼已驗身分，a.rid＝本人
+    const rid = String(a.rid || '').slice(0, 80); if (!rid) return { ok: false, error: '缺身分' }
+    const docA = (await kvGet('sp_finance_pm_prep_animpref')) || {}
+    if (a.op !== 'set') return { ok: true, pref: docA[rid] || null }
+    const p = a.pref || {}
+    docA[rid] = { inView: p.inView !== false, noDone: p.noDone !== false, followReduce: p.followReduce !== false, allOff: !!p.allOff } // 欄位清洗照 GD ?animprefset
+    if (!(await kvSet('sp_finance_pm_prep_animpref', docA))) return { ok: false, error: '存不進去，請稍後再試' }
+    return { ok: true }
+  },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     if (!TK()) return { ok: true, skipped: 'no-token' } // 設定缺失＝不重試（留原因）
@@ -478,7 +491,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

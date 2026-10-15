@@ -1780,7 +1780,7 @@ window.tnPage = function () {
    tasks.js（最後一支 script）載好後發現有人還在等（tnFocusId 掛著）→ 清掉保險 iframe、自己接手跑原生版。 */
 (function () {
   try {
-    if (typeof window === 'undefined' || !window.tnFocusId) return;
+    if (typeof window === 'undefined' || !window.tnFocusId || window._tnRouting) return; // v4.71.118 正在判斷要不要導去新殼＝不搶著開舊頁
     const tw = document.getElementById('taskWrap'); if (tw) tw.innerHTML = ''; // 退掉剛被誤開的 iframe 保險
     window.tnPage();
   } catch (_) {}
