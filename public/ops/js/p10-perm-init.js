@@ -418,9 +418,9 @@ function lbFinder(nm){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-// abgd 搬家：深層連結指到已切到新殼的分頁→直接開新殼（自動登入）；即時抓 tabcfg（no-store），不用快取
+// abgd 搬家：深層連結指到已切到新殼的分頁→直接開新殼（自動登入）；即時抓 tabcfg（no-store），不用快取；沒登入／橋接失敗＝跳提示（v4.71.106，關卡 3 payroll 第二輪獨立 Claude B1：原本什麼都不做）
 async function abgdTry(tab, hash) {
-  try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K), { cache: 'no-store' }); const d = await r.json(); const u = d && d.routes && d.routes[tab]; if (!u) return false; abgdOpen(tab, u + (hash || '')); return true } catch (_) { return false }
+  try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K), { cache: 'no-store' }); const d = await r.json(); const u = d && d.routes && d.routes[tab]; if (!u) return false; abgdOpen(tab, u + (hash || ''), "typeof lpToast==='function' && lpToast('還沒登入：請先登入 GD（或直接打開新版）再點一次，會自動開新版')"); return true } catch (_) { return false }
 }
 // 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
