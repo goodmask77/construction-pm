@@ -341,6 +341,19 @@ const ACTIONS = {
     }
     return { ok: true, n }
   },
+  async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
+    if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
+    if (!TK()) return { ok: true, skipped: true }
+    const it = a.it || {}
+    const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const alive = ((rosterE || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+    let n = 0
+    for (const an of (((defE || {}).ground || {}).approvers || ['張良瑋'])) {
+      const ap = alive.find(p2 => p2.name === an && p2.lineUserId)
+      if (ap && await linePush(ap.lineUserId, [{ type: 'text', text: `🐞 App 錯誤回報\n頁面：${String(it.page || '?').slice(0, 60)}（v${String(it.ver || '?').slice(0, 20)}）\n${String(it.msg || '').slice(0, 300)}\n— ${String(it.by || '訪客').slice(0, 30)}・累計 ${Number(it.n) || 1} 次\n（同錯誤今天不再通知；細節問 DD 或看 /prep 錯誤日誌）` }])) n++
+    }
+    return { ok: true, n }
+  },
   async buy_group(a) { // 採購需求 → DD 自動訊息 buy 設定的群（原 ?buyadd，文字照抄；abgd 盤點／採購 F05～07）
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
     const cfgB = await ddGet('buy')
