@@ -1,7 +1,7 @@
 // ── 社群自動發文＋成效 共用模組（張良 2026-10-08：FB/IG 內容系統，Phase 1 先 FB 只讀數據）──
 // 設計同其他整合（em-sync/boss-sync）：KV 存資料、機密 token 另存一檔永不回前端、Graph API 呼叫包一層
 // 標籤頁代碼＝'social'（permWho/canTab 用）；資料鍵前綴 sp_finance_pm_social_*
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 
@@ -29,6 +29,10 @@ export async function fbPageToken(pageId) {
   if (pageId) return t[pageId] || ''
   return Object.values(t)[0] || (s.facebook && s.facebook.pageToken) || ''
 }
+// 授權是否做完（第七輪 A2）：帳號與權杖兩份文件的授權世代不同＝某次授權只寫了一份（中斷），發文前擋下
+// 發文用的同代快照（第八輪 A1）：一次讀帳號與權杖、確認同一次授權（世代相同），之後整個發文只用這份（不中途重讀權杖）；不同代＝回 { err }
+export async function pubSnapshot() { const [a, s] = await Promise.all([getAccounts(), getSecret()]); const ga = Number(a && a._oauthGen) || 0, gs = Number(s && s._oauthGen) || 0; if (ga !== gs) return { err: '粉專授權還沒做完（帳號與權杖不是同一次授權），先不發——請重新整理「連接 Facebook」那一頁或重新連接' }; const t = (s.facebook && s.facebook.tokens) || {}; return { pages: (a.facebook && a.facebook.pages) || {}, tokens: { ...t }, legacy: (s.facebook && s.facebook.pageToken) || '', gen: ga } }
+export async function oauthPending() { const [a, s] = await Promise.all([getAccounts(), getSecret()]); const ga = Number(a && a._oauthGen) || 0, gs = Number(s && s._oauthGen) || 0; return ga !== gs ? '粉專授權還沒做完（帳號與權杖不是同一次授權），先不發——請重新整理「連接 Facebook」那一頁或重新連接' : null }
 export async function fbPages() { const a = await getAccounts(); return (a.facebook && a.facebook.pages) || {} }
 
 // Graph API：GET（查詢）／POST（發文）。錯誤統一丟 Error 帶 .code（190=token失效、4/17/32/613=rate limit）

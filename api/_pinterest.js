@@ -4,7 +4,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // 做法：貼連結（單張釘圖／整個圖版）立刻抓；登記的圖版每小時自動看一次，只抓沒看過的（釘圖編號＋圖片指紋兩道去重）。
 // 資料：KV sp_finance_pm_pinterest = { boards:[{id,url,name,user,slug,addedAt,addedBy,lastAt,lastNew,total,err}], seen:{pinId:{sig,url,at,board}}, sigs:{sig:pinId} }
 // 圖檔：Supabase photos 桶 social/pin/<pinId>.<ext>（跟素材庫上傳同桶）；素材庫列表 sp_finance_pm_social_assets 多欄 src:'pinterest', pin, pinUrl, board
-import { kvGet, kvPut } from './mail-sync.js'
+import { kvGet, kvPut, socTx, socRun, socGate } from './_socialkv.js' // v4.71.146 社群域依歸屬版本比對讀寫（其他鍵照舊 GD）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -15,7 +15,14 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15
 const PIN_URL = (id) => `https://www.pinterest.com/pin/${id}/`
 
 export async function pinDoc() { const d = (await kvGet(PIN_KEY)) || {}; d.boards = d.boards || []; d.seen = d.seen || {}; d.sigs = d.sigs || {}; return d }
-async function pinSave(d) { await kvPut(PIN_KEY, d) }
+// v4.71.146：寫回改「重讀最新再合併」（釘圖紀錄 seen／sigs 合併；圖版只更新這次動到的、新增這次加的；刪除另走 boardDel）——圖片已上傳（固定路徑、可覆寫），只重做寫入
+async function pinSave(d, { addBoardId, touched } = {}) { // 只寫這次新增的釘圖紀錄（d._newSeen）與這次動到的圖版（touched＋新增的），不把開頭讀到的舊值整包壓回（關卡 3 行銷大師第一輪 A4）
+  const ns = d._newSeen || {}, nsig = d._newSigs || {}, tb = new Set([...(touched || []), ...(addBoardId ? [addBoardId] : [])])
+  await socTx(PIN_KEY, (cur) => { const c = cur || {}; const out = { ...c, seen: { ...(c.seen || {}), ...ns }, sigs: { ...(c.sigs || {}), ...nsig } }
+    const cb = Array.isArray(c.boards) ? c.boards.map(b => ({ ...b })) : []
+    for (const b of (d.boards || [])) { if (!tb.has(b.id)) continue; const i = cb.findIndex(x => x.id === b.id); if (i >= 0) cb[i] = { ...cb[i], lastAt: b.lastAt, lastNew: b.lastNew, total: b.total, err: b.err, name: b.name }; else if (b.id === addBoardId && !cb.some(x => x.url === b.url)) cb.push({ ...b }) }
+    out.boards = cb; return { write: true, doc: out } }, 'Pinterest')
+}
 
 // 連結分類：{kind:'pin',id} ／ {kind:'board',url,user,slug} ／ null
 export async function parseUrl(raw) {
@@ -98,7 +105,7 @@ async function upload(buf, ct, path) {
 }
 
 // 把一批釘圖存進素材庫（兩道去重：釘圖編號、圖片指紋）。回 {added:[...], dup, failed}
-export async function savePins(pins, { who, board, d } = {}) {
+export async function savePins(pins, { who, board, d, addBoardId } = {}) {
   d = d || await pinDoc()
   const added = [], failed = []; let dup = 0
   for (const p of pins.slice(0, 60)) { // 一次最多 60 張（serverless 時間）
@@ -108,10 +115,11 @@ export async function savePins(pins, { who, board, d } = {}) {
     const ext = (got.ct.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '')
     let url; try { url = await upload(got.buf, got.ct, `social/pin/${p.id}.${ext}`) } catch (e) { failed.push(p.id); continue }
     d.seen[p.id] = { sig: p.sig || '', url, at: new Date().toISOString(), board: board || '' }; if (p.sig) d.sigs[p.sig] = p.id
+    d._newSeen = d._newSeen || {}; d._newSeen[p.id] = d.seen[p.id]; if (p.sig) { d._newSigs = d._newSigs || {}; d._newSigs[p.sig] = p.id }
     added.push({ url, type: 'image', name: (p.title || '').slice(0, 40), addedAt: new Date().toISOString(), addedBy: who || 'Pinterest', src: 'pinterest', pin: p.id, pinUrl: PIN_URL(p.id), board: board || '', w: p.w || 0, h: p.h || 0 })
   }
-  if (added.length) { const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = [...added, ...(a.list || [])].slice(0, 300); await kvPut(AST_KEY, a) }
-  await pinSave(d)
+  if (added.length) await socTx(AST_KEY, (cur) => { const L = (cur && cur.list) || []; const have = new Set(L.map(x => x.url)); const add = added.filter(x => !have.has(x.url)); if (!add.length) return { write: false }; return { write: true, doc: { ...(cur || {}), list: [...add, ...L].slice(0, 300) } } }, 'Pinterest素材') // 以網址去重合併（重做不重複加）
+  await pinSave(d, { addBoardId, touched: d._touched })
   return { added, dup, failed }
 }
 
@@ -132,11 +140,11 @@ export async function boardAdd(raw, who) {
   const { board, pins } = await fetchBoard(t.url, t.slug)
   const b = { id: 'b' + Date.now().toString(36), url: t.url, user: t.user, slug: t.slug, name: board.name || t.slug, addedAt: new Date().toISOString(), addedBy: who || '', lastAt: '', lastNew: 0, total: 0, err: '' }
   d.boards.push(b)
-  const r = await savePins(pins, { who, board: b.name, d }) // savePins 會存 d（含新 board）
-  const d2 = await pinDoc(); const bb = d2.boards.find(x => x.id === b.id); if (bb) { bb.lastAt = new Date().toISOString(); bb.lastNew = r.added.length; bb.total = Object.values(d2.seen).filter(s => s.board === b.name).length; await pinSave(d2) }
+  const r = await savePins(pins, { who, board: b.name, d, addBoardId: b.id }) // savePins 會合併存 d（含新 board）
+  const d2 = await pinDoc(); const bb = d2.boards.find(x => x.id === b.id); if (bb) { bb.lastAt = new Date().toISOString(); bb.lastNew = r.added.length; bb.total = Object.values(d2.seen).filter(s => s.board === b.name).length; await pinSave(d2, { touched: [b.id] }) }
   return { board: b, ...r, found: pins.length }
 }
-export async function boardDel(id) { const d = await pinDoc(); d.boards = d.boards.filter(b => b.id !== id); await pinSave(d); return d.boards }
+export async function boardDel(id) { return socTx(PIN_KEY, (cur) => { const c = cur || {}; const boards = (c.boards || []).filter(b => b.id !== id); return { write: boards.length !== (c.boards || []).length, doc: { ...c, boards }, value: boards } }, 'Pinterest刪圖版').then(v => v || (async () => (await pinDoc()).boards)()) }
 
 // 每小時：登記的圖版逐一看，只抓新的；有新圖就 LINE 私訊張良一句
 export async function syncAll({ notify = true } = {}) {
@@ -148,10 +156,11 @@ export async function syncAll({ notify = true } = {}) {
       const r = fresh.length ? await savePins(fresh, { who: 'Pinterest 自動', board: b.name, d }) : { added: [], dup: 0, failed: [] }
       b.lastAt = new Date().toISOString(); b.lastNew = r.added.length; b.err = ''; if (board.name) b.name = board.name
       b.total = Object.values(d.seen).filter(s => s.board === b.name).length
+      d._touched = [...(d._touched || []), b.id]
       out.push({ board: b.name, found: pins.length, added: r.added.length, failed: r.failed.length })
-    } catch (e) { b.lastAt = new Date().toISOString(); b.err = String(e.message || e).slice(0, 120); out.push({ board: b.name, error: b.err }) }
+    } catch (e) { b.lastAt = new Date().toISOString(); b.err = String(e.message || e).slice(0, 120); d._touched = [...(d._touched || []), b.id]; out.push({ board: b.name, error: b.err }) }
   }
-  await pinSave(d)
+  await pinSave(d, { touched: d._touched })
   const totalNew = out.reduce((s, x) => s + (x.added || 0), 0)
   if (notify && totalNew) await lineBoss(`Pinterest 新進 ${totalNew} 張圖到素材庫：` + out.filter(x => x.added).map(x => `${x.board} ${x.added} 張`).join('、') + '\n（行銷大師 → 素材庫）')
   return { ok: true, boards: out, totalNew }
