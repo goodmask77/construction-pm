@@ -280,10 +280,11 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
               const gb = guard ? await guard() : null // 每批再查一次（縮小切換空隙；不取代切換前排空）
               if (gb) { g.err = gb; break }
               const part = g.uids.slice(i9, i9 + 500)
-              await client.messageMove(part, dest, { uid: true }) // 分批（IMAP 指令長度有限）
-              g.moved += part.length // 每批成功才累加；後批失敗不會把前批洗成 0（第二輪 OpenAI A3／Gemini A1）
+              try { await client.messageMove(part, dest, { uid: true }) } // 分批（IMAP 指令長度有限）
+              catch (e) { throw Object.assign(new Error(errText(e) + `（失敗前已確認搬 ${g.moved} 封；失敗這批 ${part.length} 封結果未確認，請到信箱核對）`), { moveFail: true }) } // 第三輪 OpenAI A3：第一批就失敗也要寫未確認
+              g.moved += part.length // 每批成功才累加；moved＝已確認成功數（第二輪 OpenAI A3／Gemini A1）
             }
-          } catch (e) { g.err = errText(e) + (g.moved ? `（失敗前已搬 ${g.moved} 封；失敗這批結果未確認）` : '') }
+          } catch (e) { g.err = e && e.moveFail ? e.message : errText(e) }
         }
       }
     } finally { lock.release() }
