@@ -99,6 +99,7 @@ export async function abgdOwnerOf(key) {
   } catch (_) { return 'unknown' }
 }
 const ABGD_MOVED = '這個功能已搬到新版，請從側欄重新點進去（會自動登入新版）'
+const PM_BUSY = '銷售設定正在切換或維護，請幾分鐘後再按一次' // posmeta 沒有新版頁面，不能叫人去側欄找新版（關卡 3 posmeta 第一輪 Claude B3）
 // abgd：轉命令給新殼（HMAC＋冪等鍵；同 line-webhook abgdCommand）——資料域在新殼時，GD 其他功能要改那個域的資料走這裡
 async function abgdCmd(domain, action, args, operator, idem) {
   const base = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '')
@@ -1790,13 +1791,13 @@ export default async function handler(req, res) {
     let pb2 = {}
     try { pb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const stP = pb2.store === 'abeach' ? 'abeach' : 'ground'
-    { const ow = await abgdOwnerOf('sp_finance_pm_pos_prices'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'price', { store: stP, set: pb2.set || {}, del: Array.isArray(pb2.del) ? pb2.del : [] }, '金鑰(priceset)'); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, set: cr.set, del: cr.del, total: cr.total } : { ok: false, error: cr.text }) } } // abgd 搬家（銷售設定 posmeta）：切新殼後轉命令橋
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_prices'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: PM_BUSY }); const cr = await abgdCmd('posmeta', 'price', { store: stP, set: pb2.set || {}, del: Array.isArray(pb2.del) ? pb2.del : [] }, '金鑰(priceset)'); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, set: cr.set, del: cr.del, total: cr.total } : { ok: false, error: cr.text }) } } // abgd 搬家（銷售設定 posmeta）：切新殼後轉命令橋
     const doc = (await kvGet('sp_finance_pm_pos_prices')) || {}
     doc[stP] = doc[stP] || {}
     let nSet = 0, nDel = 0
     for (const [k3, v3] of Object.entries(pb2.set || {})) { const nv = Number(v3); if (isFinite(nv)) { doc[stP][String(k3)] = nv; nSet++ } }
     for (const k3 of (pb2.del || [])) if (doc[stP][k3] != null) { delete doc[stP][k3]; nDel++ }
-    await kvPut('sp_finance_pm_pos_prices', doc, '牌價灌檔(priceset)')
+    if (!(await kvPut('sp_finance_pm_pos_prices', doc, '牌價灌檔(priceset)'))) return res.status(409).json({ ok: false, error: PM_BUSY }) // 切換凍結中被擋＝不假成功（Claude B2）
     await announceChanged()
     return res.status(200).json({ ok: true, set: nSet, del: nDel, total: Object.keys(doc[stP]).length })
   }
@@ -1814,13 +1815,13 @@ export default async function handler(req, res) {
     try { body2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const st2 = body2.store === 'ground' ? 'ground' : body2.store === 'abeach' ? 'abeach' : null
     if (!st2) return res.status(400).json({ ok: false, error: 'store 要是 abeach 或 ground' })
-    { const ow = await abgdOwnerOf('sp_finance_pm_pos_alias'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'alias', { store: st2, set: body2.set || {}, del: Array.isArray(body2.del) ? body2.del : [] }, '金鑰(aliasset)'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, store: st2, n: cr.total } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_alias'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: PM_BUSY }); const cr = await abgdCmd('posmeta', 'alias', { store: st2, set: body2.set || {}, del: Array.isArray(body2.del) ? body2.del : [] }, '金鑰(aliasset)'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, store: st2, n: cr.total, alias: { [st2]: cr.map || {} } } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）；alias 只回這家店（其他店請用 ?aliasget）
     const cur2 = (await kvGet('sp_finance_pm_pos_alias')) || {}
     const m3 = { ...(cur2[st2] || {}) }
     for (const [o3, n3] of Object.entries(body2.set || {})) { if (typeof n3 === 'string' && n3.trim()) m3[o3] = n3 }
     for (const o3 of (Array.isArray(body2.del) ? body2.del : [])) delete m3[o3]
     const next2 = { ...cur2, [st2]: m3 }
-    await kvPut('sp_finance_pm_pos_alias', next2, '改名對照口')
+    if (!(await kvPut('sp_finance_pm_pos_alias', next2, '改名對照口'))) return res.status(409).json({ ok: false, error: PM_BUSY })
     await announceChanged() // 開著的營運報表即刻套用合併
     return res.status(200).json({ ok: true, store: st2, n: Object.keys(m3).length, alias: next2 })
   }
@@ -2394,11 +2395,11 @@ export default async function handler(req, res) {
     const stH = ph.store === 'abeach' ? 'abeach' : 'ground'
     const keyH = String(ph.key || '').slice(0, 80)
     if (!keyH) return res.status(400).json({ ok: false })
-    { const ow = await abgdOwnerOf('sp_finance_pm_pos_hidden'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('posmeta', 'hide', { store: stH, key: keyH, hide: !!ph.hide }, whoH ? whoH.name : '系統'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, viaAbgd: true } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）：隱藏鈕留在 GD 銷售頁，切新殼後經命令橋寫
+    { const ow = await abgdOwnerOf('sp_finance_pm_pos_hidden'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: PM_BUSY }); const cr = await abgdCmd('posmeta', 'hide', { store: stH, key: keyH, hide: !!ph.hide }, whoH ? whoH.name : '系統'); if (cr.ok) await announceChanged(); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, viaAbgd: true } : { ok: false, error: cr.text }) } } // abgd 搬家（posmeta）：隱藏鈕留在 GD 銷售頁，切新殼後經命令橋寫
     const doc = (await kvGet('sp_finance_pm_pos_hidden')) || {}
     doc[stH] = doc[stH] || {}
     if (ph.hide) doc[stH][keyH] = 1; else delete doc[stH][keyH]
-    await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + (whoH ? whoH.name : '系統') + ')')
+    if (!(await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + (whoH ? whoH.name : '系統') + ')'))) return res.status(409).json({ ok: false, error: PM_BUSY })
     return res.status(200).json({ ok: true })
   }
   // ── 🍔 菜單編輯（張良 2026-09-22：base=既有菜單凍結快照、draft=新菜單大家協作編輯；diff 給夥伴看動了什麼）──
