@@ -334,18 +334,16 @@ const ACTIONS = {
     const ok = await linePush(gidB, [{ type: 'text', text: ddFill(cfgB.text, { content: it.text || '（見附件）', by: it.by, url: (it.url ? '\n🔗 ' + it.url : '') + (media.length ? `・附${media.length}圖` : '') }) + await quotaFoot(mem) }], 'buy-add:' + (it.id || '') + ':' + gidB)
     return ok ? { ok: true, sent: true } : { ok: false, retry: true }
   },
-  async low_stock(a) { // 盤點／包材低水位 → DD 自動訊息 lowStock 群＋全員推播（原 joya-intraday 每日 11:00 場次，文字照抄）
+  async low_stock(a) { // 盤點／包材低水位（原 joya-intraday 每日 11:00 場次，文字照抄）：ch='line' 發 DD 自動訊息 lowStock 群；ch='push' 全員推播（兩路分開排、各自重試）
     if (a.ts && Date.now() - Date.parse(a.ts) > 12 * 3600e3) return { ok: true, skipped: 'expired' } // 當天的提醒，隔太久就不發
     const cfgLS = await ddGet('lowStock')
     if (!cfgLS.on) return { ok: true, skipped: true }
-    let sent = false
-    if (TK()) {
-      const gidLS = await ddGroupGid(cfgLS.group)
-      const mem = await groupMembers(gidLS)
-      if (await linePush(gidLS, [{ type: 'text', text: ddFill(cfgLS.text, { list: String(a.list || '') }) + await quotaFoot(mem) }], 'low-stock:' + (a.date || '') + ':' + gidLS)) sent = true
-    }
-    try { if (await wpPush(null, { title: '📉 庫存低水位', body: String(a.names || ''), url: '/prep' })) sent = true } catch (_) {}
-    return sent ? { ok: true, sent: true } : { ok: false, retry: true }
+    if (a.ch === 'push') { const n = await wpPush(null, { title: '📉 庫存低水位', body: String(a.names || ''), url: '/prep' }); return { ok: true, sent: !!n } } // 推播是盡力送（沒有訂閱者也算完成），重試最多造成重複一次
+    if (!TK()) return { ok: false, retry: true }
+    const gidLS = await ddGroupGid(cfgLS.group)
+    const mem = await groupMembers(gidLS)
+    const ok = await linePush(gidLS, [{ type: 'text', text: ddFill(cfgLS.text, { list: String(a.list || '') }) + await quotaFoot(mem) }], 'low-stock:' + (a.date || '') + ':' + gidLS)
+    return ok ? { ok: true, sent: true } : { ok: false, retry: true }
   },
   async meet_nudge_group(a) { // 3 次沒簽→大群點名（DD 自動訊息 meet_nudge）
     const cfg = await ddGet('meet_nudge')
