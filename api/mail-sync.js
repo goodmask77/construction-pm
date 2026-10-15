@@ -3416,7 +3416,8 @@ export default async function handler(req, res) {
         }
       }
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, vioRes, hrPay, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    const mgrS = !!(meS && (meS.role === '主管' || meS.name === '張良瑋' || aprS.includes(meS.name))) // v4.71.107 時薪與發薪真值只回主管（原本回給所有人、只在畫面藏；新殼法規薪資同規則）
+    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates: mgrS ? payRates : {}, vioRes, hrPay: mgrS ? hrPay : [], resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
