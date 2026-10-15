@@ -4888,6 +4888,7 @@ export default async function handler(req, res) {
   if (req.query?.chat) {
     const okC = (process.env.OPS_BOARD_KEY || '').trim()
     if (!okC || String(req.query.chat) !== okC) return res.status(403).json({ ok: false })
+    if (req.method === 'POST' && (await abgdOwnerOf('pm_chat_rooms')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // abgd 搬家（F22 聊天室）：切新殼後舊入口只能讀
     let bodyC = {}
     if (req.method === 'POST') { try { bodyC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
     const tkC = req.method === 'POST' ? bodyC.token : req.query.me

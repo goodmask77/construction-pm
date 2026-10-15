@@ -11,7 +11,7 @@ let _chRooms = null, _chMe = null, _chPeople = [], _chCur = null, _chMsgs = [], 
 function chEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
 function chT(t) { try { const d = new Date(t); const now = new Date(); const same = d.toDateString() === now.toDateString(); return (same ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') } catch (_) { return '' } }
 async function chGet(q) { try { const r = await fetch('/api/mail-sync?chat=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK() || '') + '&' + q + '&r=' + Date.now()); return await r.json() } catch (e) { return null } }
-async function chPost(body) { try { const r = await fetch('/api/mail-sync?chat=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }); return await r.json() } catch (e) { return null } }
+async function chPost(body) { if (window._tabCfg && window._tabCfg.routes && window._tabCfg.routes.chat) return { ok: false, error: '聊天室已搬到新版：請從側欄重新點「聊天室」（會自動登入新版）' } /* abgd 搬家（F22） */ try { const r = await fetch('/api/mail-sync?chat=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }); return await r.json() } catch (e) { return null } }
 function chStop() { if (_chTimer) clearInterval(_chTimer); if (_chListTimer) clearInterval(_chListTimer); _chTimer = _chListTimer = null }
 
 async function chatLoad(roomId) {

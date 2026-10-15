@@ -68,7 +68,7 @@ const gdNames = (rosterDoc) => {
 
 // 新殼借用 GD 的 AI 出口（唯讀動作，2026-10-14 第 2 波耗損 F09 起）：金鑰、路由（AI 中樞設定）、用量紀錄都留在 GD；
 // 只允許登記過的路由，避免新殼任意呼叫；回 { text, provider, model }
-const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr']) // menuocr：菜單拍照建檔（F18）
+const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr', 'app']) // app：聊天室 @DD（F22，同 GD _chat.js 走 aiCall('app')） // menuocr：菜單拍照建檔（F18）
 const ACTIONS = {
   async ai_call(a) {
     const route = String(a.route || '')
@@ -322,6 +322,19 @@ const ACTIONS = {
     const ok = await linePush(po.lineUserId, [{ type: 'text', text: `📌 ${a.who} 指派給你：【${it.st || '任務'}】${it.text || ''}\n完成後到 /prep 按「已解決」` }])
     if (!ok) return { ok: false, retry: true }
     try { await logPush(po.lineUserId, 1, '任務指派通知') } catch (_) {} return { ok: true, sent: true }
+  },
+  async chat_notify(a) { // 聊天室新訊息（原 mail-sync ?chat send 的 notify，文字照抄）：鈴鐺推播給該室成員（toNames=null＝全部）＋個人室夥伴發話 LINE 私訊審核人
+    if (a.ts && Date.now() - Date.parse(a.ts) > 6 * 3600e3) return { ok: true, skipped: 'expired' }
+    const { ids } = await bindMaps()
+    let n = 0
+    try { const to = Array.isArray(a.toNames) ? [...new Set(a.toNames.flatMap(nm => ids[nm] || []))] : null; if (!to || to.length) n = await wpPush(to, a.msg) } catch (_) {}
+    if (a.lineDm && TK()) {
+      const [defC, rosC] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+      const apr = (((defC || {}).ground || {}).approvers || ['張良瑋'])
+      const alive = ((rosC || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+      for (const an of apr) { const ap = alive.find(p => p.name === an && p.lineUserId); if (ap && ap.name !== a.lineDm.whoName) await linePush(ap.lineUserId, [{ type: 'text', text: `💬 ${a.lineDm.roomName}\n${a.lineDm.whoName}：${String(a.lineDm.text).slice(0, 300)}\n（到 /prep 聊天室回覆）` }]) }
+    }
+    return { ok: true, n }
   },
   async buy_group(a) { // 採購需求 → DD 自動訊息 buy 設定的群（原 ?buyadd，文字照抄；abgd 盤點／採購 F05～07）
     if (a.ts && Date.now() - Date.parse(a.ts) > 23 * 3600e3) return { ok: true, skipped: 'expired' }
