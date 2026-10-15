@@ -1126,6 +1126,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     };
     // 💰 同步到營運報表：食譜算出的成本 → sp_finance_pm_pos_costs（品項明細毛利就會用真食譜成本，不用手填兩邊）
     // key 算法與 Finance 品項明細一致（AB=abNorm 去emoji、GD=POS品名原文）；只同步「成本完整」的，缺料不寫入避免低估
+    // eslint-disable-next-line no-unused-vars
     const syncToPos = async () => {
       const all = (db.products || []).filter(p => !p.semi && p.is_active !== false && (p.name || "").trim());
       const upd2 = { abeach: {}, ground: {} };
@@ -1168,7 +1169,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           </div>
           <div style={{ flex: 1 }} />
           {btn("⬇️ 匯出 CSV", exportCsv)}
-          {canEdit && btn("💰 同步成本到營運報表", syncToPos, { background: C.green, color: "#fff", borderColor: C.green })}
+          {/* 同步成本到營運報表：主 App 停用（張良 2026-10-15；品項成本改由 GD 負責） */}
         </div>
         {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
         {/* KPI 摘要列 */}
