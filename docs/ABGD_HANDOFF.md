@@ -25,9 +25,10 @@
 | 錯誤日誌（App 錯誤自動回報，F33 下半） | ✅ 10-15 20:17 已切（關卡 3：OpenAI 兩輪、Gemini 三輪、Claude 一輪；當班＋回切演練；epoch 2；20:23 拆閘門） | issues（只剩 sp_finance_pm_errlog；pm_issues 改歸 dd 域；沒有入口，GD ?errlog 經命令橋） |
 | 工時成本試算＋AB 模組班表（F15 第 B 段） | ✅ 10-15 21:1x 已切（關卡 3：OpenAI 五輪、Gemini 六輪、Claude 一輪；當班 19 項含 GD 下游、主 App／DD 欄位不變、回切演練；epoch 2；拆閘門後 30 分鐘監看乾淨）。**班表回切前要先回切 shiftplan**（畫面只掛在新殼班表頁） | shiftplan（sp_finance_pm_labor、sp_finance_pm_abmod；主 App 已停寫 labor） |
 | 法規薪資 F41 | ✅ 10-15 22:26 已切（關卡 3：OpenAI 三輪、Gemini 兩輪、Claude 兩輪；當班 18 項含核准後 56 秒 GD 每日掃描讀得到、首次建立費率回切再切、違規通知只私訊張良送達；epoch 2；拆閘門）。入口 pay→/finance/payroll（**GD 側欄沒有這分頁**：新殼班表頁「違規清單／法規／薪資／違規」按鈕、GD 舊頁五個入口與 LINE 違規通知 #vio= 都先轉新版；沒登入跳提示） | payroll（只 sp_finance_pm_payrates、sp_finance_pm_vio_res） |
+| 信箱中樞 F40 | ✅ 10-15 23:30 已切（B 模式：IMAP 與 MAIL_ENC_KEY 留 GD、資料歸新殼；GD 讀走 /api/core/gdread、寫走命令橋 put 帶版本號；新殼頁 /ops/mailhub 驗主管後呼叫 GD 代發口 mailhub_op；關卡 3：OpenAI 四輪、Gemini 六輪；**獨立 Claude 審查因子代理服務異常未能執行，待補**；當班 14 項含真的連系統信箱試算、驗收中搬信被擋、回切演練；epoch 2） | mailhub（sp_finance_pm_mailhub＋_scan_<id>） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.118（main）、GD v4.71.106（main，已部署）。
+版本：新殼 v0.4.122（main）、GD v4.71.114（main，已部署）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
