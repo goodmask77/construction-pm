@@ -115,6 +115,7 @@ export async function getSharedPrefix(prefix) {
 // 批次寫入（逐筆遷移/批量匯入用）：一次 upsert 多筆，分包避免單一請求過大。回傳是否全部成功。
 export async function setSharedMany(pairs) {
   if (!pairs?.length) return true
+  if (pairs.some(([k]) => _retired(k))) { console.warn('[storage] ' + RETIRED_MSG); return false }
   if (_OPS()) { for (const [k, v] of pairs) { const r = await _opsKV({ op: 'set', key: k, value: v }); if (!r || !r.ok) return false } return true }
   if (!dataClient) { try { pairs.forEach(([k, v]) => localStorage.setItem(k, v)) } catch (_) {} ; return true }
   const now = new Date().toISOString()
@@ -137,7 +138,14 @@ export async function listSharedIds() {
   } catch (_) { return [] }
 }
 
+// 主 App 停用寫入（張良 2026-10-15：主 App 不要了、只搬 GD）：品項成本／定價／隱藏／改名、菜單兩份
+// 這些資料改由 GD（之後是新版 abgd）唯一負責；主 App 只能讀。擋在最底層＝任何按鈕、批次、刪除都寫不進去
+export const RETIRED_KEYS = new Set(['sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_menu', 'sp_finance_pm_menu_assets'])
+export const RETIRED_MSG = '主 App 已停用這項資料的修改，請到 GD 修改'
+const _retired = (k) => RETIRED_KEYS.has(String(k))
+
 async function setShared(k, value) {
+  if (_retired(k)) { console.warn('[storage] ' + RETIRED_MSG, k); return }
   if (_OPS()) { await _opsKV({ op: 'set', key: k, value }); return }
   if (!dataClient) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
   try {
@@ -244,11 +252,13 @@ export function installStorageShim() {
     },
     async set(key, value, shared = true) {
       if (!shared) { setLocal(key, value); return }
+      if (_retired(key)) throw new Error(RETIRED_MSG)
       const prev = _pend.get(key); if (prev) clearTimeout(prev.timer)
       const timer = setTimeout(() => { const p = _pend.get(key); if (p) { _pend.delete(key); setShared(key, p.value) } }, 800)
       _pend.set(key, { value, timer })
     },
     async delete(key, shared = true) {
+      if (shared && _retired(key)) throw new Error(RETIRED_MSG)
       const p = _pend.get(key); if (p) { clearTimeout(p.timer); _pend.delete(key) } // 刪除前先取消排隊中的寫入，避免死而復生
       if (_OPS()) { await _opsKV({ op: 'del', key }); return }
       if (shared && dataClient) {

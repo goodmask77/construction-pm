@@ -212,6 +212,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
   const saveCost = (storeKey, itemKey, val) => {
+    return; // 主 App 停用寫入（2026-10-15）：改在 GD 修改；以下保留不執行
     setPosCosts(prev => {
       const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
       if (val == null || val === "" || !(Number(val) > 0)) delete next[storeKey][itemKey]; else next[storeKey][itemKey] = Number(val);
@@ -221,6 +222,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   };
   // 品項定價覆寫存檔：清空＝回自動還原；0＝這品項不顯示價格（跟成本不同，0 要留著）
   const savePrice = (storeKey, itemKey, val) => {
+    return; // 主 App 停用寫入（2026-10-15）：改在 GD 修改；以下保留不執行
     setPosPrices(prev => {
       const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
       const n = Number(val);
@@ -231,6 +233,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   };
   // 下架品項隱藏/恢復（張良 2026-09-19）：跟成本/定價同一套 KV 廣播模式，兩店分開、全裝置同步
   const saveHidden = (storeKey, itemKey, hide) => {
+    return; // 主 App 停用寫入（2026-10-15）：改在 GD 修改；以下保留不執行
     setPosHidden(prev => {
       const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
       if (hide) next[storeKey][itemKey] = 1; else delete next[storeKey][itemKey];
@@ -1960,8 +1963,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
                         {gdGroup && chip2(Object.keys(gdFold).length ? "⊞ 全部展開" : "⊟ 全部收合", false, () => setGdFold(Object.keys(gdFold).length ? {} : Object.fromEntries(catSeen.map(c => [c, true]))), true)}
                         {chip2("😴 7天+沒賣", gdIdle, () => setGdIdle(!gdIdle), true)}
-                        {canEdit && chip2("💰 填成本", gdCost, () => setGdCost(!gdCost), true)}
-                        {canEdit && chip2(`🙈 隱藏管理${hidCnt ? `（${hidCnt}）` : ""}`, gdHideMode, () => setGdHideMode(!gdHideMode), true)}
+                        {/* 填成本／隱藏管理：主 App 停用（張良 2026-10-15 主 App 不要了，改在 GD 改；supa.js RETIRED_KEYS 底層也擋） */}
+                        {canEdit && <span style={{ fontSize: 11, color: C.sub }} title="這幾項資料改由 GD 負責">成本／定價／隱藏請到 GD 修改</span>}
                         {chip2("⬇️ 匯出", false, exportCsv, true)}
                         <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計/30日均/vs近60欄＝排序；點品類色帶＝摺疊；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
