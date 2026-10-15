@@ -51,19 +51,20 @@ export async function pointsCas(mutate, editor = 'onboard-bot', op) {
   return ptsTx(PTS_KEY, (cur) => { const doc = cur || { list: [], carry: {} }; const r = mutate(doc) || {}; return { write: !!r.write, doc, value: r.value } }, editor, op)
 }
 // 嚴格版：回 { awarded, reason }；讀寫失敗直接丟錯（給新殼代發口用，失敗會重試）
-export async function awardPtsStrict(person, act, ref) {
+export async function awardPtsStrict(person, act, ref, atIso) { // atIso：行為發生時間（補分重放用原本時間算日期與每日上限；關卡 3 積分第二輪 A6）
   if (!person || person === '匿名') return { awarded: false, reason: 'no-person' }
   const cfg = (await ptsRead([PTS_KEYS.cfg], person))[PTS_KEYS.cfg]
   const rule = pointsRules(cfg)[act]
   if (!rule || rule.off || !(Number(rule.pts) > 0)) return { awarded: false, reason: 'rule-off' }
   return pointsCas(doc => {
     doc.list = doc.list || []; doc.carry = doc.carry || {}
-    const dnow = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const t0 = atIso && Number.isFinite(Date.parse(atIso)) ? Date.parse(atIso) : Date.now()
+    const dnow = new Date(t0 + 8 * 3600e3).toISOString().slice(0, 10)
     if (ref && doc.list.find(e => e.person === person && e.act === act && e.ref === ref)) return { write: false, value: { awarded: false, reason: 'dup' } }
     const cap = Number(rule.cap) || 0
     if (cap > 0 && doc.list.filter(e => e.person === person && e.act === act && e.date === dnow).length >= cap) return { write: false, value: { awarded: false, reason: 'cap' } }
-    doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '' })
-    if (doc.list.length > 40000) { const cut = doc.list.splice(0, doc.list.length - 40000); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真
+    doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(t0 + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '', ...(atIso ? { late: true } : {}) })
+    if (doc.list.length > 40000) { const keep = (e) => e.act === 'redeem' || e.act === 'adjust'; let over = doc.list.length - 40000; const cut = []; doc.list = doc.list.filter(e => { if (over > 0 && !keep(e)) { over--; cut.push(e); return false } return true }); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真；兌換扣點、主管加扣分永不折（去重憑證；關卡 3 積分第二輪 A5）
     return { write: true, value: { awarded: true, reason: 'ok' } }
   }, '行為分(' + person + ')', person) // 操作者＝得分的人（新殼命令橋留痕、驗收閘門看得到是誰）
 }
@@ -87,10 +88,13 @@ export async function ptsDrain({ limit = 50 } = {}) {
   const rows = await r.json(); let ok = 0, left = 0, drop = 0
   for (const row of rows) {
     let q = null; try { q = JSON.parse(row.data.v) } catch (_) {}
-    const del = async () => { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(row.id)}`, { method: 'DELETE', headers: svc }) }
-    if (!q || !q.person || !q.act) { await del(); drop++; continue }
-    try { await awardPtsStrict(q.person, q.act, q.ref || ''); await del(); ok++ }
-    catch (e) { if (Date.now() - Date.parse(q.at || 0) > 7 * 86400e3) { console.error('[awardPts] 補分超過 7 天仍失敗，放棄（請人工補）', JSON.stringify(q)); await del(); drop++ } else left++ }
+    const del = async () => { const d = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(row.id)}`, { method: 'DELETE', headers: svc }); if (!d.ok) throw new Error('刪補分佇列失敗 HTTP ' + d.status) } // 刪除要確認成功（沒刪掉下次再補也不會重給：同 ref 去重）
+    const dead = async (why) => { const at = new Date().toISOString(); const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ id: 'pm_ptsqdead_' + row.id.slice(PQ.length), data: { v: JSON.stringify({ ...(q || {}), why, deadAt: at }) }, editor: '補分死信', updated_at: at }) }); if (!r2.ok) throw new Error('寫補分死信失敗 HTTP ' + r2.status); console.error('[awardPts] 補分進死信（請人工核對補分）', why, JSON.stringify(q)); await del() } // 死信保留（不刪），等人工核對
+    try {
+      if (!q || !q.person || !q.act) { await dead('內容壞了'); drop++; continue }
+      try { await awardPtsStrict(q.person, q.act, q.ref || '', q.at); await del(); ok++ }
+      catch (e) { if (Date.now() - Date.parse(q.at || 0) > 7 * 86400e3) { await dead('超過 7 天仍失敗：' + String(e && e.message || e).slice(0, 80)); drop++ } else left++ }
+    } catch (e) { console.error('[awardPts] 補分佇列處理失敗（下輪再試）', row.id, String(e && e.message || e).slice(0, 80)); left++ }
   }
   return { seen: rows.length, ok, left, drop }
 }

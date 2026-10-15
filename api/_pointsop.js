@@ -117,12 +117,14 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
     const isCheckerR = isAdmR || checkersR.includes(who.name)
     const nowR = twNowR()
     if (body.op === 'request') {
+      const rid0 = body.cid ? 'rd' + crypto.createHash('sha256').update(who.name + '|' + String(body.cid)).digest('hex').slice(0, 20) : null
+      if (rid0) { const ex0 = (((await ptsRead([PTS_KEYS.redeem], op))[PTS_KEYS.redeem] || {}).list || []).find(x => x.id === rid0); if (ex0 && ex0.person === who.name) return { ok: true, item: ex0 } } // 同一次申請重送：先回原單，不再檢查庫存與餘額（關卡 3 積分第二輪 A4）
       const P = await ptsRead([PTS_KEYS.rewards, PTS_KEYS.points], op)
       const rw = ((P[PTS_KEYS.rewards] || {}).list || []).find(x => x.id === body.rewardId && !x.off)
       if (!rw) return { status: 404, ok: false, error: '找不到這個獎勵' }
       if (rw.stock != null && rw.stock <= 0) return { status: 400, ok: false, error: '這個獎勵庫存沒了' }
       const bal = balOf(who.name, P[PTS_KEYS.points]); if (bal < rw.cost) return { status: 400, ok: false, error: `點數不夠（你有 ${bal}、需要 ${rw.cost}）` }
-      const rid = body.cid ? 'rd' + crypto.createHash('sha256').update(who.name + '|' + String(body.cid)).digest('hex').slice(0, 20) : 'rd' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex') // 同一個人同一次申請（cid）重送＝同一張；編號綁申請人（關卡 3 積分第一輪 OpenAI A4）（cid）重送不重建
+      const rid = rid0 || ('rd' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex')) // 同一個人同一次申請（cid）重送＝同一張；編號綁申請人（關卡 3 積分第一輪 OpenAI A4）（cid）重送不重建
       const it = { id: rid, person: who.name, rewardId: rw.id, rewardName: rw.name, cost: rw.cost, ts: nowR, status: 'pending' }
       const got = await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; d.list = d.list || []; const ex = d.list.find(x => x.id === rid); if (ex) return { write: false, value: { made: false, item: ex } }; d.list = trimRedeem([it, ...d.list]); return { write: true, doc: d, value: { made: true, item: it } } }, '兌換申請(' + who.name + '→' + rw.name + ')', op)
       if (got.item.person !== who.name) return { status: 409, ok: false, error: '申請編號衝突，請重新整理再試' }
@@ -158,25 +160,35 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
       //   ① 兌換單 pending→approving（認領；別人不能再審或退回）② 預留庫存（同兌換單只扣一次，記在獎勵 stockIds；缺貨＝退回 pending）
       //   ③ 扣點（同兌換單 ref 只扣一次；不足＝放回庫存、退回 pending）④ approving→approved＋核銷碼 ⑤ 都存好才通知
       //   中途失敗：兌換單停在 approving，再按一次核准會從頭冪等做完
+      //   執行權（關卡 3 積分第二輪 A2）：認領時記 runId＋runAt，5 分鐘內只有持有者能往下做；超過 5 分鐘（上一個執行中斷）才能接手。補償（放回庫存＋退回待審）與完成都要持有執行權
+      const runId = crypto.randomUUID(); const LEASE = 5 * 60e3
       let err = null, it = null
-      await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } } if (it.status === 'approving') return { write: false }; if (it.status !== 'pending') { err = { status: 400, ok: false, error: '這筆已經處理過了' }; return { write: false } } it.status = 'approving'; it.decBy = who.name; it.decTs = nowR; if (note) it.note = note; return { write: true, doc: d } }, '兌換核准中(' + who.name + ')', op)
+      await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } }
+        if (it.status === 'approving' && it.runId && Date.now() - Date.parse(it.runAt || 0) < LEASE) { err = { status: 409, ok: false, error: '這筆正在核准中（' + (it.decBy || '') + '），請稍候再看' }; return { write: false } }
+        if (it.status !== 'pending' && it.status !== 'approving') { err = { status: 400, ok: false, error: '這筆已經處理過了' }; return { write: false } }
+        it.status = 'approving'; it.decBy = who.name; it.decTs = nowR; it.runId = runId; it.runAt = new Date().toISOString(); if (note) it.note = note; return { write: true, doc: d } }, '兌換核准中(' + who.name + ')', op)
       if (err) return err
+      const mine = (x) => x && x.status === 'approving' && x.runId === runId
+      const failRun = async (out) => { try { await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!mine(x)) return { write: false }; delete x.runId; delete x.runAt; return { write: true, doc: d } }, '兌換核准中斷(釋放執行權)', op) } catch (_) { /* 釋放不了＝5 分鐘後自動過期 */ } return out } // 中途失敗：釋放執行權（仍停在核准中），再按一次馬上能接手
       // ② 預留庫存（同兌換單只扣一次；缺貨＝退回待審；寫不進去＝停在核准中、回「再按一次」）（關卡 3 積分第一輪 OpenAI A2：原本扣庫存失敗被吞、會超賣）
       let stockErr = null
       try { await ptsTx(PTS_KEYS.rewards, (cur) => { stockErr = null; const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || rw.stock == null) return { write: false }; rw.stockIds = rw.stockIds || []; if (rw.stockIds.includes(it.id)) return { write: false }; if (!(rw.stock > 0)) { stockErr = 'out'; return { write: false } } rw.stock = rw.stock - 1; rw.stockIds = [...rw.stockIds, it.id]; return { write: true, doc: d } }, '兌換預留庫存', op) }
-      catch (e) { return { status: 503, ok: false, error: '庫存存檔失敗，請再按一次核准（不會重複扣）：' + String(e && e.message || e).slice(0, 60) } }
-      const backToPending = (why) => ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x || x.status !== 'approving') return { write: false }; x.status = 'pending'; delete x.decBy; delete x.decTs; return { write: true, doc: d } }, '兌換退回待審(' + why + ')', op).catch(() => {})
+      catch (e) { return failRun({ status: 503, ok: false, error: '庫存存檔失敗，請再按一次核准（不會重複扣）：' + String(e && e.message || e).slice(0, 60) }) }
+      const backToPending = (why) => ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!mine(x)) return { write: false }; x.status = 'pending'; delete x.decBy; delete x.decTs; delete x.runId; delete x.runAt; return { write: true, doc: d } }, '兌換退回待審(' + why + ')', op).catch((e) => { console.error('[points] 退回待審失敗（停在核准中，5 分鐘後可再按）', id, String(e && e.message || e).slice(0, 60)) })
       if (stockErr === 'out') { await backToPending('缺貨'); return { status: 400, ok: false, error: '這個獎勵庫存沒了，無法核准（已退回待審）' } }
       // ③ 扣點（同兌換單 ref 只扣一次；點數不足＝放回預留的庫存、退回待審）
       let rdOk
       try {
         rdOk = await pointsCas(ptsDoc => { ptsDoc.list = ptsDoc.list || []; if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }; if (balOf(it.person, ptsDoc) < it.cost) return { write: false, value: 'short' }; ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: twDate(), ts: twHm(), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: who.name, note: it.rewardName }); return { write: true, value: 'ok' } }, '兌換扣點(' + it.person + ' -' + it.cost + ')', op)
-      } catch (e) { return { status: 503, ok: false, error: '積分存檔失敗，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 80) } }
-      if (rdOk === 'short') { try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || !(rw.stockIds || []).includes(it.id)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== it.id); return { write: true, doc: d } }, '兌換放回庫存(點數不足)', op) } catch (e) { console.error('[points] 放回庫存失敗（請人工補庫存）', it.id, String(e && e.message || e).slice(0, 60)) } await backToPending('點數不足'); return { status: 400, ok: false, error: '對方點數不足（可能剛被扣），無法核准（已退回待審）' } }
+      } catch (e) { return failRun({ status: 503, ok: false, error: '積分存檔失敗，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 80) }) }
+      if (rdOk === 'short') { // 補償：確認仍持有執行權 → 放回預留庫存 → 成功才退回待審；放回失敗＝停在核准中（再按一次會重做補償）
+        const cur0 = ((await ptsRead([PTS_KEYS.redeem], op))[PTS_KEYS.redeem] || {}).list || []; if (!mine(cur0.find(y => y.id === id))) return { status: 409, ok: false, error: '這筆狀態剛被改了，請重新整理' }
+        try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || !(rw.stockIds || []).includes(it.id)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== it.id); return { write: true, doc: d } }, '兌換放回庫存(點數不足)', op) } catch (e) { return failRun({ status: 503, ok: false, error: '對方點數不足；放回庫存沒存進去，請再按一次核准（會重做放回）：' + String(e && e.message || e).slice(0, 60) }) }
+        await backToPending('點數不足'); return { status: 400, ok: false, error: '對方點數不足（可能剛被扣），無法核准（已退回待審）' } }
       let fin = null, already = false
-      try { await ptsTx(PTS_KEYS.redeem, (cur) => { fin = null; already = false; const d = cur || { list: [] }; d.list = d.list || []; const x = d.list.find(y => y.id === id); if (!x) return { write: false }; if (x.status === 'approved') { fin = x; already = true; return { write: false } } if (x.status !== 'approving') return { write: false }; const used = new Set(d.list.filter(y => y.code).map(y => y.code)); x.status = 'approved'; x.code = x.code || genCodeFrom(used); fin = x; return { write: true, doc: d } }, '兌換審核(' + who.name + ')', op) }
-      catch (e) { return { status: 503, ok: false, error: '點數已扣，券還沒存好，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 60) } }
-      if (!fin) return { status: 409, ok: false, error: '這筆狀態剛被改了，請重新整理' }
+      try { await ptsTx(PTS_KEYS.redeem, (cur) => { fin = null; already = false; const d = cur || { list: [] }; d.list = d.list || []; const x = d.list.find(y => y.id === id); if (!x) return { write: false }; if (x.status === 'approved') { fin = x; already = true; return { write: false } } if (!mine(x)) return { write: false }; const used = new Set(d.list.filter(y => y.code).map(y => y.code)); x.status = 'approved'; x.code = x.code || genCodeFrom(used); delete x.runId; delete x.runAt; fin = x; return { write: true, doc: d } }, '兌換審核(' + who.name + ')', op) }
+      catch (e) { return failRun({ status: 503, ok: false, error: '點數已扣，券還沒存好，請再按一次核准（不會重複扣點）：' + String(e && e.message || e).slice(0, 60) }) }
+      if (!fin) return { status: 409, ok: false, error: '這筆狀態剛被改了（可能別人接手核准），請重新整理' }
       if (already) return { ok: true } // 別人（或上一次）已完成核准：不重發通知
       await notify([fin.person], '✅ 兌換通過，券已進券包', `你換的「${fin.rewardName}」已核准（扣 ${fin.cost} 點）。到排行榜「我的獎勵券包」出示 QR 給核銷人，或報核銷碼 ${fin.code}`)
       await notify(checkersR, '🎟 有券待核銷', `${fin.person} 換「${fin.rewardName}」。現場請掃對方 QR 或輸核銷碼 ${fin.code}（到排行榜「現場核銷」）`)
