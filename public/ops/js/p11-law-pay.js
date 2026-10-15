@@ -39,6 +39,7 @@ function lpAbAgg(ym9){ const d=window._shiftD||{}; const out={}; const YM=ym9||s
 
 // ⚖️ 法規逐條檢查（對照本月 GD 打卡實測 + AB NUEiP 出勤/排班）
 async function lawView(){
+  if (typeof abgdTry==='function' && await abgdTry('pay')) return // v4.71.104 法規薪資已搬新殼＝直接開新版（自動登入）
   // v4.37.4（張良「這邊是不是沒更新到 實際上有問題」）：原本只看「當月」→ §32/§34/§36 改吃「全史未處理違規」（與🔴違規清單同一份；負責人按✅處理才轉綠）
   lpOverlay('lawOv','<div class="hint" style="padding:18px">掃描 6 月起全部班表中…</div>')
   if (typeof shVioEnsureAll==='function') await shVioEnsureAll()
@@ -90,7 +91,8 @@ async function lawView(){
 }
 
 // 💰 薪資表（GD 打卡 + AB NUEiP 出勤；時薪/加給可填，本薪/加班費自動算）
-function payView(ym9){
+function payView(ym9, _skipAbgd){
+  if (!_skipAbgd && typeof abgdTry==='function') { abgdTry('pay').then(ok => { if (!ok) payView(ym9, true) }); return } // v4.71.104 法規薪資已搬新殼＝直接開新版
   const d=window._shiftD||{}, per=window._shPer||{}, rates=d.payRates||{}
   window._payYm = ym9 || window._payYm || shiftYm
   const PYM = window._payYm
@@ -253,6 +255,7 @@ async function shVioEnsureAll(){ // v4.36.6 張良「怎麼又只剩一個」：
   if(typeof shEnsure==='function') await shEnsure(mos)
 }
 async function shVioList(){
+  if (typeof abgdTry==='function' && await abgdTry('pay')) return // v4.71.104 法規薪資已搬新殼＝直接開新版（自動登入）
   lpOverlay('vioOv','<div class="hint" style="padding:18px">掃描 6 月起全部班表中…</div>')
   await shVioEnsureAll()
   const V=shVioCompute(window._shRows||[])
@@ -357,6 +360,7 @@ async function shVioUndo(key){
 // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有打卡紀錄,看出遲到/沒打卡,每人總紀錄,像營業額那樣好查」）──
 let abaMo = 'all', abaSort = { k: 'late', dir: -1 }, abaView = 'det' // v4.43.3 det=全員逐筆明細(張良要的預設)/sum=每人彙總
 async function abAttView(){
+  if (typeof abgdTry==='function' && await abgdTry('pay')) return // v4.71.104 法規薪資已搬新殼＝直接開新版（自動登入）
   if (!window._abaD) {
     lpOverlay('abaOv', '<div class="hint" style="padding:20px">讀取 6 月起全部打卡紀錄中…</div>')
     const r = await fetch('/api/mail-sync?abatt=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&from=2026-06').then(x=>x.json()).catch(()=>null)
@@ -565,6 +569,7 @@ function lawArtView(rule){
 
 // 📣 違規通知發送 v4.37.5（張良「可選發給班表有勾編輯的主管 或群發ABpeople」）
 async function shVioNotifyAsk(){ // v4.37.6 張良「不用說明 私訊要可以選人 不要直接都發」
+  if (typeof abgdTry==='function' && await abgdTry('pay')) return // v4.71.104 法規薪資已搬新殼＝直接開新版（自動登入）
   const n = (window._vioNotifyL||[]).length; if (!n) return
   let mgrs = []
   try { const r = await fetch('/api/mail-sync?viomgrs='+encodeURIComponent(K)+'&me='+encodeURIComponent(TK())); const j = await r.json(); mgrs = (j&&j.mgrs)||[] } catch(_){}

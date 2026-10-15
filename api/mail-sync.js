@@ -432,7 +432,7 @@ async function syncJoya(daysBack) {
 export default async function handler(req, res) {
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
-  if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
+  if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: '法規薪資已搬到新版：請從新版班表頁「法規／薪資／違規」進去（點 LINE 違規通知連結也會自動開新版）' }) // GD 側欄沒有法規薪資分頁，不能叫人找側欄（關卡 3 payroll 第一輪獨立 Claude A1）
   if ((req.method === 'POST' || (req.query && req.query.sopstamp)) && req.query && SOP_WRITE_QS.some(k => req.query[k]) && !(req.query.sopissue && SOP_WRITE_QS.filter(k => req.query[k]).length === 1 && (() => { try { const b0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); return b0.op === 'pub' } catch (_) { return false } })()) && (await abgdOwnerOf('sp_finance_pm_sop_def')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // sopissue op=pub（GD 首頁「N 筆回報等確認發布」）例外：下面轉新殼
  try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
