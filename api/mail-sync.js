@@ -724,6 +724,7 @@ export default async function handler(req, res) {
   if (req.query?.taskmove) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.taskmove) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_team_pm_task_x')) !== 'gd') return res.status(409).json({ ok: false, error: '任務已搬到新版，維護請在新版做' }) // v4.71.116
     const from = String(req.query.from || ''), to = String(req.query.to || '')
     if (!from || !to) return res.status(400).json({ ok: false, error: '要帶 from=ISO&to=ISO（比對任務 createdAt）' })
     // 撈工程空間逐筆任務：LIKE 的 _ 是萬用字元會誤匹配（pm_tasks）→ 用範圍過濾（'`'＝'_'+1，pm_tasks 的 s 在範圍外）
@@ -745,6 +746,7 @@ export default async function handler(req, res) {
   if (req.query?.taskfill) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.taskfill) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_team_pm_task_x')) !== 'gd') return res.status(409).json({ ok: false, error: '任務已搬到新版，維護請在新版做' }) // v4.71.116
     const bid2 = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
     const cats = (await kvGet('sp_team_pm_data')) || []
     let sysCat = cats.find(c => c.name === '系統設備')
@@ -1165,6 +1167,7 @@ export default async function handler(req, res) {
   if (req.query?.prepmigrate) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.prepmigrate) !== mk) return res.status(403).json({ ok: false })
+    if ((await abgdOwnerOf('sp_team_pm_task_x')) !== 'gd') return res.status(409).json({ ok: false, error: '任務已搬到新版，維護請在新版做' }) // v4.71.116
     const dry = !!String(req.query.dry || '')
     const iss = ((await kvGet('sp_finance_pm_sop_issues')) || {}).list || []
     const data = (await kvGet('sp_team_pm_data')) || []
@@ -1217,9 +1220,19 @@ export default async function handler(req, res) {
     if (!ALLOW_RE.test(key)) return res.status(403).json({ ok: false, error: 'key 不在白名單' })
     if (op === 'get') { const v = await kvGet(key); return res.status(200).json({ ok: true, value: v == null ? null : JSON.stringify(v) }) }
     if (op === 'set' || op === 'del') {
-      if (key !== 'sp_team_pm_activity' && (await abgdOwnerOf(key)) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED }) // v4.71.115 任務域搬到新殼後，舊任務頁寫入一律 409（活動紀錄仍在 GD）
       const w = await permWho(kb.token, 'task')
       if (!w) return res.status(403).json({ ok: false, error: '要有任務編輯權限（綁定＋核准）' })
+      if (key !== 'sp_team_pm_activity') { // v4.71.116 任務資料寫刪走 _abgdkv（域在 GD＝原表；搬到新殼＝命令橋；切換中＝409 請稍後）；活動紀錄仍在 GD
+        let val0 = null
+        if (op === 'set') { try { val0 = JSON.parse(String(kb.value)) } catch (_) { return res.status(400).json({ ok: false, error: 'value 要是 JSON 字串' }) } }
+        try {
+          const { abgdKv } = await import('./_abgdkv.js')
+          const kvT = await abgdKv({ domain: 'tasks', lockKey: key, operator: w.name, label: '任務' })
+          await kvT.retry(async () => { if (op === 'del') { await kvT.kvGet(key); await kvT.kvDel(key) } else { await kvT.kvGet(key); await kvT.kvPut(key, val0, '/prep任務(' + w.name + ')') } })
+          if (kvT.mode === 'gd' && op === 'set') { CHANGED.add(key); await announceChanged() } // 廣播同原本（原本只有存檔廣播）
+          return res.status(200).json({ ok: true })
+        } catch (e) { return res.status(409).json({ ok: false, error: String(e && e.message || e).slice(0, 120) }) }
+      }
       if (op === 'del') { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }); return res.status(200).json({ ok: true }) }
       let val; try { val = JSON.parse(String(kb.value)) } catch (_) { return res.status(400).json({ ok: false, error: 'value 要是 JSON 字串' }) }
       await kvPut(key, val, '/prep任務(' + w.name + ')')
@@ -2966,7 +2979,8 @@ export default async function handler(req, res) {
         for (const uid of Object.keys(opsQ)) { if (tkQ) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkQ }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '❓ 會議宣達發問【' + it.type + ' ' + it.date + '】\n' + whoM.name + '：' + qT + '\n到 /prep → 會議 回覆（他會收到通知）' }] }) }); await logPush(uid, 1, '會議發問通知') } }
       } catch (_) {}
       try { // 收件匣任務（主App任務中心同步可見）
-        await kvPut('sp_team_pm_task_mq' + Date.now().toString(36), { id: 'mq' + Date.now().toString(36), title: '❓會議發問：' + qT.slice(0, 40) + '（' + whoM.name + '）', note: '【' + it.type + ' ' + it.date + '】' + qT, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: whoM.name, createdAt: new Date().toISOString() }, '會議發問(' + whoM.name + ')')
+        const { abgdKv } = await import('./_abgdkv.js'); const kvQ = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: whoM.name, label: '任務' }) // v4.71.116 依資料歸屬
+        await kvQ.kvPut('sp_team_pm_task_mq' + Date.now().toString(36), { id: 'mq' + Date.now().toString(36), title: '❓會議發問：' + qT.slice(0, 40) + '（' + whoM.name + '）', note: '【' + it.type + ' ' + it.date + '】' + qT, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: whoM.name, createdAt: new Date().toISOString() }, '會議發問(' + whoM.name + ')')
       } catch (_) {}
     } else if (mb.op === 'answer') { // 老闆/主管回覆 → DD 通知提問人
       const it = (doc.list || []).find(x => x.id === mb.id)

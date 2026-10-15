@@ -11,6 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
+import { abgdKv } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
@@ -1586,22 +1587,27 @@ async function executeActions(actions, operator) {
   results.created = [] // 這輪新建的任務（掛在陣列屬性上，不影響 join；給「快速設定卡」用）
   for (const a of actions) {
     const t = a.type
+    // 團隊空間任務／大項（v4.71.116）：照原邏輯跑，讀寫走 _abgdkv（域在 GD＝原表；搬到新殼＝新殼讀取口＋命令橋帶版本號；寫失敗照實報錯）
+    let io = { abgd: false, get: async (k) => (await kvGetMany([k]))[k], prefix: kvGetPrefix, set: kvSet, del: kvDel }
     try {
       // abgd 搬家：此動作要寫的資料域若已切到新殼→改打新殼命令 API，不碰舊表
       { const spName0 = spaceOf(a.space), pfx0 = SPACE_PFX[spName0] || ''
         const keyGuess = /task|todo/.test(t) ? pfx0 + 'pm_task_' : /category|item|payment/.test(t) ? pfx0 + 'pm_data' : /finance|petty/.test(t) ? 'sp_finance_pm_fin_' : /log/.test(t) ? 'pm_worklog' : ''
-        if (keyGuess) { const ow = await abgdOwner(keyGuess); if (ow.owner === 'abgd') { const cr = await abgdCommand(ow.domain, t, a, operator); results.push((cr.ok ? '✅ ' : '⚠️ ') + cr.text + '（新版）'); continue } if (ow.owner === 'frozen') { results.push('⚠️ 這項資料正在搬家中（暫時凍結），幾分鐘後再試'); continue } } }
+        if (pfx0 === 'sp_team_' && /^(add_task|add_todo|update_task|delete_task|add_category)$/.test(t)) {
+          const kv = await abgdKv({ domain: 'tasks', lockKey: keyGuess, operator, label: '任務' })
+          io = { abgd: true, get: kv.kvGet, prefix: async (pf) => Object.values(await kv.kvPrefix(pf)), set: (k, v) => kv.kvPut(k, v, 'D哥'), del: kv.kvDel }
+        } else if (keyGuess) { const ow = await abgdOwner(keyGuess); if (ow.owner === 'abgd') { const cr = await abgdCommand(ow.domain, t, a, operator); results.push((cr.ok ? '✅ ' : '⚠️ ') + cr.text + '（新版）'); continue } if (ow.owner === 'frozen') { results.push('⚠️ 這項資料正在搬家中（暫時凍結），幾分鐘後再試'); continue } } }
       if (t === 'add_category') {
         // 跨空間建大項（張良 2026-09-01：叫D哥在團隊工作建「採購/營運/表單/SOP」被拒——以前只會寫工程 pm_data）
         const spName = spaceOf(a.space), pfx = SPACE_PFX[spName]
         if (pfx) {
           const key = pfx + 'pm_data'
-          const cur = (await kvGetMany([key]))[key]
+          const cur = await io.get(key)
           const list = Array.isArray(cur) ? cur : []
           const nm = a.name || '新大項'
           if (list.some(c => c.name === nm)) { results.push(`⚠️ ${spName}空間已有大項「${nm}」，不重複建`); continue }
           list.push({ id: 'cat-' + bid(''), order: list.length, name: nm, budget: Number(a.budget) || 0, status: 'pending', items: [] })
-          await kvSet(key, list)
+          await io.set(key, list)
           results.push(`➕ 新增大項「${nm}」→ ${spName}空間`); audits.push([pfx + 'pm_activity', '新增', `新增大項「${nm}」（D哥）`])
           continue
         }
@@ -1633,9 +1639,9 @@ async function executeActions(actions, operator) {
         const spName = spaceOf(a.space)
         if (SPACE_PFX[spName]) {
           const pfx = SPACE_PFX[spName]
-          const others = await kvGetPrefix(pfx + 'pm_task_') // 算 ord（新任務排最前，跟 App 一致）＋解析 dependsOn
+          const others = await io.prefix(pfx + 'pm_task_') // 算 ord（新任務排最前，跟 App 一致）＋解析 dependsOn
           let mo = 0; others.forEach(x => { if (typeof x.ord === 'number' && x.ord < mo) mo = x.ord })
-          const cats2raw = a.category ? (await kvGetMany([pfx + 'pm_data']))[pfx + 'pm_data'] : null
+          const cats2raw = a.category ? await io.get(pfx + 'pm_data') : null
           const tc2 = a.category ? findCat(Array.isArray(cats2raw) ? cats2raw : [], a.category) : null
           const nid = 't-' + bid('')
           const ex2 = {}
@@ -1645,7 +1651,7 @@ async function executeActions(actions, operator) {
           if (a.pinned !== undefined) ex2.pinned = a.pinned
           if (a.dependsOn !== undefined) ex2.dependsOn = resolveDeps(a.dependsOn, others)
           const np2 = normalizePatch(ex2, nid, others)
-          await kvSet(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: tc2 ? tc2.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
+          await io.set(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: tc2 ? tc2.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
           results.push(`📝 新增任務「${title.slice(0, 20)}」→ ${spName}空間·${tc2 ? tc2.name : '收件匣'}`); audits.push([pfx + 'pm_activity', '新增', `新增任務「${title.slice(0, 20)}」（D哥跨空間）`])
           results.created.push({ id: nid, title, sp: spName })
           continue
@@ -1668,7 +1674,7 @@ async function executeActions(actions, operator) {
         // v2.1.2 跨空間：space≠工程 → 直接對該空間逐筆檔操作（以前被「僅限工程」擋掉）
         const spName2 = spaceOf(a.space), pfx2 = SPACE_PFX[spName2]
         if (pfx2) {
-          const list2 = await kvGetPrefix(pfx2 + 'pm_task_')
+          const list2 = await io.prefix(pfx2 + 'pm_task_')
           const tg = findTask(list2, a.task || a.title)
           if (!tg) { results.push(`⚠️ ${spName2}空間找不到任務「${a.task || a.title || '?'}」`); continue }
           const patch2 = {}
@@ -1678,14 +1684,14 @@ async function executeActions(actions, operator) {
           if (a.due !== undefined) patch2.due = a.due || ''
           if (a.start !== undefined) patch2.start = a.start || ''
           if (a.priority != null && TASK_PRIO[String(a.priority).trim()]) patch2.priority = TASK_PRIO[String(a.priority).trim()]
-          if (a.category != null) { const c2raw = (await kvGetMany([pfx2 + 'pm_data']))[pfx2 + 'pm_data']; const c2 = findCat(Array.isArray(c2raw) ? c2raw : [], a.category); if (c2) patch2.catId = c2.id; else if (/收件匣/.test(String(a.category))) patch2.catId = '__inbox__' }
+          if (a.category != null) { const c2raw = await io.get(pfx2 + 'pm_data'); const c2 = findCat(Array.isArray(c2raw) ? c2raw : [], a.category); if (c2) patch2.catId = c2.id; else if (/收件匣/.test(String(a.category))) patch2.catId = '__inbox__' }
           if (a.owner !== undefined) patch2.owner = a.owner
           if (a.waitingFor !== undefined) patch2.waitingFor = a.waitingFor
           if (a.estimatedMinutes !== undefined) patch2.estimatedMinutes = a.estimatedMinutes
           if (a.dependsOn !== undefined) patch2.dependsOn = resolveDeps(a.dependsOn, list2)
           if (a.pinned !== undefined) patch2.pinned = a.pinned
           if (a.tags !== undefined) patch2.tags = Array.isArray(a.tags) ? a.tags : []
-          await kvSet(pfx2 + 'pm_task_' + tg.id, mergeTask(tg, patch2, list2))
+          await io.set(pfx2 + 'pm_task_' + tg.id, mergeTask(tg, patch2, list2))
           const what2 = Object.keys(patch2).join('、') || '（無變更）'
           results.push(`✏️ 更新任務「${tg.title.slice(0, 20)}」（${spName2}空間）：${what2}`)
           audits.push([pfx2 + 'pm_activity', '編輯', `更新任務「${tg.title.slice(0, 20)}」(${what2})（D哥）`])
@@ -1719,12 +1725,12 @@ async function executeActions(actions, operator) {
         // ——以前 D哥只能回「請去 App 手動刪」。刪除屬確認類（AUTO_TYPES 之外），使用者按確認才會走到這。
         const spName3 = spaceOf(a.space), pfx3 = SPACE_PFX[spName3]
         if (pfx3) {
-          const list3 = await kvGetPrefix(pfx3 + 'pm_task_')
+          const list3 = await io.prefix(pfx3 + 'pm_task_')
           const tg3 = findTask(list3, a.task || a.title)
           if (!tg3) { results.push(`⚠️ ${spName3}空間找不到任務「${a.task || a.title || '?'}」`); continue }
-          await kvDel(pfx3 + 'pm_task_' + tg3.id)
+          await io.del(pfx3 + 'pm_task_' + tg3.id)
           // 清掉同空間其他任務對它的 dependsOn 引用（跟 App 的 removeTaskAndRefs 同一套規則）
-          for (const x of list3) if ((x.dependsOn || []).includes(tg3.id)) await kvSet(pfx3 + 'pm_task_' + x.id, { ...x, dependsOn: x.dependsOn.filter(d => d !== tg3.id), updatedAt: new Date().toISOString() })
+          for (const x of list3) if ((x.dependsOn || []).includes(tg3.id)) await io.set(pfx3 + 'pm_task_' + x.id, { ...x, dependsOn: x.dependsOn.filter(d => d !== tg3.id), updatedAt: new Date().toISOString() })
           results.push(`🗑️ 刪除任務「${tg3.title.slice(0, 20)}」（${spName3}空間）`)
           audits.push([pfx3 + 'pm_activity', '刪除', `刪除任務「${tg3.title.slice(0, 20)}」（D哥）`])
         } else {
@@ -1750,7 +1756,7 @@ async function executeActions(actions, operator) {
       } else if (t === 'add_log') {
         worklog = [{ id: 'wl-' + bid(''), date: a.date || today, content: a.content || '', author: by, ts: new Date().toISOString() }, ...worklog]; changed.add('pm_worklog'); results.push(`📓 新增工作日誌`); audits.push(['pm_activity', '新增', '新增工作日誌'])
       } else results.push(`⚠️ 不支援的操作：${t}`)
-    } catch (e) { results.push(`⚠️ 執行「${t}」失敗`) }
+    } catch (e) { results.push(`⚠️ 執行「${t}」失敗${io.abgd && e && e.message ? '：' + String(e.message).slice(0, 80) : ''}`) }
   }
   const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, pm_conclusions: conclusions }
   abgdLockedHits.length = 0
