@@ -123,18 +123,20 @@ export async function boxDel({ kvGet, kvPut, body, who }) {
 }
 
 // ── 掃描：來源彙總＋最近信件（唯讀，不動任何信）──
-export async function scanBox({ kvGet, kvPut, id, days = 7, who }) {
+export async function scanBox({ kvGet, kvPut, id, days = 7, who, connectFn = connect }) {
+  days = Math.max(1, Math.min(60, parseInt(days, 10) || 7))
   const hub = await loadHub(kvGet)
   const box = boxById(hub, id); if (!box) return { ok: false, error: '找不到這個信箱' }
   const t0 = Date.now(); let client = null; const mails = []; let unseen = 0, sp = { folders: [] }, totalN = 0
   try {
-    client = await connect(box)
+    client = await connectFn(box)
     sp = await specials(client)
     const lock = await client.getMailboxLock('INBOX')
     try {
       const uids0 = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
       totalN = (uids0 || []).length
-      const uids = (uids0 || []).slice().sort((x, y) => y - x).slice(0, SCAN_MAX) // 最新的 SCAN_MAX 封
+      const asc = (uids0 || []).every((u, i, a) => i === 0 || a[i - 1] <= u) // IMAP 通常已遞增；不是才排序
+      const uids = (asc ? (uids0 || []).slice(-SCAN_MAX) : (uids0 || []).slice().sort((x, y) => x - y).slice(-SCAN_MAX)).reverse() // 最新的 SCAN_MAX 封
       if (uids && uids.length) {
         for await (const msg of client.fetch(uids, { envelope: true, flags: true }, { uid: true })) {
           const fr = (msg.envelope && msg.envelope.from && msg.envelope.from[0]) || {}
@@ -236,16 +238,17 @@ export async function previewRule({ kvGet, ruleId, rule: draft, boxId }) {
 }
 
 // ── 執行：連 IMAP 真的把信搬走（dry=只算不動）──
-export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyIds = null, who, requireConfirmed = true, guard = null }) { // guard：真的搬信前呼叫，回字串＝不准動（切換中／驗收中；v4.71.109）
+export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyIds = null, who, requireConfirmed = true, guard = null, connectFn = connect }) { // connectFn：測試換假信箱用 // guard：真的搬信前呼叫，回字串＝不准動（切換中／驗收中；v4.71.109）
   const hub = await loadHub(kvGet)
   const box = boxById(hub, id); if (!box) return { ok: false, error: '找不到這個信箱' }
   if (!box.on) return { ok: false, error: '這個信箱已停用' }
   const rules = hub.rules.filter(r => r.on && (r.box === '*' || r.box === id) && (!requireConfirmed || r.confirmed || r.action === 'keep') && (!onlyIds || onlyIds.includes(r.id) || r.action === 'keep'))
   if (!rules.some(r => r.action !== 'keep')) return { ok: true, box: id, n: 0, groups: [], note: '沒有已確認的規則' }
   if (!dry && guard) { const g0 = await guard(); if (g0) return { ok: false, box: id, error: g0 } } // 連信箱前先檢查（不記成連線失敗）
+  days = Math.max(1, Math.min(60, parseInt(days, 10) || 7)) // 天數防呆（關卡 3 mailhub 第二輪 Gemini A2）
   let client = null; const groups = {}; let scanned = 0, stopped = ''
   try {
-    client = await connect(box)
+    client = await connectFn(box)
     const sp = await specials(client)
     const lock = await client.getMailboxLock('INBOX')
     try {
@@ -272,9 +275,15 @@ export async function applyBox({ kvGet, kvPut, id, days = 7, dry = false, onlyId
             else if (g.action === 'label') dest = g.folder
             if (g.action === 'archive' && !dest) dest = '封存'
             if (dest && !sp.folders.includes(dest)) { try { await client.mailboxCreate(dest); sp.folders.push(dest) } catch (_) {} }
-            if (dest) for (let i9 = 0; i9 < g.uids.length; i9 += 500) await client.messageMove(g.uids.slice(i9, i9 + 500), dest, { uid: true }) // 分批（IMAP 指令長度有限）
-            g.moved = g.uids.length
-          } catch (e) { g.err = errText(e); g.moved = 0 }
+            g.moved = 0
+            if (dest) for (let i9 = 0; i9 < g.uids.length; i9 += 500) {
+              const gb = guard ? await guard() : null // 每批再查一次（縮小切換空隙；不取代切換前排空）
+              if (gb) { g.err = gb; break }
+              const part = g.uids.slice(i9, i9 + 500)
+              await client.messageMove(part, dest, { uid: true }) // 分批（IMAP 指令長度有限）
+              g.moved += part.length // 每批成功才累加；後批失敗不會把前批洗成 0（第二輪 OpenAI A3／Gemini A1）
+            }
+          } catch (e) { g.err = errText(e) + (g.moved ? `（失敗前已搬 ${g.moved} 封；失敗這批結果未確認）` : '') }
         }
       }
     } finally { lock.release() }
