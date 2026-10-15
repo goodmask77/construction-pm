@@ -3887,180 +3887,41 @@ export default async function handler(req, res) {
   // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}
   // 五大面向星星評分（張良 2026-09-21 拍板：取代 L1~L10 投票——面向沿用薪資360同語彙，1~5星直覺免看定義；
   // 效率不用人評=認領計時 durMin 客觀數據）。stars 結構：issue.stars[find|fix][面向key][評分人]=1~5
-  if (req.query?.lb) {
+  const ptsOut = (out) => { const { status, ...rest } = out || {}; if (rest.error === 'NOPERM') rest.error = permDeny(); return res.status(typeof status === 'number' ? status : 200).json(rest) } // 積分分派回傳（status＝HTTP 狀態）
+  if (req.query?.lb) { // v4.71.136 分派抽到 _pointsop.js（新殼代發口 points_read 用同一份；積分四份文件依資料歸屬讀寫）
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
-    const [issDoc, meL, rosterL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
-    // ⚡ 提速（張良 2026-10-06「兌換頁載入慢卡卡」）：本來一堆逐個 await 的 kvGet／任務掃描→改一次平行抓，時間取最慢的那個不是相加
-    const [catsDoc, taskRows, ptsDocRaw, defL, ptsCfgL, rwDocRaw, rdDocRaw] = await Promise.all([
-      kvGet('sp_team_pm_data'),
-      fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }).then(r => r.ok ? r.json() : []).catch(() => []),
-      kvGet('sp_finance_pm_points'),
-      kvGet('sp_finance_pm_sop_def'),
-      kvGet('sp_finance_pm_points_cfg'),
-      kvGet('sp_finance_pm_rewards'),
-      kvGet('sp_finance_pm_redeem')
-    ])
-    const namesL = gdNames(rosterL)
-    // v4.70.79 算法抽到 _points.js computePointsBoard（DD 積分段落共用同一套；張良 2026-10-12「DD 又抓不到資料」治本）
-    const ptsDoc = ptsDocRaw || { list: [], carry: {} }
-    const { rank, stars5, taskBreak, balance, month: monthP, list } = computePointsBoard({ issDoc, catsDoc, taskRows, ptsDoc, names: namesL })
-    // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現（defL/ptsCfgL 已於開頭平行抓）
-    const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
-    const isAdmL = !!(meL && (meL.role === '主管' || aprL.includes(meL.name)))
-    // 🎁 兌換商城＋📒 積分存摺（折進 lb 回應，排行榜頁一次載好）；rwDoc/rdDoc 已平行抓
-    let rwDoc = rwDocRaw
-    if (!rwDoc || !(rwDoc.list || []).length) { rwDoc = { list: REWARDS_SEED }; await kvPut('sp_finance_pm_rewards', rwDoc, '基礎獎勵種子') }
-    const rdDoc = rdDocRaw || { list: [] }
-    // 🎟 補發核銷碼（張良 2026-10-06）：v4.57 前通過的可用券沒碼，載入時自動補一次
-    { let chg = false; const usedC = new Set((rdDoc.list || []).filter(x => x.code).map(x => x.code))
-      const genC = () => { const AB = 'ACDEFGHJKLMNPQRSTUVWXYZ2345679'; let c; do { c = ''; for (let i = 0; i < 6; i++) c += AB[Math.floor(Math.random() * AB.length)] } while (usedC.has(c)); usedC.add(c); return c }
-      for (const r of (rdDoc.list || [])) if (r.status === 'approved' && !r.code) { r.code = genC(); chg = true }
-      if (chg) await kvPut('sp_finance_pm_redeem', rdDoc, '補發核銷碼(舊券)') }
-    const meNameL = meL ? meL.name : null
-    const myRedeems = meNameL ? (rdDoc.list || []).filter(r => r.person === meNameL).slice(0, 40) : []
-    const pendingRedeems = isAdmL ? (rdDoc.list || []).filter(r => r.status === 'pending') : null
-    // 🎟 核銷（張良 2026-10-06）：核銷人＝管理者∪主管∪名單；可用券(approved)＝待核銷
-    const checkersL = (((defL || {}).ground || {}).checkers) || []
-    const isCheckerL = !!(meL && (isAdmL || checkersL.includes(meL.name)))
-    const checkinQueue = isCheckerL ? (rdDoc.list || []).filter(r => r.status === 'approved' && r.code).map(r => ({ id: r.id, code: r.code, person: r.person, rewardName: r.rewardName, ts: r.decTs || r.ts })) : null
-    let myLedger = []
-    if (meNameL) { // 積分存摺：逐筆＋跑餘額，最近 120 筆（新到舊）
-      let run = Number((ptsDoc.carry || {})[meNameL] || 0)
-      const withBal = (ptsDoc.list || []).filter(e => e.person === meNameL).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
-      myLedger = withBal.slice(-120).reverse()
-    }
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, issueCats: ((issDoc || {}).cats && issDoc.cats.length) ? issDoc.cats : ['App問題', '現場流程', '物料', '工作站系統', '客人問題'], names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger, taskBreak, isChecker: isCheckerL, checkinQueue, checkers: isAdmL ? checkersL : null })
+    const meL = await sopWho(req.query.me)
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'lb', method: 'GET', q: req.query, who: meL })) } catch (e) { return res.status(500).json({ ok: false, error: '排行榜暫時讀不到：' + String(e?.message || e).slice(0, 120) }) }
   }
   // 🏦 積分規則表（行為分）管理：GET 回規則＋近期流水；POST {op:'set',act,label,pts,cap,off} | {op:'del',act} | {op:'adjust',person,pts,note}（管理者抽查加扣分）
   if (req.query?.pointscfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.pointscfg) !== ok2) return res.status(403).json({ ok: false })
-    const defP = await kvGet('sp_finance_pm_sop_def')
-    const aprP = (((defP || {}).ground || {}).approvers || ['張良瑋'])
-    const isAdm = (w) => !!(w && (w.role === '主管' || aprP.includes(w.name)))
-    if (req.method !== 'POST') {
-      const whoP = await sopWho(req.query.me)
-      const cfgP = await kvGet('sp_finance_pm_points_cfg')
-      const ledg = ((await kvGet('sp_finance_pm_points')) || {}).list || []
-      return res.status(200).json({ ok: true, rules: pointsRules(cfgP), custom: (cfgP || {}).behavior || {}, recent: isAdm(whoP) ? ledg.slice(-80).reverse() : [], isAdmin: isAdm(whoP) })
-    }
-    let bP = {}
-    try { bP = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await permWho(bP.token, 'lb')
-    if (!whoP) return res.status(403).json({ ok: false, error: permDeny() })
-    if (!isAdm(whoP)) return res.status(403).json({ ok: false, error: '只有管理者/主管能改積分規則' })
-    const cfg = (await kvGet('sp_finance_pm_points_cfg')) || { behavior: {} }
-    cfg.behavior = cfg.behavior || {}
-    if (bP.op === 'set') {
-      const act = String(bP.act || '').trim().replace(/[^A-Za-z0-9_]/g, '').slice(0, 24)
-      if (!act) return res.status(400).json({ ok: false, error: '動作代碼只能用英數底線' })
-      const cur = cfg.behavior[act] || {}
-      cfg.behavior[act] = { ...cur,
-        ...(bP.label != null ? { label: String(bP.label).slice(0, 20) } : {}),
-        ...(bP.pts != null ? { pts: Math.max(0, Math.round(Number(bP.pts) || 0)) } : {}),
-        ...(bP.cap != null ? { cap: Math.max(0, Math.round(Number(bP.cap) || 0)) } : {}),
-        ...(bP.off != null ? { off: !!bP.off } : {}) }
-      await kvPut('sp_finance_pm_points_cfg', cfg, '積分規則(' + whoP.name + ' set ' + act + ')')
-    } else if (bP.op === 'del') {
-      delete cfg.behavior[String(bP.act || '')]
-      await kvPut('sp_finance_pm_points_cfg', cfg, '積分規則(' + whoP.name + ' del)')
-    } else if (bP.op === 'adjust') { // 管理者抽查加/扣分
-      const person = String(bP.person || '').trim().slice(0, 20)
-      const pts = Math.round(Number(bP.pts) || 0)
-      if (!person || !pts) return res.status(400).json({ ok: false, error: '要選人＋填加扣分數' })
-      // abgd 關卡 3 回饋（Claude B1）：改原子寫入，不再整份覆蓋（避免蓋掉同時進來的給分）
-      try {
-        await pointsCas(doc => { doc.list = doc.list || []; doc.list.push({ id: 'pt' + Date.now().toString(36) + '_adj', person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'adjust', act: 'adjust', pts, ref: '', by: whoP.name, note: String(bP.note || '').slice(0, 80) }); return { write: true, value: true } }, '積分抽查調整(' + whoP.name + '→' + person + ' ' + (pts > 0 ? '+' : '') + pts + ')')
-      } catch (e) { return res.status(503).json({ ok: false, error: '積分存檔失敗，請再按一次：' + String(e && e.message || e).slice(0, 80) }) }
-    } else return res.status(400).json({ ok: false })
-    return res.status(200).json({ ok: true, rules: pointsRules(cfg) })
+    let bP = {}; if (req.method === 'POST') { try { bP = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const whoP = req.method === 'POST' ? await permWho(bP.token, 'lb') : await sopWho(req.query.me)
+    if (req.method === 'POST' && !whoP) return res.status(403).json({ ok: false, error: permDeny() })
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'cfg', method: req.method === 'POST' ? 'POST' : 'GET', q: req.query, body: bP, who: whoP, canEdit: req.method === 'POST' })) } catch (e) { return res.status(503).json({ ok: false, error: '積分規則存讀失敗，請再試一次：' + String(e?.message || e).slice(0, 120) }) }
   }
   // 🎁 獎勵主檔管理（管理者）：POST ?rewardset= {op:'set',id?,name,cost,stock,desc,off,ord} | {op:'del',id}
   if (req.method === 'POST' && req.query?.rewardset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.rewardset) !== ok2) return res.status(403).json({ ok: false })
-    let bW = {}
-    try { bW = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    let bW = {}; try { bW = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoW = await permWho(bW.token, 'lb')
     if (!whoW) return res.status(403).json({ ok: false, error: permDeny() })
-    const defW = await kvGet('sp_finance_pm_sop_def')
-    const aprW = (((defW || {}).ground || {}).approvers || ['張良瑋'])
-    if (!(aprW.includes(whoW.name) || whoW.role === '主管')) return res.status(403).json({ ok: false, error: '只有管理者/主管能改獎勵' })
-    const doc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }
-    doc.list = doc.list || []
-    if (bW.op === 'set') {
-      const nm = String(bW.name || '').trim().slice(0, 30)
-      const cost = Math.max(1, Math.round(Number(bW.cost) || 0))
-      if (!nm || !cost) return res.status(400).json({ ok: false, error: '名稱和點數要填' })
-      const stock = (bW.stock === '' || bW.stock == null) ? null : Math.max(0, Math.round(Number(bW.stock)))
-      let it = bW.id ? doc.list.find(x => x.id === bW.id) : null
-      if (it) { it.name = nm; it.cost = cost; it.stock = stock; it.desc = String(bW.desc || '').slice(0, 80); if (bW.off != null) it.off = !!bW.off; if (bW.ord != null) it.ord = Number(bW.ord) || 0 }
-      else doc.list.push({ id: 'rw' + Date.now().toString(36), name: nm, cost, stock, desc: String(bW.desc || '').slice(0, 80), off: !!bW.off, ord: (doc.list.length + 1) })
-    } else if (bW.op === 'del') {
-      doc.list = doc.list.filter(x => x.id !== bW.id)
-    } else return res.status(400).json({ ok: false })
-    await kvPut('sp_finance_pm_rewards', doc, '獎勵設定(' + whoW.name + ')')
-    return res.status(200).json({ ok: true, rewards: doc.list })
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'rewardset', method: 'POST', body: bW, who: whoW, canEdit: true })) } catch (e) { return res.status(503).json({ ok: false, error: '獎勵存檔失敗，請再試一次：' + String(e?.message || e).slice(0, 120) }) }
   }
   // 🎁 兌換（夥伴申請／管理者審核扣點）：POST ?redeem= {op:'request',rewardId} | {op:'decide',id,pass,note} | {op:'done',id}
   if (req.method === 'POST' && req.query?.redeem) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.redeem) !== ok2) return res.status(403).json({ ok: false })
-    let bR = {}
-    try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    let bR = {}; try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoR = await permWho(bR.token, 'lb')
     if (!whoR) return res.status(403).json({ ok: false, error: permDeny() })
-    const defR = await kvGet('sp_finance_pm_sop_def')
-    const aprR = (((defR || {}).ground || {}).approvers || ['張良瑋'])
-    const isAdmR = aprR.includes(whoR.name) || whoR.role === '主管'
-    // 🎟 授權核銷人（張良 2026-10-06）：管理者＋主管＋核銷人名單都能核銷
-    const checkersR = [...new Set([...aprR, ...((((defR || {}).ground || {}).checkers) || [])])]
-    const isCheckerR = isAdmR || checkersR.includes(whoR.name)
-    const genCode = (used) => { const AB = 'ACDEFGHJKLMNPQRSTUVWXYZ2345679'; let c; do { c = ''; for (let i = 0; i < 6; i++) c += AB[Math.floor(Math.random() * AB.length)] } while (used.has(c)); return c }
-    const balOf = (nm, ptsDoc) => { let b = Number((ptsDoc.carry || {})[nm] || 0); for (const e of (ptsDoc.list || [])) if (e.person === nm) b += Number(e.pts || 0); return Math.round(b * 10) / 10 }
-    const nowR = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
-    const rdDoc = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
-    rdDoc.list = rdDoc.list || []
-    // 通知小工具（鈴鐺＋LINE）
-    const notify = async (names, title, body) => { try {
-      const bindN = (await kvGet('sp_finance_pm_prep_bind')) || {}
-      const nm2 = {}; for (const v of Object.values(bindN.tokens || {})) if (v && v.name) nm2[v.name] = { uid: v.uid, rid: v.rid || v.uid }
-      const rids = [...new Set(names.map(n => nm2[n] && nm2[n].rid).filter(Boolean))]
-      if (rids.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(rids, { title, body, url: '/prep#lb', cat: 'reward' }) }
-      const tkN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-      if (tkN) for (const n of names) { const u = nm2[n] && nm2[n].uid; if (u) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN }, body: JSON.stringify({ to: u, messages: [{ type: 'text', text: title + '\n' + body + '\nhttps://ground-pm.vercel.app/prep#lb' }] }) }).catch(() => {}); try { const { logPush } = await import('./push.js'); await logPush(u, 1, '兌換通知') } catch (_) {} } }
-    } catch (_) {} }
-    if (bR.op === 'request') {
-      const rwDoc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }
-      const rw = (rwDoc.list || []).find(x => x.id === bR.rewardId && !x.off)
-      if (!rw) return res.status(404).json({ ok: false, error: '找不到這個獎勵' })
-      if (rw.stock != null && rw.stock <= 0) return res.status(400).json({ ok: false, error: '這個獎勵庫存沒了' })
-      const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
-      const bal = balOf(whoR.name, ptsDoc)
-      if (bal < rw.cost) return res.status(400).json({ ok: false, error: `點數不夠（你有 ${bal}、需要 ${rw.cost}）` })
-      const it = { id: 'rd' + Date.now().toString(36), person: whoR.name, rewardId: rw.id, rewardName: rw.name, cost: rw.cost, ts: nowR, status: 'pending' }
-      rdDoc.list = [it, ...rdDoc.list].slice(0, 2000)
-      await kvPut('sp_finance_pm_redeem', rdDoc, '兌換申請(' + whoR.name + '→' + rw.name + ')')
-      await notify(aprR, '🎁 有人要兌換獎勵', `${whoR.name} 想換「${rw.name}」（${rw.cost} 點），到排行榜審核`)
-      return res.status(200).json({ ok: true, item: it })
-    }
-    // 🎟 現場核銷（授權核銷人即可，不限管理者）：掃 QR 得 code 或手動輸碼
-    if (bR.op === 'checkin') {
-      if (!isCheckerR) return res.status(403).json({ ok: false, error: '你不是授權核銷人，不能核銷' })
-      const code = String(bR.code || '').trim().toUpperCase()
-      const vit = bR.id ? rdDoc.list.find(x => x.id === bR.id) : (code ? rdDoc.list.find(x => x.code && x.code === code) : null)
-      if (!vit) return res.status(404).json({ ok: false, error: '找不到這張券（核銷碼可能錯了）' })
-      if (vit.status === 'used') return res.status(400).json({ ok: false, error: `這張已經核銷過了（${vit.usedBy || '?'}・${vit.usedAt || ''}）` })
-      if (vit.status !== 'approved') return res.status(400).json({ ok: false, error: '這張不是可用券（可能還沒通過審核）' })
-      vit.status = 'used'; vit.usedBy = whoR.name; vit.usedAt = nowR
-      await kvPut('sp_finance_pm_redeem', rdDoc, '兌換核銷(' + whoR.name + '→' + vit.person + ')')
-      await notify([vit.person], '🎟 券已核銷', `你的「${vit.rewardName}」已由 ${whoR.name} 核銷（${nowR}）`)
-      return res.status(200).json({ ok: true, item: { id: vit.id, person: vit.person, rewardName: vit.rewardName, usedBy: vit.usedBy, usedAt: vit.usedAt } })
-    }
-    // 🎟 設定授權核銷人名單（管理者）
-    if (bR.op === 'setcheckers') {
-      if (!isAdmR) return res.status(403).json({ ok: false, error: '只有管理者能設定核銷人' })
+    if (bR.op === 'setcheckers') { // 🎟 設定授權核銷人名單（管理者）：寫的是 SOP 設定（sop 域），照原本走
+      const defR = await kvGet('sp_finance_pm_sop_def'); const aprR = (((defR || {}).ground || {}).approvers || ['張良瑋'])
+      if (!(aprR.includes(whoR.name) || whoR.role === '主管')) return res.status(403).json({ ok: false, error: '只有管理者能設定核銷人' })
       const names = Array.isArray(bR.names) ? bR.names.map(n => String(n).slice(0, 20)).filter(Boolean).slice(0, 50) : []
       { const ow = await abgdOwnerOf('sp_finance_pm_sop_def'); if (ow !== 'gd') { if (ow !== 'abgd') return res.status(409).json({ ok: false, error: ABGD_MOVED }); const cr = await abgdCmd('sop', 'setcheckers', { names }, whoR.name); return res.status(cr.ok ? 200 : 400).json(cr.ok ? { ok: true, checkers: names } : { ok: false, error: cr.text }) } }
       const def2 = (await kvGet('sp_finance_pm_sop_def')) || {}
@@ -4068,39 +3929,7 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_sop_def', def2, '設定授權核銷人')
       return res.status(200).json({ ok: true, checkers: names })
     }
-    if (!isAdmR) return res.status(403).json({ ok: false, error: '只有管理者/主管能審核兌換' })
-    const it = rdDoc.list.find(x => x.id === bR.id)
-    if (!it) return res.status(404).json({ ok: false })
-    if (bR.op === 'decide') {
-      if (it.status !== 'pending') return res.status(400).json({ ok: false, error: '這筆已經處理過了' })
-      if (bR.pass) {
-        // abgd 關卡 3 回饋（Claude B1）：餘額檢查＋扣點在同一次原子寫入內（不再整份覆蓋；同 ref 不重扣）
-        let rdOk
-        try {
-          rdOk = await pointsCas(ptsDoc => {
-            ptsDoc.list = ptsDoc.list || []
-            if (ptsDoc.list.some(e => e.act === 'redeem' && e.ref === it.id)) return { write: false, value: 'dup' }
-            if (balOf(it.person, ptsDoc) < it.cost) return { write: false, value: 'short' }
-            ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: whoR.name, note: it.rewardName })
-            return { write: true, value: 'ok' }
-          }, '兌換扣點(' + it.person + ' -' + it.cost + ')')
-        } catch (e) { return res.status(503).json({ ok: false, error: '積分存檔失敗，請再按一次：' + String(e && e.message || e).slice(0, 80) }) }
-        if (rdOk === 'short') return res.status(400).json({ ok: false, error: '對方點數不足（可能剛被扣），無法核准' })
-        it.status = 'approved'; it.decBy = whoR.name; it.decTs = nowR; if (bR.note) it.note = String(bR.note).slice(0, 80)
-        it.code = genCode(new Set((rdDoc.list || []).filter(x => x.code).map(x => x.code))) // 🎟 產生核銷碼＝一張可用券
-        // 扣庫存
-        try { const rwDoc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }; const rw = (rwDoc.list || []).find(x => x.id === it.rewardId); if (rw && rw.stock != null) { rw.stock = Math.max(0, rw.stock - 1); await kvPut('sp_finance_pm_rewards', rwDoc, '兌換扣庫存') } } catch (_) {}
-        await notify([it.person], '✅ 兌換通過，券已進券包', `你換的「${it.rewardName}」已核准（扣 ${it.cost} 點）。到排行榜「我的獎勵券包」出示 QR 給核銷人，或報核銷碼 ${it.code}`)
-        await notify(checkersR, '🎟 有券待核銷', `${it.person} 換「${it.rewardName}」。現場請掃對方 QR 或輸核銷碼 ${it.code}（到排行榜「現場核銷」）`)
-      } else {
-        it.status = 'rejected'; it.decBy = whoR.name; it.decTs = nowR; if (bR.note) it.note = String(bR.note).slice(0, 80)
-        await notify([it.person], '❌ 兌換未通過', `你換的「${it.rewardName}」未通過${bR.note ? '（' + String(bR.note).slice(0, 40) + '）' : ''}，點數沒扣`)
-      }
-      await kvPut('sp_finance_pm_redeem', rdDoc, '兌換審核(' + whoR.name + ')')
-      return res.status(200).json({ ok: true })
-    }
-    if (bR.op === 'done') { it.status = 'done'; it.doneTs = nowR; await kvPut('sp_finance_pm_redeem', rdDoc, '兌換已給(' + whoR.name + ')'); return res.status(200).json({ ok: true }) }
-    return res.status(400).json({ ok: false })
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'redeem', method: 'POST', body: bR, who: whoR, canEdit: true })) } catch (e) { return res.status(503).json({ ok: false, error: '兌換存檔失敗，請再按一次（不會重複扣點）：' + String(e?.message || e).slice(0, 120) }) }
   }
   // 📜 兌換核銷歷史後台（張良 2026-10-06）：GET ?redeemlog=<OPS_BOARD_KEY>&me=token（管理者/主管看全部人全部日期全部兌換全部核銷）
   if (req.query?.redeemlog) {
@@ -4108,14 +3937,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.redeemlog) !== ok2) return res.status(403).json({ ok: false })
     const whoRl = await sopWho(req.query.me)
     if (!whoRl) return res.status(403).json({ ok: false, error: permDeny() })
-    const defRl = await kvGet('sp_finance_pm_sop_def')
-    const aprRl = (((defRl || {}).ground || {}).approvers || ['張良瑋'])
-    if (!(aprRl.includes(whoRl.name) || whoRl.role === '主管')) return res.status(403).json({ ok: false, error: '只有管理者/主管能看兌換核銷紀錄' })
-    const rdDocL = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
-    const rows = (rdDocL.list || []).map(r => ({ id: r.id, person: r.person, rewardName: r.rewardName, cost: r.cost, status: r.status, code: r.code || '', ts: r.ts || '', decBy: r.decBy || '', decTs: r.decTs || '', usedBy: r.usedBy || '', usedAt: r.usedAt || '', note: r.note || '' }))
-    const sum = { total: rows.length, pending: 0, approved: 0, used: 0, rejected: 0, usedPts: 0 }
-    for (const r of rows) { sum[r.status] = (sum[r.status] || 0) + 1; if (r.status === 'used' || r.status === 'approved') sum.usedPts += Number(r.cost || 0) }
-    return res.status(200).json({ ok: true, rows, sum })
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'redeemlog', method: 'GET', q: req.query, who: whoRl })) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 160) }) }
   }
   // 📒 積分存摺（他人）：GET ?ledger=<OPS_BOARD_KEY>&me=token&who=姓名（管理者/主管可查任何人；本人查自己走 lb 的 myLedger）
   if (req.query?.ledger) {
@@ -4123,16 +3945,9 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.ledger) !== ok2) return res.status(403).json({ ok: false })
     const whoLg = await sopWho(req.query.me)
     if (!whoLg) return res.status(403).json({ ok: false, error: permDeny() })
-    const defLg = await kvGet('sp_finance_pm_sop_def')
-    const aprLg = (((defLg || {}).ground || {}).approvers || ['張良瑋'])
-    const isAdmLg = aprLg.includes(whoLg.name) || whoLg.role === '主管'
-    const who = String(req.query.who || whoLg.name).slice(0, 20)
-    if (who !== whoLg.name && !isAdmLg) return res.status(403).json({ ok: false, error: '只能查自己的' })
-    const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
-    let run = Number((ptsDoc.carry || {})[who] || 0)
-    const withBal = (ptsDoc.list || []).filter(e => e.person === who).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
-    return res.status(200).json({ ok: true, who, balance: Math.round(run * 10) / 10, ledger: withBal.slice(-200).reverse() })
+    try { const { pointsDispatch } = await import('./_pointsop.js'); return ptsOut(await pointsDispatch({ kind: 'ledger', method: 'GET', q: req.query, who: whoLg })) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 160) }) }
   }
+
   if (req.method === 'POST' && req.query?.soprate) {
     // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
