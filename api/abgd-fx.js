@@ -323,6 +323,11 @@ const ACTIONS = {
     if (!ok) return { ok: false, retry: true }
     try { await logPush(po.lineUserId, 1, '任務指派通知') } catch (_) {} return { ok: true, sent: true }
   },
+  async chat_dd(a) { // 聊天室 @DD（新殼背景回覆；同 GD _chat.js 的 aiCall('app')）：只回 AI 文字，回寫聊天室由新殼負責
+    if (a.ts && Date.now() - Date.parse(a.ts) > 30 * 60e3) return { ok: true, skipped: 'expired' } // 超過 30 分鐘不再回（聊天已過時）
+    const r = await aiCall('app', { system: String(a.system || '').slice(0, 4000), messages: [{ role: 'user', content: String(a.user || '').slice(0, 20000) }], maxTokens: 600 })
+    return { ok: true, text: String(r.text || '').trim().slice(0, 2000) }
+  },
   async chat_notify(a) { // 聊天室新訊息（原 mail-sync ?chat send 的 notify，文字照抄）：鈴鐺推播給該室成員（toNames=null＝全部）＋個人室夥伴發話 LINE 私訊審核人
     if (a.ts && Date.now() - Date.parse(a.ts) > 6 * 3600e3) return { ok: true, skipped: 'expired' }
     const { ids } = await bindMaps()
