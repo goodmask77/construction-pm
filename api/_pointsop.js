@@ -153,7 +153,7 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
       if (!body.pass) {
         // 退回（關卡 3 積分第七、八輪）：① 兌換單 待審→退回中（同一交易搶占；核准中／已核准搶不到，核准也搶不到退回中的單）
         //   ② 流水帳同一交易：有這張單的扣點且還沒退＝退點一次＋關閉兌換關卡（之後任何世代扣不到）
-        //   ③ 放回這張單預留過的庫存（不論哪個世代；過期執行者沒放成的也在這裡收）④ 退回中→不通過 ⑤ 通知
+        //   ③ 放回這張單預留過的庫存（不論哪個世代；過期執行者沒放成的也在這裡收），有無預留都寫關閉墓碑（之後晚到的預留一律被擋）④ 退回中→不通過 ⑤ 通知
         //   ②～④ 失敗＝停在退回中、回「再按一次」，重按從 ② 冪等做完；主管待審清單看得到退回中的單
         let err = null, it = null
         await ptsTx(PTS_KEYS.redeem, (cur) => { err = null; const d = cur || { list: [] }; it = (d.list || []).find(x => x.id === id); if (!it) { err = { status: 404, ok: false }; return { write: false } } if (it.status === 'rejecting') return { write: false }; if (it.status !== 'pending') { err = { status: 400, ok: false, error: '這筆已經處理過了（或正在核准中）' }; return { write: false } } it.status = 'rejecting'; it.decBy = who.name; it.decTs = nowR; if (note) it.note = note; return { write: true, doc: d } }, '兌換退回中(' + who.name + ')', op)
@@ -165,7 +165,7 @@ export async function pointsDispatch({ kind, method, q = {}, body = {}, who, can
           if (ptsDoc.rdGate[id] !== RD_CLOSED) { ptsDoc.rdGate[id] = RD_CLOSED; w = true }
           return { write: w, value: 'ok' } }, '兌換退回關卡(' + id + ')', op) }
         catch (e) { return { status: 503, ok: false, error: '退回沒存完（停在退回中），請再按一次：' + String(e && e.message || e).slice(0, 60) } }
-        try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw || !(rw.stockIds || []).includes(id)) return { write: false }; rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== id); rw.stockRun = rw.stockRun || {}; rw.stockRun[id] = { gen: RD_CLOSED, id: 'rejected', released: true }; return { write: true, doc: d } }, '兌換退回放回庫存', op) }
+        try { await ptsTx(PTS_KEYS.rewards, (cur) => { const d = cur || { list: [] }; const rw = (d.list || []).find(x => x.id === it.rewardId); if (!rw) return { write: false }; rw.stockRun = rw.stockRun || {}; const held = (rw.stockIds || []).includes(id); const sr = rw.stockRun[id]; if (!held && sr && sr.gen === RD_CLOSED) return { write: false }; if (held) { rw.stock = (Number(rw.stock) || 0) + 1; rw.stockIds = rw.stockIds.filter(x => x !== id) } rw.stockRun[id] = { gen: RD_CLOSED, id: 'rejected', released: true }; return { write: true, doc: d } }, '兌換退回放回庫存', op) }
         catch (e) { return { status: 503, ok: false, error: '退回沒存完（庫存還沒放回，停在退回中），請再按一次：' + String(e && e.message || e).slice(0, 60) } }
         try { await ptsTx(PTS_KEYS.redeem, (cur) => { const d = cur || { list: [] }; const x = (d.list || []).find(y => y.id === id); if (!x || x.status !== 'rejecting') return { write: false }; x.status = 'rejected'; return { write: true, doc: d } }, '兌換審核(' + who.name + ' 不通過)', op) }
         catch (e) { return { status: 503, ok: false, error: '退回沒存完（停在退回中），請再按一次：' + String(e && e.message || e).slice(0, 60) } }
