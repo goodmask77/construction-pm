@@ -5396,7 +5396,7 @@ export default async function handler(req, res) {
     const isV = bm.kind === 'vendor'
     const { applyMatcat } = await import('./_matlib.js')
     const errM = applyMatcat(doc, bm); if (errM) return res.status(400).json({ ok: false, error: errM.error })
-    await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類' + (isV ? '(廠商)' : '') + '(' + whoM.name + ')')
+    if (!(await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類' + (isV ? '(廠商)' : '') + '(' + whoM.name + ')'))) return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true }) // 存檔被擋（切換凍結中）＝不假成功
     return res.status(200).json({ ok: true, cats: doc.cats, map: doc.map, vcats: doc.vcats, vmap: doc.vmap })
   }
   // 📦 物料庫廠商分類輔助口（金鑰維護口，照本專案慣例，免個人 token，給後台/CC 依叫貨內容批次歸類用）：
@@ -5418,7 +5418,7 @@ export default async function handler(req, res) {
         if (!k || k === '__proto__' || Object.prototype.hasOwnProperty.call(Object.prototype, k)) continue
         if (v) { const cc = String(v).trim().slice(0, 20); doc.vmap[k] = cc; if (cc && !doc.vcats.includes(cc)) doc.vcats.push(cc) } else delete doc.vmap[k]
       }
-      await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫廠商分類(種子批次)')
+      if (!(await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫廠商分類(種子批次)'))) return res.status(409).json({ ok: false, error: ABGD_MOVED, moved: true })
       return res.status(200).json({ ok: true, vcats: doc.vcats, vmapCount: Object.keys(doc.vmap).length })
     }
     const docsS = await Promise.all(mosS.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', ''))))
