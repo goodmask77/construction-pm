@@ -13,6 +13,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords, abgdOwnerOf } from './mail-sync.js'
+import { incTx } from './_inckv.js' // v4.71.158 交接異常月檔（異常通知域）依歸屬版本比對寫
 import { snapshotRecipeCosts } from './_recipe.js'
 import { orderedKvGet } from './_jsonborder.js' // abgd 食譜 F10：快照算法讀到的鍵順序與新殼一致
 import { EPS, OFF } from './_bossfeeds.js' // 批次 3：每小時同步後，價格／換算／配方有變就寫食譜成本快照（永不改寫）
@@ -159,10 +160,9 @@ export default async function handler(req, res) {
     const months = allowDelete ? monthsBetween(from, to) : Object.keys(byM)
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
-      const doc = (await kvGet(id)) || { rows: {} }
-      if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { const d = E.df(r); if (d >= from && d <= to && !((byM[m] || {})[k])) delete doc.rows[k] } // 窗內沒再出現＝來源已刪
-      Object.assign(doc.rows, byM[m] || {})
-      doc.updatedAt = new Date().toISOString()
+      const apply = (doc) => { if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { const d = E.df(r); if (d >= from && d <= to && !((byM[m] || {})[k])) delete doc.rows[k] } Object.assign(doc.rows, byM[m] || {}); doc.updatedAt = new Date().toISOString(); return doc } // 窗內沒再出現＝來源已刪
+      if (E.slug === 'inc') { await incTx(id, (cur) => ({ write: true, doc: apply(cur ? { ...cur, rows: { ...(cur.rows || {}) } } : { rows: {} }) }), `boss同步 ${E.slug} ${m}`); continue } // 交接異常：依歸屬版本比對寫（重讀重算）
+      const doc = apply((await kvGet(id)) || { rows: {} })
       await kvPut(id, doc, `boss同步 ${E.slug} ${m}`)
     }
   }
