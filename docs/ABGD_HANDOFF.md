@@ -37,9 +37,11 @@
 | 銷售數據 F29（資料） | ✅ 10-16 13:18 已切資料（B 模式：收信、喬亞、Eats365、盤中快照、預測、退單私訊都留 GD；80 份歸新殼；主 App 設定（品項標記、沒賣預警）拆 posapp 留 GD；主 App 停寫手動匯入；銷售頁入口改掛 posapp＝GD 銷售頁照常、讀新殼寫回的副本；關卡 3：OpenAI 五輪、Gemini 五輪；冒煙＝張良在 GD 熱力圖隱藏／取消寫進新殼；回切 14 秒／再切 47 秒；13:20 拆閘門；13:30 盤中更新兩段都寫進新殼、45 秒內寫回 GD）。新殼銷售頁尚未做 | pos |
 | 人資／打卡（crew：NUEiP 出勤／班表月檔、薪資、人資主檔、在職名單、遲到通知去重、打卡逐筆、補卡） | ✅ 10-16 15:31 已切（B 模式：入職／打卡／名冊頁、NUEiP 同步、DD 留 GD；71 份歸新殼。**張良 10-16 選 A**：名冊（角色／停權／LINE 綁定＝GD 每個請求的權限判斷）、身分證欄名單、DD 收入職文件情境拆 crewapp 留 GD，等新殼有自己的登入時跟 perm／identity 一起搬；主 App 名冊／人資／打卡停寫。關卡 3：OpenAI 六輪＝可受控切換、Gemini 無 A；第一次 15:26 切成功、回切演練 9 秒、再切撞到每分鐘同步租約 222 秒安全退回、15:31 重試 41 秒成功（epoch 4）；冒煙＝張良從 GD 真入口申請補卡＋退回（2.5 秒、反推 0 秒）；15:32 拆閘門，NUEiP 手動同步寫進新殼、兩邊 71 份一致。順手修好：補卡申請原本呼叫不存在的 kvSet，從來沒存成功） |
 | 銷售數據頁 F29（頁面） | ✅ 10-16 16:15 GD 側欄「銷售數據」入口改指新殼 /ops/sales（新切換口 op=route：資料域已在新殼才准開、入口版本同交易遞增、發布失敗改回）。畫面＝GD p01-core 看板＋行事曆＋備料＋曲線圖、p02 節奏表、p07 品項明細、p10 預測原樣轉出（scratchpad salesport.py／cssscope.py）；看板算法 GD api/_opsboard.js＝新殼 lib/ops/opsboard.js 同一份（正式資料比對兩家店完全相同）；寫入與預測／停售／行事曆經 GD 代發口 board_read／board_write（GD 原端點、權限照舊；正式實測熱力圖隱藏→新殼引擎版本 +1、GD 副本 18 秒跟上）；速度：版本指紋沒變＝沿用（伺服器 P50 0.12 秒）、資料剛更新時重算約 1 秒（P95）；關卡審查 OpenAI 兩輪＝可上線、Gemini 兩輪 A 項已修；首頁（今日營收那頁）仍在 GD |
+| 夥伴名冊 F26／入職 F27（頁面） | ✅ 10-16 16:55 GD 側欄入口指新殼 /ops/crew、/ops/onboarding（op=route；入口 hrm／onb 改掛 crew 域）。名冊資料仍留 GD（張良選 A），頁面＝GD p12-roster.js／p13-onboard.js 整檔副本，讀寫一律經**通用 GD 頁面轉接**（新殼 /api/ops/gd?p=頁&q=GD 端點 → GD 代發口 page_read／page_write，PAGES 白名單；身分證欄遮罩、權限照 GD）；看檔連結轉 GD 簽名網址 |
+| 換頁修正（全部 GD 頁面副本） | ✅ 10-16：①副本最外層 const／let 改 var（不重新整理換頁時「重複宣告」整頁失效；legacyfix.py）②副本不宣告全域 app（即時的 window.app）③**OwnedBox 認領 #app／#upd**（框架會保留上一頁＝同 id 兩個，副本拿到藏起來的舊容器＝空白）；正式站側欄連續換頁 5 頁實測全過 |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.175（main）、GD v4.71.188（main，已部署 16:00）。
+版本：新殼 v0.4.179（main）、GD v4.71.190（main，已部署 16:35）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
@@ -166,6 +168,11 @@
 - **監看腳本**：改用 scratchpad/mondom.sh <域> "<GD 條件>" "<新殼條件>"，開跑先印出條件確認（團體訂餐那次 sed 沒換到條件，比到的是收件匣）。
 - **腳本改單行長程式**：`//` 只能放整行結尾或獨立一行（一晚犯 4 次）。
 - 會員 F25（10 張真表、目前只有測試資料）照功能對照表排最後一波；這次先做積分。
+
+## 10-16 名冊／入職頁＋換頁修正學到的
+- **資料留 GD 的頁也能先搬畫面**：通用 GD 頁面轉接（GD abgd-fx.js PAGES 登記每頁准許的讀／寫端點與網址參數；新殼 lib/ops/gdpage.ts＋/api/ops/gd）＋通用轉換腳本 `python3 gdport.py <GD 檔> <頁代碼> <進入函式> <輸出名>`＋通用外殼元件 GdLegacyClient。新頁＝三步：GD PAGES 加一行、新殼 gdpage.ts PAGES 加代碼、gdport 轉出＋app/ops/<路徑>/page.tsx。
+- **GD 頁面副本三條規則**（新殼側欄不重新整理換頁、框架保留上一頁）：最外層不用 const／let（legacyfix.py 自動改 var）；不宣告全域 app；容器一律用 OwnedBox（認領 #app／#upd）。新副本做完要跑 pw/dupload.mjs（同頁依序載入全部副本）＋正式站 pw/pagesprod.mjs（側欄連續換頁）。
+- **入口開法**：功能的資料域要在新殼（route_page_set 驗）——資料留 GD 的頁，入口改掛到它主要資料所在、已切的域（名冊／入職→crew）。
 
 ## 10-16 銷售數據頁（第一個「資料先搬、頁面後做」的頁）學到的
 - **頁面搬法**：GD 前端段落原樣抽出（找段落用 function 名當錨點；未定義的函式用腳本列出來補空函式）、端點全改新殼；GD 主樣式整份限定在一個 id 範圍裡（cssscope.py），不污染新殼其他頁。
