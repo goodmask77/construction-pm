@@ -2244,7 +2244,7 @@ export default async function handler(req, res) {
     const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
     const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
     if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售掃描')
-    const obsSo = new Date().toISOString() // 抓清單前記時間（關卡 3 OpenAI A1：較舊的觀測不得蓋掉較新的）
+    const obsSo = (await import('./_inckv.js')).obsStamp() // 抓清單前記時間（關卡 3 OpenAI A1：較舊的觀測不得蓋掉較新的）
     const items = await eatsItemList(sess)
     const hm2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)

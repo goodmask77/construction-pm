@@ -13,4 +13,6 @@ export async function incTx(key, mutate, editor, op) {
   }
   const e = new Error('異常通知資料一直有人同時在改，這次沒存進去'); e.code = 'commitfail'; throw e
 }
+// 觀測戳記：抓來源之前取；ISO 時間＋隨機尾碼（同毫秒兩次觀測也分得出先後，字串比大小；關卡 3 OpenAI 第二輪 A2）
+export const obsStamp = () => new Date().toISOString() + '|' + Math.random().toString(36).slice(2, 10).padEnd(8, '0')
 export async function incGet(key, op) { return (await newKv(op)).kvGet(key) }
