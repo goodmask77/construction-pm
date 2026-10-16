@@ -45,15 +45,19 @@ export function soldoutApply(cur, { nowSo, obs, day, hm, stamp, manual, now = Da
 }
 export async function soldoutTx(opts, editor) { return incTx('sp_finance_pm_absoldout', (cur) => soldoutApply(cur, opts), editor) }
 // 送待發事件：send(ev) 回 true＝已送達（或 LINE 說同一個重送識別碼已收過）；送成功的從文件拿掉（重讀最新再拿，撞版本重做）
-//   每筆整段（含查群成員、額度尾巴）最多 perMs；整輪最多 budgetMs，沒送完的留到下一輪（關卡 3 OpenAI 第九輪 A1）
-export async function soldoutFlush(pend, send, editor, { perMs = 12000, budgetMs = 25000 } = {}) {
-  const done = [], t0 = Date.now()
-  const within = (p, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('發送逾時')), ms); p.then((v) => { clearTimeout(t); res(v) }, (e) => { clearTimeout(t); rej(e) }) })
+//   整輪共用一個截止時間 budgetMs（含清帳）：發送只用到截止前 reserveMs（留給清帳）；每筆整段（含查群成員、額度尾巴）最多 perMs；
+//   清帳（拿掉已送 id）也受剩餘時間限制，逾時＝先回傳、事件留著，下一輪用同一個重送識別碼再送（LINE 去重）（關卡 3 OpenAI 第九、十輪 A1）
+const within = (p, ms, msg) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(msg)), Math.max(0, ms)); p.then((v) => { clearTimeout(t); res(v) }, (e) => { clearTimeout(t); rej(e) }) })
+export async function soldoutFlush(pend, send, editor, { perMs = 12000, budgetMs = 25000, reserveMs = 8000 } = {}) {
+  const done = [], end = Date.now() + budgetMs, sendEnd = end - reserveMs
   for (const ev of pend || []) {
-    const left = budgetMs - (Date.now() - t0); if (left < 1000) { console.log('absoldout flush 這輪時間用完，剩下留到下一輪'); break }
-    try { if (await within(Promise.resolve().then(() => send(ev)), Math.min(perMs, left))) done.push(ev.id) } catch (e) { console.log('absoldout send err', ev.id, e?.message) }
+    const left = sendEnd - Date.now(); if (left < 1000) { console.log('absoldout flush 這輪發送時間用完，剩下留到下一輪'); break }
+    try { if (await within(Promise.resolve().then(() => send(ev)), Math.min(perMs, left), '發送逾時')) done.push(ev.id) } catch (e) { console.log('absoldout send err', ev.id, e?.message) }
   }
-  if (done.length) await incTx('sp_finance_pm_absoldout', (cur) => { if (!cur || !Array.isArray(cur.pend) || !cur.pend.some(e => done.includes(e.id))) return { write: false }; return { write: true, doc: { ...cur, pend: cur.pend.filter(e => !done.includes(e.id)) } } }, editor || 'AB停售通知已送')
+  if (done.length) {
+    try { await within(incTx('sp_finance_pm_absoldout', (cur) => { if (!cur || !Array.isArray(cur.pend) || !cur.pend.some(e => done.includes(e.id))) return { write: false }; return { write: true, doc: { ...cur, pend: cur.pend.filter(e => !done.includes(e.id)) } } }, editor || 'AB停售通知已送'), end - Date.now(), '清帳逾時') }
+    catch (e) { console.log('absoldout 已送但清帳沒完成（下一輪同一個重送識別碼再送，LINE 去重）', done.join(','), e?.message) }
+  }
   return done
 }
 export async function incGet(key, op) { return (await newKv(op)).kvGet(key) }
