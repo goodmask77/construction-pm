@@ -85,6 +85,26 @@ const gdNames = (rosterDoc) => {
 // 只允許登記過的路由，避免新殼任意呼叫；回 { text, provider, model }
 const AI_ROUTES_OK = new Set(['waste', 'rcpimport', 'menuocr', 'app']) // app：聊天室 @DD（F22，同 GD _chat.js 走 aiCall('app')） // menuocr：菜單拍照建檔（F18）
 // 行銷大師（v4.71.146）：新殼已驗身分；身分格式同 _social.js whoSocial（權限表 social 分頁）；呼叫原本的社群端點（req._who＝已驗身分）
+// inline 顧客資料庫（v4.71.175 新殼經代發口）：即時直搜 inline（find，唯讀）、行動建議勾選／派任務（act）、連假 AI 文案（holcopy）
+//   權限同 inline-sync whoTok：停權擋；核准模式下 act／holcopy 要有編輯權且 inline 分頁沒被關；讀（find）只要登入
+async function inlineRun(a, method) {
+  const kind = String(a.kind || '')
+  const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
+  if (!name) return { ok: false, error: '缺操作者' }
+  if (role === '停權') return { ok: false, error: '帳號已停權', _http: 403 }
+  if (method === 'GET' ? kind !== 'find' : !['act', 'holcopy'].includes(kind)) return { ok: false, error: '不認識的操作', _http: 400 }
+  if (method === 'POST') {
+    const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
+    if (pm.mode === 'approve') { const u = (pm.users || {})[rid]; if (!(u && u.edit && (u.admin || !u.tabs || u.tabs.cust !== 0))) return { ok: false, error: '沒有 inline 編輯權限', _http: 403 } }
+  }
+  const key = (process.env.OPS_BOARD_KEY || '').trim()
+  const query = kind === 'find' ? { custfind: key, q: String(a.q || '').slice(0, 40) } : kind === 'act' ? { custact: key } : { custholcopy: key }
+  let st = 200, out = null
+  const res = { status (c) { st = c; return this }, json (o) { out = o; return this }, send (o) { out = { ok: false, html: String(o).slice(0, 200) }; return this }, setHeader () { return this }, writeHead () { return this }, end () { return this } }
+  const H = (await import('./inline-sync.js')).default
+  await H({ method, query, body: a.body || {}, headers: {}, _who: { name, rid } }, res)
+  return { ...(out || { ok: false, error: 'GD 沒有回結果' }), _http: st }
+}
 async function socialRun(a, method) {
   const kind = String(a.kind || 'social')
   const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
@@ -480,6 +500,8 @@ const ACTIONS = {
     const S = await import('./_social.js'); const IB = await import('./_inbox.js')
     return { ok: true, metaReady: S.metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: S.GV, configured: IB.ACCOUNTS.filter(IB.configured).map(a => a.key) }
   },
+  async inline_read(a) { return inlineRun(a, 'GET') }, // inline 即時直搜（外部 inline 搜尋）：唯讀，不佔事件位
+  async inline_op(a) { return inlineRun(a, 'POST') }, // inline 行動建議勾選／派任務、連假 AI 文案：走事件佔位（同一個 idem 只執行一次）
   async social_read(a) { return socialRun(a, 'GET') }, // 行銷大師讀（社群總覽／LINE 官方統計；統計 run=1 會順便抓一次，寫入本身版本比對）：唯讀路徑
   async social_op(a) { return socialRun(a, 'POST') }, // 行銷大師寫（草稿／審核／立即發布／素材／AI…；發文、AI、上傳在 GD）：走事件佔位（同一個 idem 只執行一次）
   async inbox_drain(a) { // 收件匣待補存佇列立即排空（切換拆閘門後呼叫；關卡 3 inbox 第一輪 B1）；唯讀路徑（套用本身判斷重複）
@@ -565,7 +587,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
