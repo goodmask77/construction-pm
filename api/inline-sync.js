@@ -49,7 +49,7 @@ async function syncRange(from, to) {
     for (const d of ds) { if (byDay[d] == null) continue; dayVals[d] = byDay[d]; resv += byDay[d].length } // 逾時跳過：不動舊資料；空陣列＝那天沒訂位（刪掉那天）
     if (!Object.keys(dayVals).length) continue
     const st = await inlTx('sp_finance_pm_inline_' + mo, (cur) => applyInlineDays(cur, { dayVals, obsT, stat: moStat }), 'inline訂位同步')
-    months[mo] = { ...st, at: obsT }
+    months[mo] = st // 帶月檔寫入流水號 seq（總覽用它比新舊）
   }
   await inlTx('sp_finance_pm_inline', (cur) => ({ write: true, doc: mergeSum(cur, { months, lastSync: new Date().toISOString() }) }), 'inline訂位同步') // 總覽重讀最新再合併
   await announceChanged()
@@ -64,8 +64,12 @@ const moStat = (doc) => {
 
 // 遠期同步：搜尋端點收齊全部未來訂位 → 「窗外（today+45 之後）」的日子以搜尋結果為準整批重建
 // （含刪掉已全取消消失的日子；取消的遠期訂位等日子滾進 45 天窗會由 dailyUpdated 補回取消紀錄）
-async function syncFuture(token) {
-  const boundary = addDays(twToday(), 45) // ≤boundary 由滾動窗負責
+async function syncFuture(token, runToday = twToday()) { // runToday：同一輪跟滾動窗共用（跨午夜不漏交接日；關卡 3 inline 第一輪 B）
+  const boundary = addDays(runToday, 45) // ≤boundary 由滾動窗負責
+  // 租約（關卡 3 inline 第一輪 A2）：遠期是「45 天後全部」的完整快照，同一時間只准一輪在做——兩輪交錯時，較舊那輪不能把較新那輪已確認消失的訂位寫回來
+  const lease = Math.random().toString(36).slice(2, 10), leaseUntil = new Date(Date.now() + 10 * 60e3).toISOString()
+  const got = await inlTx('sp_finance_pm_inline', (cur) => { const L = cur && cur.farLease; if (L && L.until > new Date().toISOString() && L.id !== lease) return { write: false, value: false }; return { write: true, doc: { firstDay: '2021-02-10', months: {}, ...(cur || {}), farLease: { id: lease, until: leaseUntil } }, value: true } }, 'inline遠期同步租約')
+  if (!got) return { farSkip: '另一輪遠期同步進行中（10 分鐘租約）' }
   const obsT = obsStamp() // 抓來源之前取
   const byDate = await INL.inlineSearchFuture(token)
   const far = {}
@@ -87,7 +91,7 @@ async function syncFuture(token) {
       if (!Object.keys(dayVals).length) return { write: false, value: null }
       const r = applyInlineDays(cur, { dayVals, obsT, stat: moStat }); wrote = r.write; return r
     }, 'inline遠期同步')
-    if (st && wrote) months[mo] = { ...st, at: obsT, del: !st.days }
+    if (st && wrote) months[mo] = { ...st, del: !st.days }
   }
   // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）；候補(ty=4)不算「被訂」排除
   const farList = Object.keys(far).sort().flatMap((d) => far[d].filter((r) => r.ty !== 4).map((r) => ({ d, ...r })))
@@ -95,14 +99,14 @@ async function syncFuture(token) {
   let notesInfo = {}, dayNotes = null, notesAt = null
   try {
     const nObs = obsStamp(); const notes = await INL.inlineFetchDayNotes(token)
-    const today = twToday()
+    const today = runToday
     dayNotes = {} // 今天起的全部備註 → AI 直接讀
     for (const [d, arr] of Object.entries(notes)) if (d >= today) dayNotes[d] = arr
     await inlTx('sp_finance_pm_inline_notes', (cur) => (cur && cur.obsAt && cur.obsAt > nObs ? { write: false } : { write: true, doc: { days: notes, updatedAt: new Date().toISOString(), obsAt: nObs } }), 'inline備註同步') // 全史另存一檔；較舊的一批不蓋較新的
     notesAt = nObs
     notesInfo = { noteDays: Object.keys(notes).length, futureNoteDays: Object.keys(dayNotes).length }
   } catch (e) { notesInfo = { notesError: e?.message } }
-  await inlTx('sp_finance_pm_inline', (cur) => ({ write: true, doc: mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }) }), 'inline遠期同步') // 總覽重讀最新再合併
+  await inlTx('sp_finance_pm_inline', (cur) => { const doc = mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }); if (doc.farLease && doc.farLease.id === lease) delete doc.farLease; return { write: true, doc } }, 'inline遠期同步') // 總覽重讀最新再合併；放掉自己的租約
   await announceChanged()
   return { farDays: Object.keys(far).length, farResv, ...notesInfo }
 }
@@ -123,9 +127,9 @@ const SEG_DEF = { // [標籤, 過濾, 排序, 最多頁數(每頁1000)]
   wed: ['婚禮/包場相關', (c) => /婚|包場/.test(c.n || ''), (a, b) => (b.l || '').localeCompare(a.l || ''), 1],
 }
 async function custBuild() {
-  const sum = (await kvGet('sp_finance_pm_inline')) || { months: {} }
+  const sum = (await inlGet('sp_finance_pm_inline')) || { months: {} }
   const mos = Object.keys(sum.months || {}).sort()
-  const today = twToday()
+  const today = twToday(), recentMo = addDays(today, -3).slice(0, 7)
   const cust = {}
   // v4.40.0（張良「每張卡點進去要有更深的分析：年/月/平均/趨勢」）：洞察改存「逐月明細 m」＋大組清單 bigList，前端自由切年/月/平均
   const ins = { m: {}, bigList: [] }
@@ -135,7 +139,7 @@ async function custBuild() {
   const M9 = (ym) => ins.m[ym] = ins.m[ym] || { resv: 0, guests: 0, cxl: 0, kids: 0, nw: 0, rt: 0, big: 0, bigG: 0, src: {}, lead: { d0: 0, d1_3: 0, d4_7: 0, d8_30: 0, d31: 0 }, pp: {}, hp: Array.from({ length: 7 }, () => [0, 0, 0, 0]), hg: Array.from({ length: 7 }, () => [0, 0, 0, 0]), wdD: [0, 0, 0, 0, 0, 0, 0] }
   const slotIdx = (t) => (t < '13:00' ? 0 : t < '18:00' ? 1 : t < '19:00' ? 2 : 3)
   for (let i = 0; i < mos.length; i += 12) {
-    const kvm = await Promise.all(mos.slice(i, i + 12).map((m) => kvGet('sp_finance_pm_inline_' + m)))
+    const kvm = await Promise.all(mos.slice(i, i + 12).map((m) => (m >= recentMo ? inlGet : kvGet)('sp_finance_pm_inline_' + m))) // 近期月份（滾動窗起點以後，這一輪剛寫過的）依歸屬讀正本；更早的歷史月讀 GD 副本（只有回填才會動，寫回 GD 一分鐘內到）（關卡 3 inline 第一輪 A3）
     for (const doc of kvm) {
       for (const [d, arr] of Object.entries(doc?.days || {})) {
         const ym = d.slice(0, 7), wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7
@@ -559,12 +563,15 @@ export default async function handler(req, res) {
         const owner = String(b.owner || '').slice(0, 30) || undefined, due = /^\d{4}-\d{2}-\d{2}$/.test(b.due || '') ? b.due : ''
         // v4.71.117 任務編號由行動建議 key 固定產生（關卡 3 tasks 第一輪 OpenAI A5）：重按／回應遺失後重送不會多建一件；已建過就不重建
         const id = (st.keys[key] && st.keys[key].tid) || ('tin-' + key), now = new Date().toISOString()
-        { const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: w.name, label: '任務' }); if (!(await kvT.kvGet('sp_team_pm_task_' + id))) await kvT.kvPut('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')') } // v4.71.115 依資料歸屬：任務域搬到新殼後走命令橋
-        try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvPut('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }, ...arr].slice(0, 200), '/prep inline') } catch (_) {}
+        let ex = null, made = false // 已有這件任務＝沿用它的負責人（重按、回應遺失後重送、換人重按都不會讓勾選狀態跟任務對不上；關卡 3 inline 第一輪 A6）
+        { const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: w.name, label: '任務' }); ex = await kvT.kvGet('sp_team_pm_task_' + id); if (!ex) { made = await kvT.kvInsert('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')'); if (!made) ex = await kvT.kvGet('sp_team_pm_task_' + id) } } // 只新增（已存在＝別人剛建好，改讀它）；v4.71.115 依資料歸屬：任務域搬到新殼後走命令橋
+        if (made) try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvPut('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }, ...arr].slice(0, 200), '/prep inline') } catch (_) {}
         await announceChanged()
-        rec = { st: 'task', by: w.name, at: now, tid: id, owner }
+        rec = { st: 'task', by: w.name, at: now, tid: id, owner: made ? owner : ((ex && ex.owner) || undefined) }
       } else return res.status(400).json({ ok: false, error: '未知 op' })
-      const keys = await inlTx(ACT_ST_KEY, (cur) => { const d = pruneAct(cur); if (rec) d.keys[key] = rec; else delete d.keys[key]; return { write: true, doc: d, value: d.keys } }, '/prep inline(' + w.name + ')', w.name)
+      let keys
+      try { keys = await inlTx(ACT_ST_KEY, (cur) => { const d = pruneAct(cur); if (rec) d.keys[key] = rec; else delete d.keys[key]; return { write: true, doc: d, value: d.keys } }, '/prep inline(' + w.name + ')', w.name) }
+      catch (e) { if (op === 'task') return res.status(409).json({ ok: false, error: '任務已建立，但「已派任務」標記沒存進去（' + (e?.message || e) + '），請再按一次（不會重複建任務）', tid: rec && rec.tid }); throw e }
       return res.status(200).json({ ok: true, st: keys, tid: (keys[key] || {}).tid || null })
     }
     if (req.query?.custholly) { // ?custholly=OPS&from=YYYY-MM-DD → 連假「去年來過、今年還沒訂」名單（v4.70.81 第 5 項）
@@ -675,7 +682,7 @@ export default async function handler(req, res) {
     const t = twToday()
     let out = {}, far = {} // v4.71.175 同步存不進去（驗收閘門、切換中）只記錯，衍生快取／展望／提醒照跑（讀到的是上一輪的資料）
     try { out = await syncRange(addDays(t, -3), addDays(t, 45)) } catch (e) { out = { syncErr: e?.message } }
-    try { far = await syncFuture(await INL.inlineLogin()) } catch (e) { far = { farErr: e?.message } }
+    try { far = await syncFuture(await INL.inlineLogin(), t) } catch (e) { far = { farErr: e?.message } }
     let cb = {}
     try {
       const idx = await kvGet('sp_finance_pm_inline_custidx')
@@ -683,9 +690,12 @@ export default async function handler(req, res) {
     } catch (e) { cb = { custErr: e?.message } }
     let ha = {}, ol9 = null
     try { ol9 = await custOutlook(); const { days, ...slim } = ol9; await kvPut('sp_finance_pm_inline_outlook', { ...slim, days: days.map(({ list, ...x }) => x) }, 'inline近期展望快照') } catch (e) { ha.olErr = e?.message } // 快照給 DD／App AI 讀（不含逐筆名單）
-    try { Object.assign(ha, await holidayAlert(ol9)) } catch (e) { ha.alertErr = e?.message }
-    try { Object.assign(ha, await bigAlert()) } catch (e) { ha.bigErr = e?.message }
-    try { if (ol9) Object.assign(ha, await weeklyDigest(ol9)) } catch (e) { ha.wkErr = e?.message }
+    if (out.syncErr || far.farErr) ha.alertSkip = '同步沒成功，這一輪不發提醒（同原行為；不用舊資料發、也不占去重紀錄）' // 關卡 3 inline 第一輪 A5；切換閘門不排在週一 9 點、每天 10 點、16 點這三個提醒時段
+    else {
+      try { Object.assign(ha, await holidayAlert(ol9)) } catch (e) { ha.alertErr = e?.message }
+      try { Object.assign(ha, await bigAlert()) } catch (e) { ha.bigErr = e?.message }
+      try { if (ol9) Object.assign(ha, await weeklyDigest(ol9)) } catch (e) { ha.wkErr = e?.message }
+    }
     return res.status(200).json({ ok: !out.syncErr && !far.farErr, ...out, ...far, ...cb, ...ha })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
