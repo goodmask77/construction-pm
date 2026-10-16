@@ -60,25 +60,41 @@ export function voidAlertText(date, ev) {
   return `⚠️ GD 疑似退單／作廢（${date.slice(5)} ${ev.prev}～${ev.t}）\n營收 ${ev.rev > 0 ? '+' : ''}${ev.rev.toLocaleString()}　單數 ${ev.tx > 0 ? '+' : ''}${ev.tx}${its ? `\n品項（推估）：${its}` : ''}\n（15 分快照相減推估；同時段若有新單會互相抵銷，實際退的可能更多。/prep 首頁「退單／作廢紀錄」可看）`
 }
 
-// 退單私訊（v4.71.186）：只送「營收真的變少、還沒通知過」的快照事件；每個事件×每位審核人帶固定 LINE 重送識別碼（重送／重做 LINE 去重）；
-//   全部審核人都送達（2xx 或 409＝同識別碼已收過）才記進 ntf；沒送成的下一輪補送。舊資料沒有 ntf＝第一次遇到時現有事件一律當已通知（不補發改版前的）
-//   必須在所有銷售數據寫入完成之後呼叫（後面不再有寫入＝不會因撞版本整段重做而重發；記 ntf 撞版本重做也靠識別碼去重）
+// 退單私訊（v4.71.186）：只送「營收真的變少、還沒通知過」的快照事件
+//   ① 送之前先「領取」：該事件試送次數 +1 寫進月檔（撞版本＝還沒送就重做；中斷也記到次數）——同一事件最多領 8 次
+//   ② 每位審核人各記送達（ntfU＝「時點|uid」）：只對還沒送達的人送；帶固定 LINE 重送識別碼（重送／重做 LINE 去重）；全部送達才記進 ntf
+//   ③ 期限依事件發生時間：20 小時內一律補送（每輪最多 10 筆；LINE 重送識別碼去重 24 小時）；超過 20 小時＝放棄、留紀錄轉人工（關卡 3 pos 第三輪）
+//   舊資料沒有 ntf＝第一次遇到時現有事件一律當已通知；必須在所有銷售數據寫入完成之後呼叫
 const uuidOf = (s) => { const h = crypto.createHash('sha256').update(s).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
-export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send }) {
+const VOID_TTL_MS = 20 * 3600e3
+export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send, now = Date.now() }) {
   const key = VOID_KEY(date.slice(0, 7))
   const doc = (await kvGet(key)) || { days: {} }
   const day = (doc.days || {})[date]; if (!day) return { sent: 0 }
   if (!Array.isArray(day.ntf)) { day.ntf = (day.snap || []).map(e => e.t); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（建立已通知清單）'); return { sent: 0, init: day.ntf.length } }
-  const tries = day.ntfTry || {}
-  const pend = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t) && (Number(tries[e.t]) || 0) < 8).slice(0, 3) // 同一事件最多試 8 次（永久錯誤不無限重試；Gemini 第二輪）
-  if (!pend.length || !token || !approvers.length) return { sent: 0 }
-  const ok = [], fail = []
+  const tries = { ...(day.ntfTry || {}) }, done = new Set(day.ntfU || [])
+  const evAt = (e) => Date.parse(date + 'T' + String(e.at || e.t || '00:00').slice(0, 5) + ':00+08:00')
+  const open = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t))
+  const expired = open.filter(e => now - evAt(e) >= VOID_TTL_MS || (Number(tries[e.t]) || 0) >= 8)
+  const pend = open.filter(e => !expired.includes(e)).slice(0, 10)
+  for (const e of expired) console.log('[voids] 退單通知超過 20 小時或試 8 次都沒送成，放棄（請人工確認）', date, e.t, e.rev)
+  if (!pend.length && !expired.length) return { sent: 0 }
+  if (!token || !approvers.length) return { sent: 0, pending: pend.length }
+  // ① 領取：先記次數（和放棄的）再送
+  for (const e of pend) tries[e.t] = (Number(tries[e.t]) || 0) + 1
+  day.ntfTry = tries; day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)]
+  doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（領取）')
+  // ② 送：只送還沒送達的人
+  const ok = []
   for (const ev of pend) {
     let all = true
-    for (const ap of approvers) { try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (!(r && (r.ok || r.status === 409))) all = false } catch (_) { all = false } }
-    if (all) ok.push(ev.t); else fail.push(ev.t)
+    for (const ap of approvers) {
+      if (done.has(ev.t + '|' + ap)) continue
+      try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (r && (r.ok || r.status === 409)) done.add(ev.t + '|' + ap); else all = false } catch (_) { all = false }
+    }
+    if (all) ok.push(ev.t)
   }
-  day.ntf = [...day.ntf, ...ok]; day.ntfTry = { ...tries }; for (const t of fail) { day.ntfTry[t] = (Number(day.ntfTry[t]) || 0) + 1; if (day.ntfTry[t] >= 8) console.log('[voids] 退單通知試 8 次都沒送成，放棄', date, t) }
+  day.ntfU = [...done]; day.ntf = [...day.ntf, ...ok]
   doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, ok.length ? '退單通知（已送）' : '退單通知（待重試）')
-  return { sent: ok.length, pending: fail.length }
+  return { sent: ok.length, pending: pend.length - ok.length, gaveUp: expired.length }
 }
