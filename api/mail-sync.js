@@ -3869,6 +3869,13 @@ export default async function handler(req, res) {
   // 🔑 用 LINE 登入新殼（v4.71.191 張良 10-16 選 A：新殼當主入口）：員工 LIFF（DD LIFE，跟 DD 同 Provider）拿 access token →
   //   ①向 LINE 驗 token 而且「一定要是員工 LIFF 那個頻道發的」（client_id＝LIFF_STAFF_ID 前段；別的頻道的 token 一律拒）②換 userId → 查 GD 綁定 → 認人（停權擋）
   //   ③直接簽 60 秒一次性橋接票（同 ?bridge 規格）→ 前端 POST 到新殼 /api/core/auth/bridge 換登入。前端不用帶任何金鑰
+  // 取消 GROUN:D 官方帳號圖文選單（張良 2026-10-16「LINE 官方那六格也一起先取消」）：POST ?memberrichoff=<MENU_PROBE_KEY>；不刪選單本身（之後可重掛）
+  if (req.method === 'POST' && req.query?.memberrichoff) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.memberrichoff) !== mk) return res.status(403).json({ ok: false })
+    const MB = await import('./_member.js')
+    try { return res.status(200).json(await MB.richMenuOff({ who: { name: 'CC（張良指示）' } })) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) }
+  }
   if (req.method === 'POST' && req.query?.liffabgd) {
     res.setHeader('Cache-Control', 'private, no-store')
     let bl = {}; try { bl = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
