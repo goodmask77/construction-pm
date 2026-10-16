@@ -99,23 +99,8 @@ export default async function handler(req, res) {
       const nowSo = {}
       for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
       // v4.71.158 異常通知域：依歸屬版本比對寫（每次重讀最新再比對），寫成功才發群
-      const { incTx } = await import('./_inckv.js')
-      const chg = await incTx('sp_finance_pm_absoldout', (cur) => {
-        if (cur && cur.obsAt && cur.obsAt > obsSo) return { write: false, value: null }
-        const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])], obsAt: obsSo } : { current: {}, log: [], obsAt: obsSo }
-        const prev = soDoc.current
-        const added = Object.keys(nowSo).filter(n => !(n in prev))
-        const removed = Object.keys(prev).filter(n => !(n in nowSo))
-        if (added.length || removed.length) {
-          soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || hm]))
-          added.forEach(n => { soDoc.current[n] = hm; soDoc.log.unshift({ d: todaySo, t: hm, n, op: '停售' }) })
-          removed.forEach(n => soDoc.log.unshift({ d: todaySo, t: hm, n, op: '恢復' }))
-          soDoc.log = soDoc.log.slice(0, 300)
-          return { write: true, doc: soDoc, value: { added, removed, current: soDoc.current } }
-        }
-        if (!soDoc.day || soDoc.day !== todaySo) { soDoc.day = todaySo; return { write: true, doc: soDoc, value: null } } // 每天首輪落個檔（沒變化也記狀態基準）
-        return { write: false, value: null }
-      }, 'AB停售變化')
+      const { soldoutTx } = await import('./_inckv.js')
+      const chg = await soldoutTx({ nowSo, obs: obsSo, day: todaySo, hm, stamp: hm }, 'AB停售變化') // 只拿最後成功那次的結果；沒變化／較舊的觀測＝null＝不發群
       if (chg) {
         const { added, removed } = chg
         const soDoc = { current: chg.current }
@@ -127,7 +112,7 @@ export default async function handler(req, res) {
         const cfgSo = await ddGet('soldoutAB')
         const gidSo = await ddGroupGid(cfgSo.group)
         const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        if (tkSo && gidSo) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidSo); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) + await _qf(_mem) }] }) }) }
+        if (tkSo && gidSo) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidSo); const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) + await _qf(_mem) }] }) }); if (!pr.ok) console.log('absoldout push fail', pr.status, (await pr.text().catch(() => '')).slice(0, 160)) } // 盡力通知：狀態已存，發送失敗只記錄（舊行為，關卡 3 列 B）
       }
     }
   } catch (e) { console.log('absoldout err', e?.message) }
