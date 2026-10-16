@@ -347,6 +347,16 @@ const ACTIONS = {
   //   reply：只在期限內、只試一次（子事件 idem:reply 記結果）；成功＝完成；LINE 回 400（token 過期／用過）＝改 push；其他／逾時＝結果不明，不自動補發（回 retry:false＋健康紀錄，人工查）
   //   push：固定重試鍵（idem）＝LINE 端擋重複；_qpatch 補額度尾巴（reply 跟 GD lineReply 一樣自己補本月用量）
   //   chat：回完寫對話記憶（同 GD finish；子事件只寫一次）
+  // v4.71.203 DD 批 5：新殼改團隊任務後補記活動紀錄（GD 正本 sp_team_pm_activity；DD 回答「誰最近改了什麼」讀這份）
+  //   跟任務修改同一交易排入新殼佇列；同一編號只記一次（條目帶 id＝編號，完成紀錄沒寫上又被重送也不會記兩筆）；最新在前、留 200 筆
+  async dd_activity(a, idem) {
+    if (a.key !== 'sp_team_pm_activity') return { ok: false, retry: false, error: '只能記團隊活動紀錄' }
+    const e = a.entry || {}
+    if (![e.ts, e.user, e.action, e.detail].every((x) => typeof x === 'string' && x.length <= 1000)) return { ok: false, retry: false, error: '活動紀錄格式不對' }
+    const { actAppend } = await import('./_actlog.js')
+    const ok = await actAppend(a.key, [{ ts: e.ts, user: e.user, action: e.action, detail: e.detail, id: idem }], 'abgd-fx')
+    return ok ? { ok: true } : { ok: false, retry: true, error: '活動紀錄沒存上' }
+  },
   async dd_send(a, idem) {
     const to = String(a.to || '')
     if (!/^[UCR][0-9a-f]{32}$/.test(to)) return { ok: false, retry: false, error: '收件人格式不對' }

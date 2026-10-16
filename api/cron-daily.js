@@ -166,7 +166,7 @@ export default async function handler(req, res) {
     const id = 't-seed' + Date.now().toString(36)
     const now = new Date().toISOString()
     const okw = await kvT.kvPut('sp_team_pm_task_' + id, { id, title, note: url, status: 'todo', catId: cat ? cat.id : '__inbox__', start: '', due: '', priority: 'normal', tags: ['包材'], ord: Math.min(0, ...existing.map(t => t?.ord ?? 0)) - 1, createdAt: now, updatedAt: now })
-    try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
+    try { const { actAppend } = await import('./_actlog.js'); await actAppend('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }], 'taskfill') } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
   // ── ⚠️ AB 班表違規掃描 v4.36.3（張良「違規通知直接傳ABpeople群 帶定位連結」）：規則=四週變形(單日>12h/班距<11h/連上>12天)，與 /prep 前端同一套 ──
