@@ -21,6 +21,7 @@
     const cfg=await (await fetch('/api/mail-sync?webpushcfg=1')).json()
     // v4.71.1 先讀 liff.state（LINE 開 LIFF 時原本的 ?s=/?to= 會被包在這裡）再決定用哪個 LIFF：to=member/order ＝客人用 LIFF_ID（GROUN:D LIFE）；其他（員工 s=深層連結）＝ LIFF_STAFF_ID（DD LIFE，跟 DD 同 Provider 才認得出綁定）
     try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s'); if(q2.get('to')) to=q2.get('to'); if(q2.get('c')) c=q2.get('c'); if(q2.get('ref')) ref=q2.get('ref'); if(q2.get('tab')) tab=q2.get('tab') } }catch(_){}
+    if(!to&&!s) to='abgd' // v4.71.192 張良 10-16「大家改從新版進來」：沒指定目的地的通用連結＝開新版首頁（深層連結 s= 照舊進 GD，那些分頁本來就會轉新版；登入新版失敗有「改進舊版 GD」鈕）
     const isCust=(to==='member'||to==='order')
     const liffId=cfg&&(isCust?(cfg.liff||cfg.liffStaff):(cfg.liffStaff||cfg.liff))
     if(!liffId){ location.replace(dest(s)); return } // 還沒設 LIFF → 直接進看板
