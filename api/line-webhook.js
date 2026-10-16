@@ -16,6 +16,7 @@ import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
+import { ddClassify, ddShadow, DD_ROUTE_VER } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交
 import { ddInboxBegin, ddInboxOut, ddInboxFlush } from './_inbox.js' // v4.70.61 DD 的一對一私訊同步進統一收件匣（張良 10-11「增加DD」）：每個事件 Begin、每次回話 Out、回 200 前 Flush
 import { computePointsBoard, pointsRules } from './_points.js' // v4.70.79 積分中樞（與 /prep 排行榜 lb 口同一套算法；張良 2026-10-12「DD 又抓不到資料：我現在有多少積分」治本）
 import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
@@ -2383,6 +2384,7 @@ export default async function handler(req, res) {
   if (!events.length) return res.status(200).json({ ok: true }) // LINE 驗證請求等
 
   // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
+  const shadowPs = [] // DD 搬家影子轉交（跟正式處理並行，回 200 前等完，最多 2.5 秒）
   for (const ev of events) {
     const tEv = Date.now(); aiAggReset() // v4.70.39 健康紀錄：這個事件從收到到回完花多久
     try {
@@ -2390,9 +2392,11 @@ export default async function handler(req, res) {
       const evIdX = String(ev.webhookEventId || '')
       const redelivX = !!ev.deliveryContext?.isRedelivery
       if (evIdX) {
-        const firstX = await ddEventOnce(evIdX)
+        const routeX = ddClassify(ev)
+        const firstX = await ddEventOnce(evIdX, { o: 'gd', c: routeX, rv: DD_ROUTE_VER }) // 第 0 批歸屬一律 GD
         if (firstX === false || (firstX === null && redelivX)) { console.log('dup event skip', evIdX, redelivX ? 'redelivery' : ''); ddHealthLog({ kind: 'dup', redelivery: redelivX ? 1 : 0, type: ev.type }).catch(() => {}); continue }
         if (redelivX) ddHealthLog({ kind: 'redelivery_ok', type: ev.type }).catch(() => {})
+        if (firstX === true) shadowPs.push(ddShadow(ev, routeX, sigOK)) // 只第一次收到才轉影子（新殼端也以事件編號去重）
       } else if (redelivX) { console.log('skip redelivery (no id)'); continue }
       ddInboxBegin(ev, body.destination) // v4.70.61 一對一私訊（訊息／加好友／按鈕）存進收件匣 DD 帳號，跟下面 DD 自己的處理並行；群組事件不收
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
@@ -3242,6 +3246,7 @@ export default async function handler(req, res) {
       }
     } catch (e) { console.log('event error', e?.message); ddHealthLog({ kind: 'error', err: String(e?.message || '').slice(0, 160), ms: Date.now() - tEv, type: ev.type, ai: _aiAgg && _aiAgg.calls ? _aiAgg : null }).catch(() => {}) }
   }
+  await Promise.allSettled(shadowPs)
   try { await ddInboxFlush() } catch (_) {} // v4.70.61 收件匣寫入要在回 200 前完成（serverless 回應後就凍結）
   return res.status(200).json({ ok: true })
 }

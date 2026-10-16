@@ -10,12 +10,12 @@ const tpeDay = (t) => new Date((t || Date.now()) + 8 * 3600e3).toISOString().sli
 const esc = (s) => String(s).replace(/[\\%_]/g, (m) => '\\' + m) // LIKE 的 _ 是萬用字元，要跳脫（踩過的坑）
 
 // 事件只處理一次：第一次見到 → true；已處理過（含 LINE 重送）→ false；查不到／沒 DB → null（呼叫端自行決定）
-export async function ddEventOnce(eventId) {
+export async function ddEventOnce(eventId, meta) { // meta（v4.71.197 DD 搬家台帳）：{o 歸屬, c 分類, rv 分類版本}；沒給＝舊格式 '1'
   if (!SB_URL || !SB_KEY || !eventId) return null
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
       method: 'POST', headers: { ...H(), Prefer: 'return=minimal' }, // 不帶 merge-duplicates → 撞 id 會 409＝原子去重
-      body: JSON.stringify({ id: 'pm_ddev_' + String(eventId).slice(0, 120), data: { v: '1' }, editor: 'D哥', updated_at: new Date().toISOString() }),
+      body: JSON.stringify({ id: 'pm_ddev_' + String(eventId).slice(0, 120), data: { v: meta ? JSON.stringify({ ...meta, t: Date.now() }) : '1' }, editor: 'D哥', updated_at: new Date().toISOString() }),
     })
     if (r.status === 201) return true
     if (r.status === 409) return false
