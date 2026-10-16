@@ -39,7 +39,7 @@ async function listPrefix(prefix) {
   } catch (_) { return [] }
 }
 // 四個空間的未完成任務（與 DD 讀的同一套資料——資料一致鐵則）
-async function loadOpenTasks() {
+export async function loadOpenTasks() { // export：DD「今日任務」用（v4.71.198 修：原本沒 export，私訊今日任務一直出錯沒回）
   const spaces = [['工程', 'pm_task_'], ['團隊', 'sp_team_pm_task_'], ['夥伴', 'sp_crew_pm_task_'], ['財務', 'sp_finance_pm_task_']]
   const out = []
   for (const [sp, pfx] of spaces) (await listPrefix(pfx)).forEach(t => { if (t && t.title && t.status !== 'done') out.push({ ...t, sp }) })
