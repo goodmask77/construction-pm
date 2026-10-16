@@ -88,8 +88,11 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
   const reg = await inlTx('sp_finance_pm_inline', (cur) => {
     fence()
     if (!cur || Number(cur.farGen) !== gen) { const e = new Error('已有較新一輪遠期同步，停手'); e.code = 'lease'; throw e }
-    const fm = new Set([...(Array.isArray(cur.farMonths) ? cur.farMonths : []).filter((m) => m >= bMo), ...mine])
-    return { write: true, doc: { ...cur, farMonths: [...fm].sort() }, value: { farMonths: [...fm], sumMonths: Object.keys(cur.months || {}) } }
+    // farMonths＝{ 月: 最後登記時間 }；只清「已在 boundary 月以前、且登記超過 1 小時」的（租約 10 分鐘，舊輪早就失效）——跨月推進時，剛登記的舊月照樣掃、蓋章（只蓋章，boundary 以前的日子不動；關卡 3 inline 第五輪 A1）
+    const nowMs = Date.now(), fm = {}
+    for (const [m, t] of Object.entries(Array.isArray(cur.farMonths) ? Object.fromEntries(cur.farMonths.map((x) => [x, nowMs])) : (cur.farMonths || {}))) if (m >= bMo || nowMs - Number(t) < 3600e3) fm[m] = Number(t) || nowMs
+    for (const m of mine) fm[m] = nowMs
+    return { write: true, doc: { ...cur, farMonths: fm }, value: { farMonths: Object.keys(fm), sumMonths: Object.keys(cur.months || {}) } }
   }, 'inline遠期同步登記')
   const mos = new Set([...mine, ...reg.farMonths])
   for (const mo of reg.sumMonths) if (mo >= bMo) mos.add(mo)
