@@ -69,31 +69,39 @@ export async function ddShadow(ev, route, sigOK) {
 }
 
 // ── 批 1：歸屬決定＋正式轉交（docs/ABGD_DD_PLAN.md v2.1 一節）──
-//   ddOwner：路由在設定 routes 裡開了、且符合 GD 原本走到該處理的條件（例：今日任務卡＝私訊＋操作者＋驗簽沒失敗），才歸新殼；其餘一律 GD
+//   ddOwner：路由在設定 routes 裡開了、且符合 GD 原本走到該處理的條件（例：今日任務卡＝私訊＋操作者＋驗簽成功），才歸新殼；其餘一律 GD
 //   歸新殼的事件：台帳首次寫入就帶可重建的轉交內容 p＋fwd:'pending'；轉交成功改 fwd:'ok'；失敗留 pending 由每 5 分鐘保溫排程補送（30 分鐘後放棄並私訊老闆）
 //   GD 永遠不替歸新殼的事件做業務（交出去不收回）
 const GATES = {
-  todaycard: async (ev, sigOK, ctx) => ev.source && ev.source.type === 'user' && sigOK !== false && !!(await ctx.operators())[ev.source.userId || ''],
-  // v4.71.202 文件庫查詢（批 4，唯讀）：私訊＋驗簽沒失敗＋只收「文件庫」或「看／查／打開／列出 文件庫（有哪些／資料夾／清單）」——
+  todaycard: async (ev, sigOK, ctx) => ev.source && ev.source.type === 'user' && sigOK === true && !!(await ctx.operators())[ev.source.userId || ''],
+  // v4.71.202 文件庫查詢（批 4，唯讀）：私訊＋驗簽成功＋只收「文件庫」或「看／查／打開／列出 文件庫（有哪些／資料夾／清單）」——
   //   刻意很窄：GD 的「文件 姓名」（/^文件\s*\S{2,10}\s*$/）會先接走「文件庫資料夾」這類說法；帶傳／發／送／撈或存／放／上傳／收／歸＝存檔撈檔（留 GD）
   files: async (ev, sigOK) => {
-    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    if (!(ev.source && ev.source.type === 'user' && sigOK === true)) return false
     const t = String((ev.message && ev.message.text) || '').trim()
     return t === '文件庫' || /^(看|查|打開|列出)\s*文件庫\s*(有哪些|資料夾|清單)?\s*[？?]?$/.test(t)
   },
-  // v4.71.203 團隊任務卡按鈕（批 5）：私訊＋驗簽沒失敗＋按鈕資料是「tk|動作|團|任務編號（|選項）」＋操作者＋團隊任務正本在新殼（tasks 域）——
+  // v4.71.204 問題回報審核按鈕（批 6）：私訊＋驗簽成功＋「pi|回報編號|go／hold／del」＋問題回報正本在新殼（sop 域）——
+  //   審核資格由新殼依正本判斷（GD 原本就把這種按鈕轉成新殼命令，這批改成整個事件交給新殼）
+  pb_issue: async (ev, sigOK) => {
+    if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
+    if (!/^pi\|[A-Za-z0-9_-]{1,80}\|(go|hold|del)$/.test(String((ev.postback && ev.postback.data) || ''))) return false
+    const { abgdOwner } = await import('./_abgdkv.js')
+    return (await abgdOwner('sp_finance_pm_sop_issues')) === 'abgd'
+  },
+  // v4.71.203 團隊任務卡按鈕（批 5）：私訊＋驗簽成功＋按鈕資料是「tk|動作|團|任務編號（|選項）」＋操作者＋團隊任務正本在新殼（tasks 域）——
   //   其他空間（工程／夥伴／財務）的任務還在 GD，照舊；動作只收 GD 卡片會產生的那幾種
   tkcard: async (ev, sigOK, ctx) => {
-    if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
     const d = String((ev.postback && ev.postback.data) || '')
     if (!/^tk\|(done|d1|pick|del|del2|keep|urg|cat|cat2|own|own2)\|團\|[^|]+(\|[^|]*)?$/.test(d)) return false
     if (!(await ctx.operators())[ev.source.userId || '']) return false
     const { abgdOwner } = await import('./_abgdkv.js')
     return (await abgdOwner('sp_team_pm_task_x')) === 'abgd'
   },
-  // 轉給CC：私訊＋操作者且名字含「張良」（同 GD 原條件）＋驗簽沒失敗＋句首轉給／轉告／交給／丟給 CC＋沒帶到報到／登入（報到流程會先接走）＋CC 收件匣正本已在新殼
+  // 轉給CC：私訊＋操作者且名字含「張良」（同 GD 原條件）＋驗簽成功＋句首轉給／轉告／交給／丟給 CC＋沒帶到報到／登入（報到流程會先接走）＋CC 收件匣正本已在新殼
   cc: async (ev, sigOK, ctx) => {
-    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    if (!(ev.source && ev.source.type === 'user' && sigOK === true)) return false
     const t = String((ev.message && ev.message.text) || '').trim()
     if (!/^(?:轉給|轉告|交給|丟給)\s*CC[:：,，\s]*([\s\S]*)$/i.test(t) || /報到|登入/.test(t)) return false
     const op = (await ctx.operators())[ev.source.userId || '']
@@ -101,9 +109,9 @@ const GATES = {
     const { abgdOwner } = await import('./_abgdkv.js')
     return (await abgdOwner('pm_cc_inbox')) === 'abgd'
   },
-  // 記事本：私訊＋操作者＋驗簽沒失敗＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
+  // 記事本：私訊＋操作者＋驗簽成功＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
   memo: async (ev, sigOK, ctx) => {
-    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    if (!(ev.source && ev.source.type === 'user' && sigOK === true)) return false
     const t = String((ev.message && ev.message.text) || '').trim()
     if (BEFORE_MEMO.test(t)) return false
     const mF = t.match(MEMO_FORGET), mR = mF ? null : t.match(MEMO_REMEMBER)
