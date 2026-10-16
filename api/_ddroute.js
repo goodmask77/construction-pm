@@ -3,8 +3,10 @@
 //   歸屬一次決定、寫在事件台帳 pm_ddev_<webhookEventId>（只新增）：第 0 批 owner 一律 gd
 //   影子轉交：設定 sp_finance_pm_ddroutes.shadow===true 時，把「分類＋來源＋驗簽結果＋文字雜湊／長度」（不送原文）轉給新殼 /api/dd/enqueue（mode=shadow），新殼只算權限、不發不寫
 import crypto from 'node:crypto'
-const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '')
-const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '')
+// 正式站環境變數值前面帶「NAME=」（例：NEXT_PUBLIC_SUPABASE_URL=https://…），要剝掉（同 line-webhook.js clean；v4.71.199：沒剝＝網址解析失敗、整段靜默略過）
+const cleanEnv = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
+const SB_URL = cleanEnv(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL).replace(/\/+$/, '')
+const SB_KEY = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
 const ABGD = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').trim().replace(/\/+$/, '')
 export const DD_ROUTE_VER = 1
 

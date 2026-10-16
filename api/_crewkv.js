@@ -16,8 +16,10 @@ const KV_OF = { app: ['crewapp', 'sp_crew_kb_roster', '夥伴名冊'], perm: ['p
 const newKv = (op, c) => { const [domain, lockKey, label] = KV_OF[c] || KV_OF.crew; return abgdKv({ domain, lockKey, operator: String(op || label).slice(0, 30), label, versioned: true }) }
 // 權限／身分類（GD 每個請求的權限判斷都讀 GD 副本）：新殼正本寫成功後，等 GD 副本也變成這份內容才回（最多 8 秒；新殼命令寫完立刻反推）——停權／解除綁定按完＝GD 已擋得住；等不到＝留紀錄照回成功（每分鐘排程補）
 const AUTH_RE = /^(sp_crew_kb_roster|sp_finance_pm_hr_idlock|sp_finance_pm_prep_(perm|bind|logincode)$)/
-const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '')
-const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '')
+// 正式站環境變數值前面帶「NAME=」（例：NEXT_PUBLIC_SUPABASE_URL=https://…），要剝掉（同 line-webhook.js clean；v4.71.199：沒剝＝網址解析失敗、整段靜默略過）
+const cleanEnv = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
+const SB_URL = cleanEnv(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL).replace(/\/+$/, '')
+const SB_KEY = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
 const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o }, {}) : x)
 // 等不到 GD 副本的次數：只算「這次操作」自己的寫入（crewLagWatch 包起來的那段；關卡 3 auth 第二輪 Gemini 2／OpenAI B3：不用全域計數，別人的延遲不會算到你頭上）
 const lagAls = new AsyncLocalStorage()
