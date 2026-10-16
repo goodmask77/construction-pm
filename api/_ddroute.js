@@ -74,6 +74,16 @@ export async function ddShadow(ev, route, sigOK) {
 //   GD 永遠不替歸新殼的事件做業務（交出去不收回）
 const GATES = {
   todaycard: async (ev, sigOK, ctx) => ev.source && ev.source.type === 'user' && sigOK !== false && !!(await ctx.operators())[ev.source.userId || ''],
+  // 轉給CC：私訊＋操作者且名字含「張良」（同 GD 原條件）＋驗簽沒失敗＋句首轉給／轉告／交給／丟給 CC＋沒帶到報到／登入（報到流程會先接走）＋CC 收件匣正本已在新殼
+  cc: async (ev, sigOK, ctx) => {
+    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    const t = String((ev.message && ev.message.text) || '').trim()
+    if (!/^(?:轉給|轉告|交給|丟給)\s*CC[:：,，\s]*([\s\S]*)$/i.test(t) || /報到|登入/.test(t)) return false
+    const op = (await ctx.operators())[ev.source.userId || '']
+    if (!op || !/張良/.test(op.name || '')) return false
+    const { abgdOwner } = await import('./_abgdkv.js')
+    return (await abgdOwner('pm_cc_inbox')) === 'abgd'
+  },
   // 記事本：私訊＋操作者＋驗簽沒失敗＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
   memo: async (ev, sigOK, ctx) => {
     if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
