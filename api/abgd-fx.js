@@ -430,6 +430,19 @@ const ACTIONS = {
     if (!ibOk) return { ok: false, retry: true, error: '已回話，收件匣還沒記上（會再補）' }
     return { ok: true, via }
   },
+  async dd_meta() { // v4.71.208 DD 搬家批 7a（唯讀）：AI 段落要的「舊主 App 帳號清單」與「DD 的 LINE 訊息額度」——這兩樣的金鑰／資料表只在 GD；讀不到＝null（新殼那段標「暫時讀不到」，不當成沒資料）
+    const H = { authorization: 'Bearer ' + TK() }
+    const [profiles, quota] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/profiles?select=display_name,role,role_template`, { headers: svc, signal: AbortSignal.timeout(5000) }).then(async (r) => (r.ok ? r.json() : null)).catch(() => null),
+      Promise.all([
+        fetch('https://api.line.me/v2/bot/message/quota', { headers: H, signal: AbortSignal.timeout(5000) }).then(async (r) => (r.ok ? r.json() : null)),
+        fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H, signal: AbortSignal.timeout(5000) }).then(async (r) => (r.ok ? r.json() : null)),
+      ]).catch(() => null),
+    ])
+    // LINE 回錯誤碼（401／429／500）或格式不對＝null（不把錯誤內容當成額度）；quota.type 只認 limited（要有數字 value）或 none（無上限）
+    const qOk = quota && quota[0] && typeof quota[0] === 'object' && ((quota[0].type === 'limited' && Number.isFinite(quota[0].value)) || quota[0].type === 'none') && quota[1] && typeof quota[1] === 'object' && Number.isFinite(quota[1].totalUsage)
+    return { profiles: Array.isArray(profiles) ? profiles.map((p) => ({ display_name: p && p.display_name, role: p && p.role, role_template: p && p.role_template })) : null, quota: qOk ? [{ type: quota[0].type, ...(quota[0].type === 'limited' ? { value: quota[0].value } : {}) }, { totalUsage: quota[1].totalUsage }] : null }
+  },
   async dd_redrive() { // v4.71.198 新殼每分鐘排程呼叫：補送沒送到新殼的 DD 事件（簽章＝不掛公開網址）
     const { ddRedrive } = await import('./_ddroute.js')
     const out = await ddRedrive(async (t, eid) => { const to = String(process.env.LINE_BOSS_USER || 'Uf7ce4fb9191cd3055247204e0cb6b4fc').trim(); return await linePush(to, [{ type: 'text', text: String(t).slice(0, 1000) }], 'ddgiveup:' + eid) }) // 回 true＝通知送出（固定重試鍵＝同一事件只一則）
@@ -758,7 +771,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'dd_redrive' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
