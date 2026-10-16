@@ -16,7 +16,7 @@ import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
-import { ddClassify, ddShadow, DD_ROUTE_VER } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交
+import { ddClassify, ddShadow, DD_ROUTE_VER, ddOwner, ddRunPayload, ddForward, ddLedgerGet, ddLedgerMark } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交；v4.71.198 批 1：歸新殼的事件交出去不收回
 import { ddInboxBegin, ddInboxOut, ddInboxFlush } from './_inbox.js' // v4.70.61 DD 的一對一私訊同步進統一收件匣（張良 10-11「增加DD」）：每個事件 Begin、每次回話 Out、回 200 前 Flush
 import { computePointsBoard, pointsRules } from './_points.js' // v4.70.79 積分中樞（與 /prep 排行榜 lb 口同一套算法；張良 2026-10-12「DD 又抓不到資料：我現在有多少積分」治本）
 import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
@@ -2183,7 +2183,7 @@ async function summarizeOverflow(oldSummary, dropped) {
     return r.text || oldSummary || ''
   } catch (_) { return oldSummary || '' }
 }
-async function pushChat(convId, userText, assistantText) {
+export async function pushChat(convId, userText, assistantText) { // export：v4.71.198 新殼 DD 回話後由 GD 代發口 dd_send 寫對話記憶（dd 域正本仍在 GD）
   try {
     const { h, sum: oldSum } = await loadConv(convId)
     h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
@@ -2393,8 +2393,28 @@ export default async function handler(req, res) {
       const redelivX = !!ev.deliveryContext?.isRedelivery
       if (evIdX) {
         const routeX = ddClassify(ev)
-        const firstX = await ddEventOnce(evIdX, { o: 'gd', c: routeX, rv: DD_ROUTE_VER }) // 第 0 批歸屬一律 GD
+        let opsX = null; let ownX = await ddOwner(ev, routeX, sigOK, { operators: async () => (opsX ||= await getOperators()) }) // 歸屬一次決定（設定 routes 沒開＝一律 GD）
+        const payX = ownX === 'abgd' ? ddRunPayload(ev, routeX, sigOK) : null
+        let firstX = await ddEventOnce(evIdX, ownX === 'abgd' ? { o: 'abgd', c: routeX, rv: DD_ROUTE_VER, fwd: 'pending', p: payX } : { o: 'gd', c: routeX, rv: DD_ROUTE_VER })
+        if (firstX === null) { // 台帳寫入結果不明（不論預判歸屬；關卡 OpenAI A1／A2、第二輪 A1）：歸屬只有「新增成功」或「讀到既有歸屬」才算確定；查不到原因、補寫又不明＝這次不處理（記錯誤），絕不冒險由 GD 做
+          let lg0 = null, rdErr = false; try { lg0 = await ddLedgerGet(evIdX) } catch (_) { rdErr = true }
+          if (rdErr || (lg0 && lg0.bad)) { ddHealthLog({ kind: 'error', err: 'DD 台帳查不到（不處理）', type: ev.type, route: routeX }).catch(() => {}); continue }
+          if (lg0 && lg0.o === 'abgd') { ddInboxBegin(ev, body.destination); if (lg0.fwd === 'pending' && lg0.p && await ddForward(evIdX, lg0.p)) await ddLedgerMark(evIdX, 'ok').catch(() => {}); continue }
+          if (lg0) continue // 已有 GD 歸屬＝別的請求已在處理（同一事件不重做）
+          const f2 = await ddEventOnce(evIdX, ownX === 'abgd' ? { o: 'gd', c: routeX, rv: DD_ROUTE_VER, fb: 1 } : { o: 'gd', c: routeX, rv: DD_ROUTE_VER })
+          if (f2 !== true) { ddHealthLog({ kind: 'error', err: 'DD 台帳補寫不明（不處理）', type: ev.type, route: routeX }).catch(() => {}); continue }
+          ownX = 'gd'; firstX = true
+        }
+        if (firstX === false) { // 重送：照台帳歸屬走——歸新殼且還沒送到＝再轉一次（新殼以事件編號去重）
+          try { const lg = await ddLedgerGet(evIdX); if (lg && (lg.o === 'abgd' || lg.bad)) { if (lg.bad) ddHealthLog({ kind: 'error', err: 'DD 台帳壞掉（重送不處理）', type: ev.type }).catch(() => {}); if (lg.o === 'abgd' && lg.fwd === 'pending' && lg.p) { ddInboxBegin(ev, body.destination); if (await ddForward(evIdX, lg.p)) await ddLedgerMark(evIdX, 'ok') } continue } } catch (_) { ddHealthLog({ kind: 'error', err: 'DD 台帳查不到（重送不處理）', type: ev.type }).catch(() => {}); continue } // 查不到＝不處理
+        }
         if (firstX === false || (firstX === null && redelivX)) { console.log('dup event skip', evIdX, redelivX ? 'redelivery' : ''); ddHealthLog({ kind: 'dup', redelivery: redelivX ? 1 : 0, type: ev.type }).catch(() => {}); continue }
+        if (firstX === true && ownX === 'abgd' && payX) { // 交給新殼（台帳已寫好歸屬＋內容；送不到由保溫排程補送）；收件匣照樣收
+          ddInboxBegin(ev, body.destination)
+          if (await ddForward(evIdX, payX)) await ddLedgerMark(evIdX, 'ok').catch(() => {})
+          else ddHealthLog({ kind: 'error', err: 'DD 轉新殼失敗（排程補送）', type: ev.type, route: routeX }).catch(() => {})
+          continue
+        }
         if (redelivX) ddHealthLog({ kind: 'redelivery_ok', type: ev.type }).catch(() => {})
         if (firstX === true) shadowPs.push(ddShadow(ev, routeX, sigOK)) // 只第一次收到才轉影子（新殼端也以事件編號去重）
       } else if (redelivX) { console.log('skip redelivery (no id)'); continue }
