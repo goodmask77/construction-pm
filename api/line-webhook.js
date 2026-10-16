@@ -709,11 +709,16 @@ const sysDataHead = () => { const d = new Date(Date.now() + 8 * 3600e3); return 
 async function loadHrText() {
   try {
     const mo = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
-    const doc = await kvGetMany(['sp_crew_pm_hr_att_' + mo]).then(m => m['sp_crew_pm_hr_att_' + mo])
-    if (!doc || !doc.days) return ''
+    const kvH = await kvGetMany(['sp_crew_pm_hr_att_' + mo, 'sp_finance_pm_punch_makeup'])
+    const doc = kvH['sp_crew_pm_hr_att_' + mo]
+    // 補卡申請（GD 打卡視窗申請、主管核准；v4.71.187 修好存檔後才有資料）：待審＋最近處理過的
+    const mkL = ((kvH['sp_finance_pm_punch_makeup'] || {}).list || [])
+    const mkTxt = mkL.length ? `\n▍補卡申請（待審 ${mkL.filter(x => x.status === 'pending' || x.status === 'processing').length} 筆）\n` + mkL.slice(-8).reverse().map(x => `- ${x.name} 補${x.dir === 'in' ? '上班' : '下班'} ${new Date(x.ts).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}｜${({ pending: '待審', processing: '核准中', approved: '已核准', rejected: '已退回' })[x.status] || x.status}${x.byName ? '（' + x.byName + '）' : ''}${x.reason ? '｜原因：' + String(x.reason).slice(0, 30) : ''}`).join('\n') : ''
+    if (!doc || !doc.days) return mkTxt ? '\n\n【打卡補卡】' + mkTxt : ''
     const days = Object.keys(doc.days).sort()
-    if (!days.length) return ''
+    if (!days.length) return mkTxt ? '\n\n【打卡補卡】' + mkTxt : ''
     const out = [`\n\n【NUEiP 人資出勤（本月 ${days.length} 天；App→夥伴中心→人資系統）】`]
+    if (mkTxt) out.push(mkTxt.slice(1))
     days.slice(-2).forEach(d => {
       const rows = Object.values(doc.days[d]).map(r => `${r.name}${r.work ? ` 班${r.work}` : ''} 上${(r.on || []).join('/') || '—'} 下${(r.off || []).join('/') || '—'}${r.late ? ` 遲到${r.late}分` : ''}${r.early ? ` 早退${r.early}分` : ''}${r.miss ? ' 缺卡' : ''}${r.absent ? ' 曠職' : ''}`)
       out.push(`▍${d}\n` + rows.map(x => '- ' + x).join('\n'))
