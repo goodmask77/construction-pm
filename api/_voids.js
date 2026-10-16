@@ -47,7 +47,7 @@ export async function recordVoidDay({ kvGet, kvPut, date, qdoc, slots, hours, ed
   const fresh = snap.filter(e => !seen.has(e.t))
   const changed = JSON.stringify({ a: prev.snap || [], b: prev.hours || [] }) !== JSON.stringify({ a: snap, b: hrs })
   if (changed) {
-    doc.days[date] = { ...(prev.ntf ? { ntf: prev.ntf } : {}), snap, hours: hrs, updatedAt: new Date().toISOString() } // ntf＝已通知的快照時點（保留）
+    doc.days[date] = { ...prev, ntf: Array.isArray(prev.ntf) ? prev.ntf : (prev.snap || []).map(e => e.t), snap, hours: hrs, updatedAt: new Date().toISOString() } // ntf＝已通知的快照時點：新的一天＝[]；改版前的舊資料＝當時已有的事件當已通知（這次新記到的不算；關卡 3 pos 第二輪 A1）
     doc.updatedAt = new Date().toISOString()
     await kvPut(key, doc, editor || '退單偵測 ' + date)
   }
@@ -69,14 +69,16 @@ export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send
   const doc = (await kvGet(key)) || { days: {} }
   const day = (doc.days || {})[date]; if (!day) return { sent: 0 }
   if (!Array.isArray(day.ntf)) { day.ntf = (day.snap || []).map(e => e.t); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（建立已通知清單）'); return { sent: 0, init: day.ntf.length } }
-  const pend = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t)).slice(0, 3)
+  const tries = day.ntfTry || {}
+  const pend = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t) && (Number(tries[e.t]) || 0) < 8).slice(0, 3) // 同一事件最多試 8 次（永久錯誤不無限重試；Gemini 第二輪）
   if (!pend.length || !token || !approvers.length) return { sent: 0 }
-  const ok = []
+  const ok = [], fail = []
   for (const ev of pend) {
     let all = true
     for (const ap of approvers) { try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (!(r && (r.ok || r.status === 409))) all = false } catch (_) { all = false } }
-    if (all) ok.push(ev.t)
+    if (all) ok.push(ev.t); else fail.push(ev.t)
   }
-  if (ok.length) { day.ntf = [...day.ntf, ...ok]; doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（已送）') }
-  return { sent: ok.length, pending: pend.length - ok.length }
+  day.ntf = [...day.ntf, ...ok]; day.ntfTry = { ...tries }; for (const t of fail) { day.ntfTry[t] = (Number(day.ntfTry[t]) || 0) + 1; if (day.ntfTry[t] >= 8) console.log('[voids] 退單通知試 8 次都沒送成，放棄', date, t) }
+  doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, ok.length ? '退單通知（已送）' : '退單通知（待重試）')
+  return { sent: ok.length, pending: fail.length }
 }

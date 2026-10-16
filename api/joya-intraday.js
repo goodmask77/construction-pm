@@ -268,7 +268,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, taipei: hm, gd: 'GD時段外', ...extra })
   }
   try { return await posRun('喬亞盤中更新', async () => { // 撞版本整段重做：退單通知只發「這次新記到的事件」，重做時已記過＝不重發
-    const today = taipeiToday(); let voidDay = null
+    const today = taipeiToday()
     const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
     const isGround = (n) => /groun/i.test(n || '')
     const cur = store.entries.find(e => e.date === today && isGround(e.store))
@@ -314,7 +314,6 @@ export default async function handler(req, res) {
       try { // 只記錄（冪等）；私訊移到所有寫入完成之後（notifyVoidDay，v4.71.186 關卡 3 pos 第一輪）
         const { recordVoidDay } = await import('./_voids.js')
         await recordVoidDay({ kvGet, kvPut, date: today, qdoc, slots: day.slots || [], editor: '退單偵測 ' + hm })
-        voidDay = today
       } catch (e) { if (e && e.code === 'stale') throw e; console.log('void detect err', e?.message) }
       // ② 整/半點 {t,rev,tx} → 月檔（既有半小時圖與 DD 的口徑不動、檔案不變肥）
       if (/:(00|30)$/.test(slotHit)) {
@@ -329,13 +328,14 @@ export default async function handler(req, res) {
       }
     }
     // 退單私訊：所有銷售數據寫入都完成之後才送（後面不再寫＝不會因撞版本整段重做而重發）；沒送成的下一輪補送，LINE 重送識別碼去重
-    if (voidDay) {
+    { // 每一輪都送今天與昨天的待送事件（不靠本輪有沒有新記錄；跨日也補；都在 LINE 重送識別碼 24 小時有效期內；關卡 3 pos 第二輪 A2）
       try {
         const { notifyVoidDay, voidAlertText } = await import('./_voids.js')
         const tkV = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
         const [defV, rosV] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
         const aps = (((defV || {}).ground || {}).approvers || ['張良瑋']).map(an => ((rosV || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)).filter(Boolean).map(p2 => p2.lineUserId)
-        await notifyVoidDay({ kvGet, kvPut, date: voidDay, approvers: aps, token: tkV, send: (uid, ev, retryKey) => fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV, 'X-Line-Retry-Key': retryKey }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: voidAlertText(voidDay, ev) }] }) }) })
+        const ydayV = new Date(new Date(today + 'T00:00:00Z').getTime() - 86400e3).toISOString().slice(0, 10)
+        for (const dV of [ydayV, today]) await notifyVoidDay({ kvGet, kvPut, date: dV, approvers: aps, token: tkV, send: (uid, ev, retryKey) => fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV, 'X-Line-Retry-Key': retryKey }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: voidAlertText(dV, ev) }] }) }) })
       } catch (e) { if (e && e.code === 'stale') throw e; console.log('void notify err', e?.message) }
     }
     await announceChanged() // 開著的網頁即刻自動跟上

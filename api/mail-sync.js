@@ -299,7 +299,7 @@ async function syncPos0(days) {
       // 明細 key＝日期::店代碼（雙店同日不互蓋）；舊資料是純日期 key，若同店同日已存在（不論新舊格式）都不覆蓋
       for (const r of recs) {
         const dk = r.date + '::' + storeKeyOf(r.store)
-        const legacy = doc.days[r.date] && storeKeyOf(doc.days[r.date].store) === storeKeyOf(r.store)
+        const legacy = doc.days[r.date] && !doc.days[r.date].intraday && storeKeyOf(doc.days[r.date].store) === storeKeyOf(r.store) // 舊格式（只有日期）的正式明細才擋；暫存不擋（關卡 3 pos 第二輪 A3）
         if ((!doc.days[dk] || doc.days[dk].intraday) && !legacy) { doc.days[dk] = { date: r.date, // 盤中暫存明細＝正式日結取代（關卡 3 pos 第一輪 A3：原本被暫存擋住進不來）
  period: r.period, store: r.store, sheets: r._details, ...(r.seedVer ? { seedVer: r.seedVer } : {}) }; changed = true }
       }
@@ -365,7 +365,7 @@ async function ingestPosRecords0(recs, editor) {
     const did = 'sp_finance_pm_pos_d_' + mo
     const doc = (await kvGet(did)) || { days: {} }
     let ch = false
-    for (const r of list) { const dk = r.date + '::' + skOf2(r.store); if ((!doc.days[dk] || doc.days[dk].intraday) && !(doc.days[r.date] && skOf2(doc.days[r.date].store) === skOf2(r.store))) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; ch = true } }
+    for (const r of list) { const dk = r.date + '::' + skOf2(r.store); if ((!doc.days[dk] || doc.days[dk].intraday) && !(doc.days[r.date] && !doc.days[r.date].intraday && skOf2(doc.days[r.date].store) === skOf2(r.store))) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; ch = true } }
     if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, editor) }
   }
   if (add.length) {
