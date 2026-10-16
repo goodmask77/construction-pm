@@ -31,6 +31,12 @@
       if(w&&w.ok){ location.replace('/member#u='+encodeURIComponent(w.uid)+'&mt='+encodeURIComponent(w.mt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')+(ref?'&ref='+encodeURIComponent(ref):'')+(tab?'&tab='+encodeURIComponent(tab):'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
     if(to==='order'&&c){ M.textContent='🧾 開啟點餐頁…'; const w=await (await fetch('/api/mail-sync?gorder='+encodeURIComponent(c),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'who',at})})).json()
       if(w&&w.ok){ location.replace('/order/'+encodeURIComponent(c)+'#u='+encodeURIComponent(w.uid)+'&pt='+encodeURIComponent(w.pt)+'&n='+encodeURIComponent(w.name||'')+'&p='+encodeURIComponent(w.pic||'')) } else { M.textContent=(w&&w.error)||'LINE 登入失敗，請再點一次'; } return }
+    // v4.71.191 to=abgd＝用 LINE 登入新殼（新殼登入頁的「用 LINE 登入」）：換一次性橋接票 → 表單 POST 到新殼換登入 → 轉 next（只收站內路徑）；失敗＝講清楚，不亂轉
+    if(to==='abgd'){ M.textContent='🔑 登入新版…'
+      let nx='/'; try{ const q0=new URLSearchParams(location.search); const st0=q0.get('liff.state'); const q1=st0?new URLSearchParams(st0.startsWith('?')?st0.slice(1):st0):q0; const n0=q1.get('next')||'/'; if(n0.startsWith('/')&&!n0.startsWith('//')) nx=n0 }catch(_){}
+      const w=await (await fetch('/api/mail-sync?liffabgd=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({at})})).json().catch(()=>null)
+      if(w&&w.ok&&w.ticket&&w.base){ const f=document.createElement('form'); f.method='POST'; f.action=w.base+'/api/core/auth/bridge'; for(const [k,v] of [['ticket',w.ticket],['to',nx]]){ const i=document.createElement('input'); i.type='hidden'; i.name=k; i.value=v; f.appendChild(i) } document.body.appendChild(f); f.submit(); return }
+      M.innerHTML=((w&&w.error)||'登入新版失敗，請再點一次')+'<br><br>'; const b2=document.createElement('button'); b2.textContent='改進舊版 GD'; b2.style.cssText='padding:10px 18px;border-radius:999px;border:1px solid #3D4654;background:#1C2330;color:#E6EDF3;font-size:15px;font-weight:700'; b2.onclick=()=>location.replace(dest(s)); M.appendChild(b2); return }
     const r=await (await fetch('/api/mail-sync?liffauth=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({at})})).json()
     if(r&&r.ok&&r.me){ location.replace('/prep?me='+encodeURIComponent(r.me)+(s?('#'+decodeURIComponent(s)):'')) }
     else{
