@@ -40,9 +40,10 @@
 | 夥伴名冊 F26／入職 F27（頁面） | ✅ 10-16 16:55 GD 側欄入口指新殼 /ops/crew、/ops/onboarding（op=route；入口 hrm／onb 改掛 crew 域）。名冊資料仍留 GD（張良選 A），頁面＝GD p12-roster.js／p13-onboard.js 整檔副本，讀寫一律經**通用 GD 頁面轉接**（新殼 /api/ops/gd?p=頁&q=GD 端點 → GD 代發口 page_read／page_write，PAGES 白名單；身分證欄遮罩、權限照 GD）；看檔連結轉 GD 簽名網址 |
 | 換頁修正（全部 GD 頁面副本） | ✅ 10-16：①副本最外層 const／let 改 var（不重新整理換頁時「重複宣告」整頁失效；legacyfix.py）②副本不宣告全域 app（即時的 window.app）③**OwnedBox 認領 #app／#upd**（框架會保留上一頁＝同 id 兩個，副本拿到藏起來的舊容器＝空白）；正式站側欄連續換頁 5 頁實測全過 |
 | 新殼 LINE 登入＋新首頁＋大家改從新版進來 | ✅ 10-16 18:00：張良手機實測 LINE 登入可以、DD LIFE 已 Published。新殼 /login「用 LINE 登入」→ 員工 LIFF → GD ?liffabgd（只收員工 LIFF 頻道 token、認綁定、停權擋、60 秒一次性票）→ 新殼 bridge。**入口**：LIFF 通用連結（沒指定目的地）＝新殼首頁（v4.71.192）；深層連結照舊進 GD（分頁本來就轉新版）；舊版首頁最上面「新版已上線」一鍵自動登入新版（正式站實測）。新殼首頁＝各區入口＋營業數據 |
+| **取消／暫停（張良 10-16）** | ①主 App 遺留（零用金、財務帳本、工程任務）**取消不搬**：張良已把工程資料抓下來，主 App 不用了。②**會員系統、團體訂餐（自建點餐）、綠界金流暫停**、不給客人看到：GROUN:D 官方帳號圖文選單（六格）已取消（預設清除、7 位會員解除連結，選單本身沒刪）；客人頁 /member、/order、/member.html、/order.html 全導暫停頁；收件匣加好友歡迎／會員點數／門市客服／團訂卡片自動回停（_member.js MEMBER_PAUSED、_inbox.js MEMBER_OFF）；GD 側欄與新殼側欄藏會員、團體訂餐。資料都沒刪；恢復方法寫在程式註解。③新殼手機版頁面清單改可收合（選單鈕；收起時上方 81px） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.181（main）、GD v4.71.192（main，已部署 18:00）。
+版本：新殼 v0.4.182（main）、GD v4.71.193（main，已部署 18:20）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
@@ -80,16 +81,13 @@
 - GD 還在負責：首頁、設定、會員、DD（LINE 機器人）、通知中心、所有外部串接（LINE webhook、LIFF、LINE Pay／綠界回傳、排程、阿桑 partner-api、短網址、公開靜態頁）。
 - 新殼銷售數據頁速度：平常伺服器 P50 約 0.18 秒；資料剛更新後第一次約 1.2 秒（共用快取 ops.board_cache：全部機器只算一次）。
 
-### 剩下的階段（照 ABGD_MIGRATION_ORDER 執行順序 3～5）
-1. **權限／身分／DD／通知／設定（地基一起）**：張良 10-16 選 A＝等新殼登入取代 GD 登入時一起搬（GD 每個請求的權限判斷都讀這些）。要做：
-   - 新殼登入成為主入口：目前已有 GD 橋接票、4 位數登入碼；**LINE Login 未做**（要張良在 LINE Developers 後台加新殼的 callback 網址＝外部平台設定，見 external-setup-checklist）。
-   - 新殼首頁（取代 GD 首頁：今日營收＝新殼已有的營業數據、今日事項、SOP 摘要）、設定頁、通知中心（Web Push 訂閱要在新殼網域重新訂閱）。
-   - perm／identity／crewapp（名冊）一起切；GD 改讀新殼（或 GD 退役）。
-2. **DD（dd 域＋line-webhook.js）**：最大的一塊（LINE 每則訊息的去重、對話、AI 代查、所有自動訊息）。搬法要先過關卡 1 級的設計審查：webhook 指向新殼（LINE 後台設定＝張良）、或 GD 保留 webhook 只轉送。
-3. **會員（F25）**：GD 資料庫 12 張真表（目前 7 位會員、點數／來店／兌換 0 筆）＋客人 LIFF 頁（/member、/order）＋LINE。錢／點數規則＝新殼並行算、連續差 0 跑完一個完整月結才轉正。
-4. **外部串接統一切（關卡 4）**：LINE webhook（DD＋四個官方帳號收件匣）、LIFF 兩個、LINE Pay／綠界回傳網址、Vercel 排程、阿桑 partner-api、短網址 /v/、公開頁（salary、menu-ground.html、sw.js）。網址改到新殼都要張良在各平台後台改（或 GD 留轉址）。
-5. **總體檢（關卡 5）**。
-6. 待裁決：錢／點數 B 模式域（points、grporder、pos）要不要補「並行到月底差 0」。
+### 剩下的階段（10-16 18:20 依張良指示更新）
+1. **設定／通知中心／權限／身分／名冊（地基一起）**：新殼已是主入口（LINE 登入實測可以）。新殼設定頁、通知中心（Web Push 要在新殼網域重新訂閱）；perm／identity／crewapp 一起切。
+2. **DD（dd 域＋line-webhook.js）**：最大一塊；先過設計審查（webhook 指新殼 vs GD 留 webhook 轉送）。
+3. **外部串接統一切（關卡 4）**：LINE webhook（DD＋四個官方帳號收件匣）、員工 LIFF、Vercel 排程（NUEiP、喬亞、阿桑、inline、收信…）、阿桑 partner-api、短網址 /v/、公開頁（salary、menu-ground.html、sw.js）。
+4. **總體檢（關卡 5）**。
+- **不做**：主 App 遺留（取消）；會員、團體訂餐、綠界、客人 LIFF（暫停，要用再說）。
+- 待裁決：錢／點數 B 模式域（points、pos）要不要補「並行到月底差 0」（grporder 已暫停）。
 
 ## 10-14 物料卡學到的（下一個功能照做）
 - 速度看 PERF_RULES 原文：API 是「伺服器端」P95 ≤ 0.5 秒（看 server-timing），台灣端到端另一個門檻 ≤ 1 秒，冷啟動另記不算。scratchpad perf3.mjs 兩種一起量。
