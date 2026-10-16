@@ -3131,10 +3131,12 @@ export default async function handler(req, res) {
     if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '補卡由主管／審核人處理' })
     const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
     const it = (mk.list || []).find(x => x.id === pb.id)
-    if (!it || it.status !== 'pending') return res.status(400).json({ ok: false, error: '找不到或已處理' })
+    // v4.71.187 關卡 3：核准先搶處理權（processing 存檔＝別的主管同時退回會撞版本），再寫固定鍵打卡，最後標核准；處理中斷＝再按核准補完；退回只能從 pending
+    if (!it || !(it.status === 'pending' || (it.status === 'processing' && pb.action === 'approve'))) return res.status(400).json({ ok: false, error: it && it.status === 'processing' ? '另一位主管正在核准這筆' : '找不到或已處理' })
     if (pb.action === 'approve') {
+      if (it.status === 'pending') { it.status = 'processing'; it.procBy = whoP.name; await kvPut('sp_finance_pm_punch_makeup', mk, '補卡核准中(' + whoP.name + ')') }
       const pj2 = await import('./punch.js')
-      await pj2.recordPunchAt({ id: it.rid, name: it.name }, it.ts, it.dir, 'makeup', true, it.id) // 鍵＝補卡編號：撞版本整段重做不會補出兩筆
+      await pj2.recordPunchAt({ id: it.rid, name: it.name }, it.ts, it.dir, 'makeup', true, it.id) // 鍵＝補卡編號：重做不會補出兩筆
       it.status = 'approved'
     } else { it.status = 'rejected'; it.decReason = String(pb.reason || '').slice(0, 100) }
     it.byName = whoP.name; it.decAt = new Date().toISOString()
@@ -4262,11 +4264,13 @@ export default async function handler(req, res) {
     const aprP9 = (((defP9 || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoP9 || !(aprP9.includes(whoP9.name) || whoP9.name === '張良瑋' || whoP9.role === '主管')) return res.status(403).json({ ok: false, error: '只有主管能審核名冊' })
     const rosP9 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
-    const per9 = (rosP9.people || []).find(x => x.id === bp.id && x.onboarding)
-    if (!per9) return res.status(404).json({ ok: false, error: '找不到這位待審核的夥伴（可能已處理）' })
     const ob9 = await import('./_onboard.js')
+    const rosF9 = await crewRun('入職審核讀名冊', () => kvGet('sp_crew_kb_roster')) || { people: [] } // 決策讀新版（不讀寫回延遲的副本）
+    const per9 = (rosF9.people || []).find(x => x.id === bp.id && (x.onboarding || (bp.action === 'approve' && x.approvedAt)))
+    if (!per9) return res.status(404).json({ ok: false, error: '找不到這位待審核的夥伴（可能已處理）' })
     if (bp.action === 'approve') {
-      const r9 = await ob9.approveApp(bp.id, bp.dept || per9.dept || '', whoP9.name, '')
+      // 已核准過（上次名冊存好、人資主檔沒加到）＝跳過核准、只補主檔（可重按補完）
+      const r9 = per9.onboarding ? await ob9.approveApp(bp.id, bp.dept || per9.dept || '', whoP9.name, '') : { ok: true, already: true }
       if (r9.error) return res.status(400).json({ ok: false, error: r9.error })
       await crewRun('名冊審核加入(' + whoP9.name + ')', async () => {
       const docU9 = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }; docU9.rows = docU9.rows || []

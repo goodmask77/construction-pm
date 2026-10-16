@@ -49,28 +49,33 @@ const dayKey = () => tpeDate().replace(/-/g, '')
 // 逐筆讀某人某日打卡（LIKE 前綴；底線要跳脫——踩過的坑）
 export async function listPunches(prefix) { // mail-sync 班表分頁撈整月共用
   const inCtx = await crewHookPrefix(prefix) // 情境內＝依歸屬讀（新殼引擎／GD 原表），照鍵排序
-  if (inCtx !== undefined) return Object.keys(inCtx).sort().map(k => ({ key: k, ...inCtx[k] }))
+  if (inCtx !== undefined) return byTs(Object.keys(inCtx).map(k => ({ key: k, ...inCtx[k] })))
   const esc = prefix.replace(/_/g, '\\_')
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc + '%')}&select=id,data&order=id`, { headers: svc })
   const rows = r.ok ? await r.json() : []
-  return rows.map(x => { try { return { key: x.id, ...JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean)
+  return byTs(rows.map(x => { try { return { key: x.id, ...JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean))
 }
+// 依打卡時間排（同時間照鍵名）：判向、改向、工時都看「最後一筆＝時間最晚」，補卡（固定鍵）補早上的卡不會被當成最新（v4.71.187 關卡 3）
+function byTs(list) { return list.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) }
 export async function todayPunchesOf(personId) { return listPunches(`sp_crew_pch_${dayKey()}_${personId}_`) }
 export async function todayPunchesAll() { return listPunches(`sp_crew_pch_${dayKey()}_`) }
 
 // 寫一筆打卡（自動判向：今天最後一筆是上班→這筆下班，否則上班；LINE 備援講明「上班/下班」則以字面為準）
 export async function recordPunch(person, src, verified, forceDir) {
-  const { today, dir, ts, key, rec } = await crewRun('打卡(' + person.name + ')', async () => {
+  const { today, dir, ts, key, rec, dup } = await crewRun('打卡(' + person.name + ')', async () => {
     const today = await todayPunchesOf(person.id)
     const last = today[today.length - 1]
     const dir = forceDir || (last && last.dir === 'in' ? 'out' : 'in')
     const ts = new Date().toISOString()
-    const key = `sp_crew_pch_${dayKey()}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+    // 鍵＝人＋這一分鐘（v4.71.187 關卡 3）：同一分鐘重複按／兩台同時送＝同一筆（只新增；已存在就回那一筆，不出兩張）
+    const key = `sp_crew_pch_${dayKey()}_${person.id}_m${Math.floor(Date.now() / 60000).toString(36)}`
+    const ex = await kvGet(key)
+    if (ex) return { today: today.filter(x => x.key !== key), dir: ex.dir, ts: ex.ts, key, rec: ex, dup: true }
     const rec = { personId: person.id, name: person.name, ts, dir, src, verified: !!verified }
-    await kvSet(key, rec) // 新鍵＝只新增
+    await kvSet(key, rec) // 只新增（同時有人新增同一鍵＝撞版本→整段重做→讀到已存在）
     return { today, dir, ts, key, rec }
   })
-  if (dir === 'in') await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
+  if (dir === 'in' && !dup) await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
   // 今日累計（配對 in/out）
   const list = [...today, { ...rec, key }]
   let ms = 0

@@ -211,7 +211,7 @@ export async function handleOnboardEvent(ev) {
     onboarding: true, onboardAt: new Date().toISOString(), // 入職中：名冊「待審核」區會列出
     signToken: 'sg-' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8), // 契約簽署一次性連結
   }
-  return await bindPerson(uid, np, reply, true, (r) => { if (r.people.some(x => x.lineUserId === uid && (x.status || '在職') !== '離職')) return null; let q = r.people.find(x => x.id === np.id); if (!q) { q = { ...np }; r.people.push(q) } return q })
+  return await bindPerson(uid, np, reply, true, (r) => { if (r.people.some(x => x.lineUserId === uid && (x.status || '在職') !== '離職')) return null; if (r.people.some(x => x.id !== np.id && (x.status || '在職') !== '離職' && (x.name === name || (x.nick && x.nick === name)))) return null; let q = r.people.find(x => x.id === np.id); if (!q) { q = { ...np }; r.people.push(q) } return q })
 }
 
 // ── 契約簽署（App 入職卡/簽署頁用）──
