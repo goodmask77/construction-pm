@@ -8,6 +8,7 @@
 //   snap＝由該日全部快照重算整份蓋掉（冪等）；hours＝每次拿到最新時段表就整份蓋掉。
 //   日結後 opsboard 另外直接從日結明細的時段表算 hours（舊日子也看得到，不靠這個月檔）。
 
+import crypto from 'node:crypto'
 export const VOID_KEY = (ym) => 'sp_finance_pm_pos_void_' + ym
 
 // ② 快照相減：qdoc.slots=[{t:'11:00',at:'11:03',rev,tx,items:{name:q}}]（items 只收 q>0）
@@ -46,7 +47,7 @@ export async function recordVoidDay({ kvGet, kvPut, date, qdoc, slots, hours, ed
   const fresh = snap.filter(e => !seen.has(e.t))
   const changed = JSON.stringify({ a: prev.snap || [], b: prev.hours || [] }) !== JSON.stringify({ a: snap, b: hrs })
   if (changed) {
-    doc.days[date] = { snap, hours: hrs, updatedAt: new Date().toISOString() }
+    doc.days[date] = { ...prev, ntf: Array.isArray(prev.ntf) ? prev.ntf : (prev.snap || []).map(e => e.t), snap, hours: hrs, updatedAt: new Date().toISOString() } // ntf＝已通知的快照時點：新的一天＝[]；改版前的舊資料＝當時已有的事件當已通知（這次新記到的不算；關卡 3 pos 第二輪 A1）
     doc.updatedAt = new Date().toISOString()
     await kvPut(key, doc, editor || '退單偵測 ' + date)
   }
@@ -57,4 +58,45 @@ export async function recordVoidDay({ kvGet, kvPut, date, qdoc, slots, hours, ed
 export function voidAlertText(date, ev) {
   const its = Object.entries(ev.items || {}).map(([n, q]) => `${n} ${q}`).join('、')
   return `⚠️ GD 疑似退單／作廢（${date.slice(5)} ${ev.prev}～${ev.t}）\n營收 ${ev.rev > 0 ? '+' : ''}${ev.rev.toLocaleString()}　單數 ${ev.tx > 0 ? '+' : ''}${ev.tx}${its ? `\n品項（推估）：${its}` : ''}\n（15 分快照相減推估；同時段若有新單會互相抵銷，實際退的可能更多。/prep 首頁「退單／作廢紀錄」可看）`
+}
+
+// 退單私訊（v4.71.186）：只送「營收真的變少、還沒通知過」的快照事件
+//   ① 送之前先「領取」：該事件試送次數 +1 寫進月檔（撞版本＝還沒送就重做；中斷也記到次數）——同一事件最多領 8 次
+//   ② 每位審核人各記送達（ntfU＝「時點|uid」）：只對還沒送達的人送；帶固定 LINE 重送識別碼（重送／重做 LINE 去重）；全部送達才記進 ntf
+//   ③ 期限依事件發生時間：20 小時內一律補送（每輪最多 10 筆；LINE 重送識別碼去重 24 小時）；超過 20 小時＝放棄、留紀錄轉人工（關卡 3 pos 第三輪）
+//   舊資料沒有 ntf＝第一次遇到時現有事件一律當已通知；必須在所有銷售數據寫入完成之後呼叫
+const uuidOf = (s) => { const h = crypto.createHash('sha256').update(s).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
+const VOID_TTL_MS = 20 * 3600e3
+export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send, now = Date.now() }) {
+  const key = VOID_KEY(date.slice(0, 7))
+  const doc = (await kvGet(key)) || { days: {} }
+  const day = (doc.days || {})[date]; if (!day) return { sent: 0 }
+  if (!Array.isArray(day.ntf)) { day.ntf = (day.snap || []).map(e => e.t); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（建立已通知清單）'); return { sent: 0, init: day.ntf.length } }
+  const tries = { ...(day.ntfTry || {}) }, done = new Set(day.ntfU || [])
+  const evAt = (e) => Date.parse(date + 'T' + String(e.at || e.t || '00:00').slice(0, 5) + ':00+08:00')
+  const open = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t))
+  const expired = open.filter(e => now - evAt(e) >= VOID_TTL_MS || (Number(tries[e.t]) || 0) >= 8)
+  const pend = open.filter(e => !expired.includes(e)).slice(0, 10)
+  for (const e of expired) console.log('[voids] 退單通知超過 20 小時或試 8 次都沒送成，放棄（請人工確認）', date, e.t, e.rev)
+  if (!pend.length && !expired.length) return { sent: 0 }
+  const giveUp = () => { if (!expired.length) return; day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)] }
+  if (!token || !approvers.length) { if (expired.length) { giveUp(); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（放棄過期）') } return { sent: 0, pending: pend.length, gaveUp: expired.length } } // 沒設定也要把過期的放棄寫進去（不積壓；關卡 3 pos 第四輪）
+  // ① 領取：先記次數（和放棄的）再送
+  for (const e of pend) tries[e.t] = (Number(tries[e.t]) || 0) + 1
+  day.ntfTry = tries; giveUp()
+  doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（領取）')
+  // ② 送：只送還沒送達的人
+  const ok = []
+  for (const ev of pend) {
+    let all = true
+    for (const ap of approvers) {
+      if (done.has(ev.t + '|' + ap)) continue
+      if (Date.now() - evAt(ev) >= VOID_TTL_MS) { all = false; continue } // 每次真正送出前再查一次期限（領取後停很久才恢復＝不在 LINE 去重窗外重送；關卡 3 pos 第四輪 A1）
+      try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (r && (r.ok || r.status === 409)) done.add(ev.t + '|' + ap); else all = false } catch (_) { all = false }
+    }
+    if (all) ok.push(ev.t)
+  }
+  day.ntfU = [...done]; day.ntf = [...day.ntf, ...ok]
+  doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, ok.length ? '退單通知（已送）' : '退單通知（待重試）')
+  return { sent: ok.length, pending: pend.length - ok.length, gaveUp: expired.length }
 }

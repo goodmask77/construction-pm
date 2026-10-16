@@ -284,7 +284,7 @@ async function holYear(y) { // 行事曆：同 mail-sync ?twhol 的快取鍵（�
         const arr = await r9.json(); const h9 = {}, w9 = {}
         for (const x of arr) { if (!x.description) continue; const s8 = String(x.date); const dt = s8.includes('-') ? s8 : (s8.slice(0, 4) + '-' + s8.slice(4, 6) + '-' + s8.slice(6, 8)); if (x.isHoliday) h9[dt] = x.description; else w9[dt] = x.description }
         doc = { ts: new Date().toISOString(), hol: h9, wk: w9 }
-        await kvPut('sp_finance_pm_twhol_' + y, doc, '行事曆快取')
+        await (await import('./_poskv.js')).posRun('行事曆快取', () => kvPut('sp_finance_pm_twhol_' + y, doc, '行事曆快取')) // 行事曆快取歸銷售數據域（整份覆蓋）
       }
     } catch (_) {}
   }
