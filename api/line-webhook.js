@@ -2183,6 +2183,14 @@ async function summarizeOverflow(oldSummary, dropped) {
     return r.text || oldSummary || ''
   } catch (_) { return oldSummary || '' }
 }
+// 自動記住：同一則回答裡的幾句一次寫進同一筆（只試一次，見 memTx once）
+async function addMemoriesAuto(facts, by, budgetMs = 4000) {
+  const ts = new Date().toISOString()
+  const ents = []; for (const f of facts) { const t = String(f || '').trim().replace(/^[:：,，、\s]+/, '').slice(0, 200); if (t && !ents.some(e => e.text === t)) ents.push({ id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text: t, ts, source: 'auto', by: by || '' }) }
+  if (!ents.length) return []
+  return memTx((list) => { const add = ents.filter(e => !list.some(m => m.text === e.text)); return add.length ? { next: [...list, ...add].slice(-100), value: add } : { next: null, value: [] } }, budgetMs, true)
+}
+export { addMemory, addMemoriesAuto, removeMemory } // 測試用
 export async function pushChat(convId, userText, assistantText) { // export：v4.71.198 新殼 DD 回話後由 GD 代發口 dd_send 寫對話記憶（dd 域正本仍在 GD）
   try {
     const { h, sum: oldSum } = await loadConv(convId)
@@ -2201,21 +2209,55 @@ export async function pushChat(convId, userText, assistantText) { // export：v4
 }
 
 // ── D哥的長期記事本（pm_bot_memory）：永久記得的事實，每次對話都先翻一遍 ──
-async function getMemory() { const v = (await kvGetMany(['pm_bot_memory']))['pm_bot_memory']; return Array.isArray(v) ? v : [] }
-async function addMemory(text, source, by) {
-  const t = String(text || '').trim().replace(/^[:：,，、\s]+/, ''); if (!t) return null
-  const list = await getMemory()
-  if (list.some(m => m.text === t)) return null // 一模一樣不重複
-  const entry = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text: t.slice(0, 200), ts: new Date().toISOString(), source: source || 'manual', by: by || '' }
-  list.push(entry); await kvSet('pm_bot_memory', list.slice(-100)); return entry // 最多 100 條
+// v4.71.200 讀記事本依歸屬：正本在新殼＝讀新殼正本（剛記住／忘掉，下一句 AI 就讀得到，不等副本反推）；格式壞＝當空清單並記錄（不讓 AI 回答壞掉）
+//   第四輪 OpenAI A2：正本在新殼時讀不到（或歸屬查不到）＝這次不帶記事本、記健康紀錄，不退回可能落後的 GD 副本（免得把剛忘掉的又塞進 AI）
+async function getMemory() {
+  let own = null
+  try { const { abgdOwner } = await import('./_abgdkv.js'); own = await abgdOwner('pm_bot_memory') } catch (e) { ddHealthLog({ kind: 'error', err: 'DD 記事本歸屬查不到（這次不帶記事本）' }).catch(() => {}); return [] }
+  if (own === 'abgd') {
+    try { const kv = await abgdKv({ domain: 'ddmem', lockKey: 'pm_bot_memory', operator: 'DD', label: 'DD 記事本', versioned: true }); const gx = await kv.kvGetX('pm_bot_memory'); return memList(gx.doc, gx.exists) }
+    catch (e) { ddHealthLog({ kind: 'error', err: 'DD 記事本正本讀不到（這次不帶記事本）：' + String(e?.message || '').slice(0, 60) }).catch(() => {}); return [] }
+  }
+  if (own !== 'gd') return [] // 切換中／凍結：這次不帶
+  try { return memList((await kvGetMany(['pm_bot_memory']))['pm_bot_memory']) } catch (e) { console.log('[dd] 記事本格式壞了', e?.message); return [] }
+}
+// v4.71.200 DD 搬家批 2：記事本寫入依歸屬（ddmem 域：GD 正本＝版本比對寫 GD 表；新殼正本＝經命令橋寫）；撞到別人同時改＝重讀重做（自動記住除外：只試一次）；讀見 getMemory（依歸屬讀正本）
+// 格式壞掉（不是陣列、超過 100 條、項目欄位不對）＝丟錯不寫（第一輪 OpenAI A6：不把壞資料當空清單覆蓋）
+function memList(cur, exists) { // exists===true 且內容是 null＝壞（第三輪 OpenAI A3）；只有確定不存在才當空清單
+  if (exists === true && (cur === null || cur === undefined)) { const e = new Error('記事本存在但內容是空的（不寫入）'); e.code = 'badshape'; throw e }
+  if (cur === null || cur === undefined) return []
+  if (!Array.isArray(cur) || cur.length > 100 || cur.some(m => !m || typeof m !== 'object' || Array.isArray(m) || typeof m.id !== 'string' || typeof m.text !== 'string' || m.text.length > 200)) { const e = new Error('記事本格式壞了（不寫入）'); e.code = 'badshape'; throw e }
+  return cur
+}
+// 每次重建讀寫物件（重新取得歸屬）＋重讀重算；版本衝突、切換中（凍結／歸屬變動）、橋接暫時失敗都重試，最多約 15 秒（第一輪 OpenAI A3）；格式壞＝不重試
+// once＝只試一次（自動記住用；第四輪 OpenAI A1）：讀完若已超過預算就放棄不寫；寫入撞版本（中間有人改過，例如「忘記」）也放棄，不重讀重算——
+//   所以「回答送出後使用者才說忘記」的內容不會被這次自動記住寫回去（讀到的是忘記前的版本＝版本比對擋下；讀太慢＝已放棄）
+async function memTx(mut, budgetMs = 12000, once = false) { // budgetMs 是「要不要再試」的軟上限（單次網路呼叫各有自己的逾時）
+  let last = null; const t0 = Date.now()
+  for (let i = 0; i < (once ? 1 : 8) && Date.now() - t0 < budgetMs; i++) {
+    try {
+      const kv = await abgdKv({ domain: 'ddmem', lockKey: 'pm_bot_memory', operator: 'DD', label: 'DD 記事本', versioned: true })
+      const gx = await kv.kvGetX('pm_bot_memory'); const list = memList(gx.doc, gx.exists)
+      if (once && Date.now() - t0 > budgetMs) { const e = new Error('自動記住讀太慢，放棄'); e.code = 'late'; throw e }
+      const o = mut(list); if (!o || !o.next) return o ? o.value : null
+      await kv.kvPut('pm_bot_memory', o.next, 'DD'); return o.value
+    } catch (e) { if (e && (e.code === 'badshape' || e.code === 'late')) throw e; last = e; if (once) break }
+    const wait = Math.min(3000, 150 * 2 ** i) + Math.random() * 200
+    if (Date.now() - t0 + wait >= budgetMs) break // 最後一次失敗不再睡
+    await new Promise(r => setTimeout(r, wait))
+  }
+  throw last || new Error('記事本一直存不進去')
+}
+async function addMemory(text, source, by, opId, budgetMs, once) { // opId（待補補寫用）：同一操作只套用一次＝條目編號由 opId 決定，已有同編號就不再加
+  const t = String(text || '').trim().replace(/^[:：,，、\s]+/, '').slice(0, 200); if (!t) return null // 先截 200 字再比對（同新殼；第一輪 OpenAI B2）
+  const id = opId ? 'm' + crypto.createHash('sha1').update(String(opId)).digest('hex').slice(0, 12) : 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+  const entry = { id, text: t, ts: new Date().toISOString(), source: source || 'manual', by: by || '' }
+  return memTx((list) => list.some(m => m.text === t || m.id === id) ? { next: null, value: null } : { next: [...list, entry].slice(-100), value: entry }, budgetMs, once) // 一模一樣不重複；最多 100 條
 }
 async function removeMemory(query) {
   const q = String(query || '').trim(); if (!q) return 0
-  const list = await getMemory()
-  const keep = list.filter(m => !(m.text.includes(q) || q.includes(m.text)))
-  const removed = list.length - keep.length
-  if (removed) await kvSet('pm_bot_memory', keep)
-  return removed
+  // 沒找到也寫回一次（版本號推進＝忘記屏障：在途的舊自動記住會撞版本被擋；第五輪 OpenAI A1）
+  return memTx((list) => { const keep = list.filter(m => !(m.text.includes(q) || q.includes(m.text))); const removed = list.length - keep.length; return { next: keep, value: removed } })
 }
 const memoryToText = (list) => (list && list.length) ? '\n\n【D哥的長期記事本（永久記得，回答前優先參考）】\n' + list.map(m => '・' + m.text).join('\n') : ''
 // 從 AI 回覆抓出 [[記住:...]] 標記，回傳 {facts:[...], clean:'去掉標記後的文字'}
@@ -3070,9 +3112,9 @@ export default async function handler(req, res) {
           continue
         }
         const mForget = text.match(/^(忘記|忘掉|別記|不要記了?|刪(除|掉)記憶)[\s:：,，、]*(.+)/s)
-        if (mForget && (mForget[3] || '').trim()) { const n = await removeMemory(mForget[3]); await finish(n ? `好，忘掉了 ${n} 條相關的記憶。` : '記事本裡沒找到相關的，沒有刪到東西。'); continue }
+        if (mForget && (mForget[3] || '').trim()) { let n; try { n = await removeMemory(mForget[3]) } catch (_) { await finish('記事本這次存不進去，請再說一次 🙏'); continue } await finish(n ? `好，忘掉了 ${n} 條相關的記憶。` : '記事本裡沒找到相關的，沒有刪到東西。'); continue }
         const mRemember = text.match(/^(記住|幫我記住?|幫我記一下|記一下|記個|備註一下?)[\s:：,，、]*(.+)/s)
-        if (mRemember && (mRemember[2] || '').trim()) { const e = await addMemory(mRemember[2], 'manual', op.name); await finish(e ? `好 👍 我記住了：「${e.text}」` : '這件我已經記過囉。'); continue }
+        if (mRemember && (mRemember[2] || '').trim()) { let e; try { e = await addMemory(mRemember[2], 'manual', op.name) } catch (_) { await finish('記事本這次存不進去，請再說一次 🙏'); continue } await finish(e ? `好 👍 我記住了：「${e.text}」` : '這件我已經記過囉。'); continue }
       }
 
       // 1.6) 密碼庫（只限授權操作者私訊；固定指令、不經 AI、不進對話記憶）
@@ -3207,7 +3249,10 @@ export default async function handler(req, res) {
       } catch (e) { console.log('query tool err', e?.message) }
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
-      if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
+      if (canAct && facts.length) { // v4.71.200 自動記住：幾句一次寫、只試一次、約 4 秒（不拖慢回答）；寫不進去＝這句不記、健康頁記一筆（跟搬家前一樣是盡力而為；不做事後補寫，免得使用者說「忘記」後又被補回去——第三輪 OpenAI A1）
+        const autoP = addMemoriesAuto(facts, op?.name, 4000).catch((e) => { ddHealthLog({ kind: 'error', err: 'DD 自動記住沒記到 ' + facts.length + ' 句（' + String(e?.message || '').slice(0, 40) + '）' }).catch(() => {}) })
+        await Promise.race([autoP, new Promise((res) => setTimeout(res, 4500))])
+      }
       const reply = clean || rawReply
       const actions = canAct ? parseActions(reply) : []
       console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, mem: memList.length, autoFacts: facts.length, actions: actions.length, replyLen: reply.length }))

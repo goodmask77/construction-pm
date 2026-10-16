@@ -45,9 +45,10 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
   if (ow === 'gd' && versioned) { // 版本化：同一個物件內，寫入比對「這個物件上次讀到」的版本（沒讀過＝先讀）
     const seen = {} // k → { exists, rev }
     const kvGet = async (k) => { const g = await vGet(k); seen[k] = { exists: g.exists, rev: g.rev }; return g.v }
+    const kvGetX = async (k) => { const v = await kvGet(k); return { exists: !!seen[k].exists, doc: v } } // v4.71.200 分得出「不存在」與「存在但內容是空」
     const kvPut = async (k, v, ed, o) => { if (o && o.deadline && Date.now() > o.deadline) throw lateErr(label); if (!(k in seen)) await kvGet(k); const s = seen[k]; if (o && o.deadline && Date.now() > o.deadline) throw lateErr(label); const dl = o && o.deadline; if (s.exists) { seen[k] = { exists: true, rev: dl ? await vCasDl(k, s.rev, v, ed, label, dl) : await vCas(k, s.rev, v, ed, label) }; return true } if (!(dl ? await nInsertDl(k, v, ed, label, dl) : await nInsert(k, v, ed))) throw staleErr(label); delete seen[k]; return true } // 新增後版本由觸發器給，下次寫前重讀
     const kvGetMany = async (keys) => { const out = {}; for (const k of keys) { const v = await kvGet(k); if (v != null) out[k] = v } return out }
-    return { mode: 'gd', retry, kvGet, kvPrefix: nPrefix, kvGetMany, kvInsert: nInsert, kvPut, kvDel: async (k) => { if (!(await nDel(k))) throw new Error(BUSY(label)); return true } }
+    return { mode: 'gd', retry, kvGet, kvGetX, kvPrefix: nPrefix, kvGetMany, kvInsert: nInsert, kvPut, kvDel: async (k) => { if (!(await nDel(k))) throw new Error(BUSY(label)); return true } }
   }
   if (ow === 'gd') return {
     mode: 'gd', retry,
@@ -65,6 +66,7 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
     if (!j.ok) throw new Error('讀新版資料失敗：' + (j.error || r.status))
     return j.docs || {}
   }
+  const kvGetX = async (k) => { const g = (await read({ keys: [k] }))[k] || {}; revs[k] = Number(g.rev) || 0; return { exists: !!g.exists, doc: g.exists ? g.doc : null } }
   const kvGet = async (k) => { const g = (await read({ keys: [k] }))[k] || {}; revs[k] = Number(g.rev) || 0; return g.exists ? g.doc : null }
   const kvPrefix = async (pf, opt = {}) => { const d = await read({ prefix: pf, order: opt.order, limit: opt.limit }); const out = {}; for (const [k, g] of Object.entries(d)) { revs[k] = Number(g.rev) || 0; out[k] = g.doc } return out } // 回傳物件照伺服器排序
   const kvGetMany = async (keys) => { const out = {}; for (let i = 0; i < keys.length; i += 20) { const d = await read({ keys: keys.slice(i, i + 20) }); for (const [k, g] of Object.entries(d)) { revs[k] = Number(g.rev) || 0; if (g.exists) out[k] = g.doc } } return out }
@@ -81,7 +83,7 @@ export async function abgdKv({ domain, lockKey, operator, label = '這項資料'
   const kvInsert = async (k, v) => { try { const j = await cmd('put', { key: k, doc: v, baseRev: 0 }); revs[k] = Number(j.rev) || 1; return true } catch (e) { if (e && e.code === 'stale') return false; throw e } } // 只新增：已存在（版本不是 0）＝不覆蓋
   const cmdRaw = (action, args) => cmd(action, args) // 網域自訂命令（例：收件匣 apply）；失敗丟錯（帶 code）
   const gate = async () => { const body = JSON.stringify({ op: 'gate', domain, operator: String(operator || ''), ts: Date.now() }); const r = await fetch(base() + '/api/core/gdread', { method: 'POST', headers: { 'content-type': 'application/json', 'x-abgd-sig': sign(body) }, body, signal: AbortSignal.timeout(10000) }); const j = await r.json().catch(() => ({})); if (!j.ok) return '查不到切換驗收狀態，先不送出'; return j.gate || null } // null＝放行
-  return { mode: 'abgd', retry, kvGet, kvPrefix, kvGetMany, kvPut, kvInsert, kvDel, cmdRaw, gate }
+  return { mode: 'abgd', retry, kvGet, kvGetX, kvPrefix, kvGetMany, kvPut, kvInsert, kvDel, cmdRaw, gate }
 }
 
 // 刪任務＋清掉同空間其他任務對它的 dependsOn（v4.71.117；關卡 3 tasks 第一輪 OpenAI A3）：
