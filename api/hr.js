@@ -224,7 +224,7 @@ export default async function handler(req, res) {
         const { linePush } = await import('./_onboard.js')
         const { logPush } = await import('./push.js')
         const ops = (await kvGet('pm_bot_operators')) || {}
-        const push = async (txt, src) => { for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++ } } }
+        const push = async (txt, src) => { let okN = 0; for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++; okN++ } } return okN }
         if (hourTW >= 22) {
           // 每日收班順手同步 NUEiP 班表（前7天~後35天；改班/新增人員隔天自動跟上）
           try { const fs9 = await fetchShifts(addD(today, -7), addD(today, 35)); await storeShifts(fs9.days); if ((fs9.staff || []).length) await crewRun('NUEiP在職名單', () => kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單')) } catch (_) {}
@@ -232,18 +232,27 @@ export default async function handler(req, res) {
           const lines = anomalies(days[today])
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {
-          // v4.71.187 先登記再發（版本比對寫）：兩個排程同時跑也只有搶到登記的那個會發；發送失敗＝這則不補（寧可少發不重發）
-          const fresh = await crewTx('sp_crew_pm_hr_notif', (cur) => {
+          // v4.71.187 關卡 3：先搶發送權（版本比對寫 'sending'＋時間）→ 發 → 成功標 1；全部收件人都失敗＝撤回登記（下一輪重發）；
+          //   發到一半程序中斷＝'sending' 超過 10 分鐘視為沒發，下一輪重搶（寧可極少數重發，不會永久漏發）
+          const NK = 'sp_crew_pm_hr_notif', now9 = Date.now()
+          const fresh = await crewTx(NK, (cur) => {
             const nd = cur ? JSON.parse(JSON.stringify(cur)) : {}
             if (nd.date !== today) { nd.date = today; nd.keys = {} }
             nd.keys = nd.keys || {}
-            const fr = Object.values(days[today]).filter(r => r.late > 0 && !nd.keys[r.name + '|late'])
+            const due = (v) => !v || (typeof v === 'object' && v.st === 'sending' && now9 - (v.at || 0) > 10 * 60e3)
+            const fr = Object.values(days[today]).filter(r => r.late > 0 && due(nd.keys[r.name + '|late']))
             if (!fr.length) return { write: false, value: [] }
-            fr.forEach(r => { nd.keys[r.name + '|late'] = 1 })
+            fr.forEach(r => { nd.keys[r.name + '|late'] = { st: 'sending', at: now9 } })
             return { write: true, doc: nd, value: fr }
-          }, '遲到即時通知去重', 'NUEiP遲到通知')
+          }, '遲到即時通知（搶發送）', 'NUEiP遲到通知')
           if (fresh.length) {
-            await push(`⏰ 遲到打卡（即時）\n${fresh.map(r => `・${r.name}（${r.dept}）班 ${r.work}｜上班卡 ${(r.on || [])[0] || '—'}｜遲到 ${r.late} 分`).join('\n')}`, 'NUEiP遲到即時')
+            const okN = await push(`⏰ 遲到打卡（即時）\n${fresh.map(r => `・${r.name}（${r.dept}）班 ${r.work}｜上班卡 ${(r.on || [])[0] || '—'}｜遲到 ${r.late} 分`).join('\n')}`, 'NUEiP遲到即時')
+            const names9 = fresh.map(r => r.name + '|late')
+            await crewTx(NK, (cur) => { // 我搶的那幾個：成功＝標 1；全失敗＝撤回（別人後來重搶的不動）
+              const nd = cur ? JSON.parse(JSON.stringify(cur)) : {}; nd.keys = nd.keys || {}; let w = false
+              for (const k of names9) { const v = nd.keys[k]; if (v && typeof v === 'object' && v.at === now9) { if (okN) nd.keys[k] = 1; else delete nd.keys[k]; w = true } }
+              return { write: w, doc: nd, value: null }
+            }, '遲到即時通知（' + (okN ? '已發' : '沒發出去，撤回') + '）', 'NUEiP遲到通知')
           }
         }
       } catch (_) {}
