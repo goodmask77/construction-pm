@@ -33,7 +33,8 @@ export function applyDays(cur, { days, byRows, df, allowDelete, obsT, now = new 
 //   原本有資料、這批卻是空的＝不寫（來源出錯或漏頁時不清空正式資料；回 value.emptyGuard 讓呼叫端記錯）（關卡 3 boss OpenAI 第一輪 B）
 export function applySnap(cur, { rows, pk, obsT, now = new Date().toISOString() }) {
   if (cur && cur.obsAt && cur.obsAt > obsT) return { write: false }
-  if (!rows.length && cur && Object.keys(cur.rows || {}).length) return { write: false, value: { emptyGuard: Object.keys(cur.rows || {}).length } }
+  const curLen = cur && cur.rows ? Object.keys(cur.rows).length : 0
+  if (!rows.length && curLen) return { write: false, value: { emptyGuard: curLen } } // 真的要清空（來源確認全下架）＝人工刪該份文件（命令橋 del），不走排程
   const m = Object.fromEntries(rows.map(r => [pk(r), r]))
   return { write: true, doc: { rows: m, updatedAt: now, count: Object.keys(m).length, obsAt: obsT }, value: { dup: rows.length - Object.keys(m).length } }
 }

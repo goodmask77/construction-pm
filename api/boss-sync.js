@@ -162,7 +162,7 @@ export default async function handler(req, res) {
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
       const obsT = obsAt // 這批來源資料的抓取時間（抓之前取、跨月沿用；必填，關卡 3 boss OpenAI 第一輪 B：漏傳不能默默改用提交時間）
-      if (!obsT) throw new Error('writeRows 缺觀測時間')
+      if (!obsT) throw new Error(`${E.slug} writeRows 缺觀測時間`)
       // v4.71.172 全部月檔（交接異常＝incidents 域、其他＝boss 域）依歸屬版本比對寫（重讀重算）；每天各記觀測時間 obsD，只動「這批比文件裡那天更新」的日子（關卡 3 異常通知 OpenAI 十三輪定案的算法，_bosskv.applyDays 共用）
       const days = allowDelete ? daysBetween(from > m + '-01' ? from : m + '-01', to < m + '-31' ? to : m + '-31').filter(d => d.slice(0, 7) === m) : [...new Set(Object.values(byM[m] || {}).map(r => E.df(r)))]
       const mut = (cur) => applyDays(cur, { days, byRows: byM[m] || {}, df: E.df, allowDelete, obsT })
