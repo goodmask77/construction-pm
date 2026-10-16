@@ -8,6 +8,7 @@
 //   snap＝由該日全部快照重算整份蓋掉（冪等）；hours＝每次拿到最新時段表就整份蓋掉。
 //   日結後 opsboard 另外直接從日結明細的時段表算 hours（舊日子也看得到，不靠這個月檔）。
 
+import crypto from 'node:crypto'
 export const VOID_KEY = (ym) => 'sp_finance_pm_pos_void_' + ym
 
 // ② 快照相減：qdoc.slots=[{t:'11:00',at:'11:03',rev,tx,items:{name:q}}]（items 只收 q>0）
@@ -46,7 +47,7 @@ export async function recordVoidDay({ kvGet, kvPut, date, qdoc, slots, hours, ed
   const fresh = snap.filter(e => !seen.has(e.t))
   const changed = JSON.stringify({ a: prev.snap || [], b: prev.hours || [] }) !== JSON.stringify({ a: snap, b: hrs })
   if (changed) {
-    doc.days[date] = { snap, hours: hrs, updatedAt: new Date().toISOString() }
+    doc.days[date] = { ...(prev.ntf ? { ntf: prev.ntf } : {}), snap, hours: hrs, updatedAt: new Date().toISOString() } // ntf＝已通知的快照時點（保留）
     doc.updatedAt = new Date().toISOString()
     await kvPut(key, doc, editor || '退單偵測 ' + date)
   }
@@ -57,4 +58,25 @@ export async function recordVoidDay({ kvGet, kvPut, date, qdoc, slots, hours, ed
 export function voidAlertText(date, ev) {
   const its = Object.entries(ev.items || {}).map(([n, q]) => `${n} ${q}`).join('、')
   return `⚠️ GD 疑似退單／作廢（${date.slice(5)} ${ev.prev}～${ev.t}）\n營收 ${ev.rev > 0 ? '+' : ''}${ev.rev.toLocaleString()}　單數 ${ev.tx > 0 ? '+' : ''}${ev.tx}${its ? `\n品項（推估）：${its}` : ''}\n（15 分快照相減推估；同時段若有新單會互相抵銷，實際退的可能更多。/prep 首頁「退單／作廢紀錄」可看）`
+}
+
+// 退單私訊（v4.71.186）：只送「營收真的變少、還沒通知過」的快照事件；每個事件×每位審核人帶固定 LINE 重送識別碼（重送／重做 LINE 去重）；
+//   全部審核人都送達（2xx 或 409＝同識別碼已收過）才記進 ntf；沒送成的下一輪補送。舊資料沒有 ntf＝第一次遇到時現有事件一律當已通知（不補發改版前的）
+//   必須在所有銷售數據寫入完成之後呼叫（後面不再有寫入＝不會因撞版本整段重做而重發；記 ntf 撞版本重做也靠識別碼去重）
+const uuidOf = (s) => { const h = crypto.createHash('sha256').update(s).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
+export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send }) {
+  const key = VOID_KEY(date.slice(0, 7))
+  const doc = (await kvGet(key)) || { days: {} }
+  const day = (doc.days || {})[date]; if (!day) return { sent: 0 }
+  if (!Array.isArray(day.ntf)) { day.ntf = (day.snap || []).map(e => e.t); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（建立已通知清單）'); return { sent: 0, init: day.ntf.length } }
+  const pend = (day.snap || []).filter(e => e.rev < 0 && !day.ntf.includes(e.t)).slice(0, 3)
+  if (!pend.length || !token || !approvers.length) return { sent: 0 }
+  const ok = []
+  for (const ev of pend) {
+    let all = true
+    for (const ap of approvers) { try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (!(r && (r.ok || r.status === 409))) all = false } catch (_) { all = false } }
+    if (all) ok.push(ev.t)
+  }
+  if (ok.length) { day.ntf = [...day.ntf, ...ok]; doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（已送）') }
+  return { sent: ok.length, pending: pend.length - ok.length }
 }

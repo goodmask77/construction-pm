@@ -32,16 +32,16 @@ export async function posRun(op, fn) {
     catch (e) { if (i >= 4 || !(e && e.code === 'stale')) throw e; await sleep(150 + Math.random() * 400) }
   }
 }
-async function ctxKv() { const st = als.getStore(); if (!st) return null; if (!st.kv) st.kv = await newKv(st.op); return st.kv }
+async function ctxKv() { const st = als.getStore(); if (!st) return null; if (!st.kvP) st.kvP = newKv(st.op); st.kv = await st.kvP; return st.kv } // 共用同一個初始化（同情境並行讀寫也只有一個讀寫物件；關卡 3 pos 第一輪 B1）
 // 給 mail-sync kvGet 用：情境內＝依歸屬版本化讀（記版本）；情境外＝回 undefined（呼叫端照舊讀 GD 副本，看板類讀取不繞新殼）
 export async function posHookGet(id) { const k = await ctxKv(); return k ? k.kvGet(id) : undefined }
-// 給 mail-sync kvPut 用：情境內＝比對讀到的版本寫（撞版本丟 stale 讓 posRun 重做）；情境外＝單筆「重讀最新版本再寫」並留警告（不該發生，測試會抓）
+// 給 mail-sync kvPut 用：情境內＝比對讀到的版本寫（撞版本丟 stale 讓 posRun 重做）；情境外＝拒絕（讀改寫若不在情境裡，「重讀版本再寫」會拿舊內容蓋掉別人；關卡 3 pos 第一輪 A1）
 export async function posHookPut(id, obj, editor) {
   const k = await ctxKv()
   if (k) { await k.kvPut(id, obj, editor || '銷售數據'); return true }
-  console.log('[poskv] 情境外寫入（改單筆版本化）', id, editor)
-  await posPut(id, obj, editor); return true
+  console.log('[poskv] 情境外寫入被拒', id, editor)
+  const e = new Error('銷售數據寫入要在同步情境裡（程式漏包了）：' + id); e.code = 'nopos'; throw e
 }
 export const posInCtx = () => !!als.getStore()
 // 確認身分後把這次的操作者改成本人（讀寫物件還沒建才改；驗收閘門只認驗收者本人；同 _socialkv socSetOp）
-export function posSetOp(name) { const st = als.getStore(); if (st && !st.kv && name) st.op = String(name).slice(0, 30) }
+export function posSetOp(name) { const st = als.getStore(); if (st && !st.kvP && name) st.op = String(name).slice(0, 30) }

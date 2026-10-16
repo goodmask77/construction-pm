@@ -268,7 +268,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, taipei: hm, gd: 'GD時段外', ...extra })
   }
   try { return await posRun('喬亞盤中更新', async () => { // 撞版本整段重做：退單通知只發「這次新記到的事件」，重做時已記過＝不重發
-    const today = taipeiToday()
+    const today = taipeiToday(); let voidDay = null
     const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
     const isGround = (n) => /groun/i.test(n || '')
     const cur = store.entries.find(e => e.date === today && isGround(e.store))
@@ -293,7 +293,7 @@ export default async function handler(req, res) {
     // 明細月檔：同樣只蓋今天的盤中明細（品項/時段下鑽跟著即時）
     const did = 'sp_finance_pm_pos_d_' + today.slice(0, 7)
     const doc = (await kvGet(did)) || { days: {} }
-    doc.days[today + '::ground'] = { date: today, period: rec.period, store: rec.store, sheets: _details, intraday: true }
+    const dk0 = doc.days[today + '::ground']; if (!(dk0 && !dk0.intraday)) doc.days[today + '::ground'] = { date: today, period: rec.period, store: rec.store, sheets: _details, intraday: true } // 已是正式明細＝不蓋（關卡 3 pos 第一輪 A3）
     doc.updatedAt = new Date().toISOString()
     await kvPut(did, doc, '喬亞盤中更新 ' + hm)
     // 快照（視窗外的手動更新不記，資料格線才乾淨；同格重複抓不重記）
@@ -311,20 +311,11 @@ export default async function handler(req, res) {
         await kvPut(qid, qdoc, '喬亞15分快照 ' + slotHit)
       }
       // v4.71.6 退單／作廢偵測（張良 2026-10-12「每一筆都要清楚」）：快照相減（營收／單數／品項變少）＋時段表負數 → 月檔 pm_pos_void_；新事件私訊審核人（金額敏感不進群）
-      try {
-        const { recordVoidDay, voidAlertText } = await import('./_voids.js')
-        const vr = await recordVoidDay({ kvGet, kvPut, date: today, qdoc, slots: day.slots || [], editor: '退單偵測 ' + hm })
-        const tkV = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        const freshV = vr.fresh.filter(e => e.rev < 0) // 只通知「營收真的變少」的；只有品項變少（改單／換品）不吵
-        if (tkV && freshV.length) {
-          const [defV, rosV] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
-          for (const an of (((defV || {}).ground || {}).approvers || ['張良瑋'])) {
-            const ap = ((rosV || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)
-            if (!ap) continue
-            for (const ev of freshV.slice(0, 3)) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: voidAlertText(today, ev) }] }) })
-          }
-        }
-      } catch (e) { console.log('void detect err', e?.message) }
+      try { // 只記錄（冪等）；私訊移到所有寫入完成之後（notifyVoidDay，v4.71.186 關卡 3 pos 第一輪）
+        const { recordVoidDay } = await import('./_voids.js')
+        await recordVoidDay({ kvGet, kvPut, date: today, qdoc, slots: day.slots || [], editor: '退單偵測 ' + hm })
+        voidDay = today
+      } catch (e) { if (e && e.code === 'stale') throw e; console.log('void detect err', e?.message) }
       // ② 整/半點 {t,rev,tx} → 月檔（既有半小時圖與 DD 的口徑不動、檔案不變肥）
       if (/:(00|30)$/.test(slotHit)) {
         const hid = 'sp_finance_pm_pos_hh_' + today.slice(0, 7)
@@ -336,6 +327,16 @@ export default async function handler(req, res) {
           await kvPut(hid, hdoc, '喬亞半小時快照 ' + slotHit)
         }
       }
+    }
+    // 退單私訊：所有銷售數據寫入都完成之後才送（後面不再寫＝不會因撞版本整段重做而重發）；沒送成的下一輪補送，LINE 重送識別碼去重
+    if (voidDay) {
+      try {
+        const { notifyVoidDay, voidAlertText } = await import('./_voids.js')
+        const tkV = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const [defV, rosV] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+        const aps = (((defV || {}).ground || {}).approvers || ['張良瑋']).map(an => ((rosV || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)).filter(Boolean).map(p2 => p2.lineUserId)
+        await notifyVoidDay({ kvGet, kvPut, date: voidDay, approvers: aps, token: tkV, send: (uid, ev, retryKey) => fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkV, 'X-Line-Retry-Key': retryKey }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: voidAlertText(voidDay, ev) }] }) }) })
+      } catch (e) { if (e && e.code === 'stale') throw e; console.log('void notify err', e?.message) }
     }
     await announceChanged() // 開著的網頁即刻自動跟上
     return res.status(200).json({ ok: true, updated: true, taipei: hm, date: today, revenue: rec.revenue, txCount: rec.txCount, snap: slotHit || null, ...extra })
