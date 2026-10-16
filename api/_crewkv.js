@@ -19,15 +19,17 @@ const AUTH_RE = /^(sp_crew_kb_roster|sp_finance_pm_hr_idlock|sp_finance_pm_prep_
 const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '')
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '')
 const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o }, {}) : x)
-let lagN = 0 // 等不到 GD 副本的次數（呼叫端前後比對＝這次有沒有延遲，回覆要講「約 1 分鐘內生效」；關卡 3 auth 第一輪 Gemini／OpenAI A1）
-export const crewLagN = () => lagN
-export async function awaitGdCopy(id, doc, ms = 8000) {
+// 等不到 GD 副本的次數：只算「這次操作」自己的寫入（crewLagWatch 包起來的那段；關卡 3 auth 第二輪 Gemini 2／OpenAI B3：不用全域計數，別人的延遲不會算到你頭上）
+const lagAls = new AsyncLocalStorage()
+export async function crewLagWatch(fn) { const st = { lag: 0 }; const v = await lagAls.run(st, fn); return { v, lag: st.lag > 0 } }
+export async function awaitGdCopy(id, doc, ms = 5000) { // 5 秒（第二輪 Gemini 4：一次操作最多寫三份，8 秒×3 太久）
   const want = stable(doc), t0 = Date.now()
   while (Date.now() - t0 < ms) {
     try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: AbortSignal.timeout(Math.max(500, Math.min(3000, ms - (Date.now() - t0)))) }); const rows = r.ok ? await r.json() : []; const v = rows[0] && rows[0].data && rows[0].data.v; if (v != null && stable(JSON.parse(v)) === want) return true } catch (_) {}
     await sleep(400)
   }
-  lagN++; console.log('[crewkv] GD 副本 8 秒內沒追上（排程會補）', id); return false
+  const st = lagAls.getStore(); if (st) st.lag++
+  console.log('[crewkv] GD 副本 5 秒內沒追上（排程會補）', id); return false
 }
 const afterPut = async (k, id, obj) => { if (k && k.mode === 'abgd' && AUTH_RE.test(String(id))) await awaitGdCopy(id, obj) }
 const als = new AsyncLocalStorage()

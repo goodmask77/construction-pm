@@ -3695,7 +3695,7 @@ export default async function handler(req, res) {
     if (!who || !pm.users[who.rid || who.uid]?.admin) return res.status(403).json({ ok: false, error: '只有管理者能改權限' })
     const rid = String(bp.rid || '')
     let notifyA = null // v4.71.196 搬家前置：核准通知改成「存檔成功後」才發（撞版本整段重跑不會重複私訊）
-    if (bp.op === 'approve' && pm.pending[rid]) {
+    if (bp.op === 'approve' && pm.pending[rid] && !pm.pending[rid].rejecting) { // rejecting＝DD 拒絕處理中（解除綁定做到一半），不能核准（關卡 3 auth 第二輪）
       const appr = pm.pending[rid]
       const snap = (pm.removed || {})[rid] // v4.32.1 之前被移除過＝還原他原本的勾選；全新夥伴＝套團隊共同設定
       pm.users[rid] = { ...(snap ? { tabs: snap.tabs, hide: snap.hide } : prepPermTmpl(pm)), name: appr.name, edit: 1, by: who.name, ts: appr.ts }
@@ -4738,7 +4738,7 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_prep_perm', pm, '綁定改正口')
       return res.status(200).json({ ok: true, fixed, pending: Object.values(pm.pending || {}).map(v => v.name), users: Object.values(pm.users || {}).map(v => v.name) })
     }
-    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const okA = []; const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { const sn = (pm.removed || {})[r]; pm.users[r] = { ...(sn ? { tabs: sn.tabs, hide: sn.hide } : prepPermTmpl(pm)), name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; if (sn) delete pm.removed[r]; delete pm.pending[r]
+    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const okA = []; const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v && !v.rejecting) { const sn = (pm.removed || {})[r]; pm.users[r] = { ...(sn ? { tabs: sn.tabs, hide: sn.hide } : prepPermTmpl(pm)), name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; if (sn) delete pm.removed[r]; delete pm.pending[r]
       okA.push([r, v]) // v4.71.196 通知改到存檔成功後才發
     } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)')
       for (const [r, v] of okA) { try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {} } }
