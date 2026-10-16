@@ -79,10 +79,11 @@ export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send
   const pend = open.filter(e => !expired.includes(e)).slice(0, 10)
   for (const e of expired) console.log('[voids] 退單通知超過 20 小時或試 8 次都沒送成，放棄（請人工確認）', date, e.t, e.rev)
   if (!pend.length && !expired.length) return { sent: 0 }
-  if (!token || !approvers.length) return { sent: 0, pending: pend.length }
+  const giveUp = () => { day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)] }
+  if (!token || !approvers.length) { if (expired.length) { giveUp(); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（放棄過期）') } return { sent: 0, pending: pend.length, gaveUp: expired.length } } // 沒設定也要把過期的放棄寫進去（不積壓；關卡 3 pos 第四輪）
   // ① 領取：先記次數（和放棄的）再送
   for (const e of pend) tries[e.t] = (Number(tries[e.t]) || 0) + 1
-  day.ntfTry = tries; day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)]
+  day.ntfTry = tries; giveUp()
   doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（領取）')
   // ② 送：只送還沒送達的人
   const ok = []
@@ -90,6 +91,7 @@ export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send
     let all = true
     for (const ap of approvers) {
       if (done.has(ev.t + '|' + ap)) continue
+      if (Date.now() - evAt(ev) >= VOID_TTL_MS) { all = false; continue } // 每次真正送出前再查一次期限（領取後停很久才恢復＝不在 LINE 去重窗外重送；關卡 3 pos 第四輪 A1）
       try { const r = await send(ap, ev, uuidOf(date + '|' + ev.t + '|' + ap)); if (r && (r.ok || r.status === 409)) done.add(ev.t + '|' + ap); else all = false } catch (_) { all = false }
     }
     if (all) ok.push(ev.t)
