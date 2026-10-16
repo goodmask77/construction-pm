@@ -4,6 +4,7 @@
 // 歷史回補：?force=<MENU_PROBE_KEY>&date=YYYY-MM-DD 指定日；?force&back=1 自動找最近還沒建檔的營業日建一天。
 // 窗：11:30~21:15 起點、每 15 分（AB 12:30 開但抓寬一點）＝40 請求/天，間隔 300ms 溫柔打。
 import { kvGet, kvPut, announceChanged } from './mail-sync.js'
+import { posRun } from './_poskv.js' // v4.71.186 銷售數據寫入依歸屬版本比對（兩筆都是整份覆蓋，各自包起來；抓 40 次 Eats365 不整段重做）
 import { eatsSession, eatsItemsRange } from './_eats.js'
 
 const SLOTS = []
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
     const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
     const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
     const devName = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
-    if (devName) await kvPut('sp_finance_pm_eats_sess', { device: devName + '=' + sess.J.jar[devName], updatedAt: new Date().toISOString() }, 'AB節奏') // cookie 滾動續期（同 syncEatsLive）
+    if (devName) await posRun('AB節奏', () => kvPut('sp_finance_pm_eats_sess', { device: devName + '=' + sess.J.jar[devName], updatedAt: new Date().toISOString() }, 'AB節奏')) // cookie 滾動續期（同 syncEatsLive）
     const slots = []
     let total = 0
     for (const t of SLOTS) {
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
       if (n > 0) slots.push({ t, items })
       await sleep(300)
     }
-    await kvPut('sp_finance_pm_pos_q_ab_' + date, { date, kind: 'win', slots, updatedAt: new Date().toISOString() }, 'AB節奏表建檔 ' + date)
+    await posRun('AB節奏表建檔', () => kvPut('sp_finance_pm_pos_q_ab_' + date, { date, kind: 'win', slots, updatedAt: new Date().toISOString() }, 'AB節奏表建檔 ' + date))
     await announceChanged()
     return res.status(200).json({ ok: true, date, slots: slots.length, qty: total })
   } catch (e) { return res.status(200).json({ ok: false, error: e?.message }) }

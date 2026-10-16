@@ -6,6 +6,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // intraday 記錄當缺日重抓成最終值（盤中數字不會凍住）。手動測試：?force=<MENU_PROBE_KEY>
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
 import { kvGet, kvPut, announceChanged, invStatus } from './mail-sync.js'
+import { posRun } from './_poskv.js' // v4.71.186 銷售數據寫入包在情境裡（依歸屬版本比對；撞版本整段重做）
 import { wpPush, wpPushUids, prepLink } from './_webpush.js' // v4.33.0 Web Push＋LIFF連結（點通知/群組連結直接開GD帶身分）
 import { syncEatsLive, eatsSession, eatsItemList } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
 
@@ -93,7 +94,7 @@ export default async function handler(req, res) {
       const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
       const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
       const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
-      if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售偵測')
+      if (devN) await posRun('AB停售偵測', () => kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售偵測'))
       const obsSo = (await import('./_inckv.js')).obsStamp() // 抓清單前記時間（關卡 3 OpenAI A1：手動掃描與排程重疊時，較舊的觀測不得蓋掉較新的、也不發群）
       const items = await eatsItemList(sess)
       const nowSo = {}
@@ -185,7 +186,7 @@ export default async function handler(req, res) {
     const wdF = tpeF.getUTCDay()
     if (wdF >= 1 && wdF <= 5 && hm >= '11:00' && hm < '11:20') {
       const { fcDaily } = await import('./_fc.js')
-      await fcDaily(kvGet, kvPut, tpeF.toISOString().slice(0, 10))
+      await posRun('銷量預測快照', () => fcDaily(kvGet, kvPut, tpeF.toISOString().slice(0, 10))) // 只讀既有資料算預測，撞版本整段重做
     }
   } catch (e) { console.log('fc snapshot err', e?.message) }
   // 低水位「今天已處理」標記：條件寫入（帶讀到的 updated_at；GD kvPut 每次都更新 updated_at，被別人改過＝0 列 → 重讀再試）＝不會把同時進來的盤點蓋掉
@@ -228,7 +229,7 @@ export default async function handler(req, res) {
   // ── AB 即時＋參考店（獨立 try：AB 掛了不影響 GD，反之亦然）──
   const extra = {}
   if (abHit) {
-    try {
+    try { await posRun('AB盤中更新', async () => { // 只讀 Eats365，沒有對外動作＝撞版本整段重做
       const abLive = await syncEatsLive(kvGet, kvPut)
       extra.ab = abLive
       // v4.67.0 AB即時化（張良 2026-10-08 轉給CC①：AB 跟 GD 一樣盤中更新）：把 AB 即時營收寫進 pos entries(intraday=true)，
@@ -247,7 +248,7 @@ export default async function handler(req, res) {
           arr.sort((a, b) => (a.t < b.t ? -1 : 1))
           hhDoc.updatedAt = new Date().toISOString()
           await kvPut(hhKey, hhDoc, 'AB時段快照 ' + hm)
-        } catch (_) {}
+        } catch (e9) { if (e9 && e9.code === 'stale') throw e9 } // 撞版本往外丟（整段重做）；其他錯誤照舊不影響主流程
         const posAB = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
         const isAB = (n) => /beach/i.test(n || '')
         const curAB = posAB.entries.find(e => e.date === abToday && isAB(e.store))
@@ -259,14 +260,14 @@ export default async function handler(req, res) {
           await kvPut('sp_finance_pm_pos', posAB, 'Eats365 盤中更新 ' + hm)
         }
       }
-    } catch (e) { extra.ab = { error: e?.message || String(e) } }
+    }) } catch (e) { extra.ab = { error: e?.message || String(e) } }
     // 參考店 1/2 已退役（張良 2026-09-24：停抓＋刪設定與數據）
   }
   if (!hit && !force && !manual) { // 只有 AB 場次（GD 已打烊 19:30 後）：發廣播直接回
     await announceChanged()
     return res.status(200).json({ ok: true, taipei: hm, gd: 'GD時段外', ...extra })
   }
-  try {
+  try { return await posRun('喬亞盤中更新', async () => { // 撞版本整段重做：退單通知只發「這次新記到的事件」，重做時已記過＝不重發
     const today = taipeiToday()
     const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
     const isGround = (n) => /groun/i.test(n || '')
@@ -338,7 +339,7 @@ export default async function handler(req, res) {
     }
     await announceChanged() // 開著的網頁即刻自動跟上
     return res.status(200).json({ ok: true, updated: true, taipei: hm, date: today, revenue: rec.revenue, txCount: rec.txCount, snap: slotHit || null, ...extra })
-  } catch (e) {
+  }) } catch (e) {
     await announceChanged().catch(() => {}) // AB 那邊若有更新照樣廣播
     return res.status(200).json({ ok: false, error: e?.message || String(e), taipei: hm, ...extra })
   }

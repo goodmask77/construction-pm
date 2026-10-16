@@ -12,6 +12,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { VOID_KEY, voidsFromSnapshots, negHoursFromSheetRows, recordVoidDay } from './_voids.js' // ⚠️ GD 退單／作廢偵測（v4.71.6 張良 2026-10-12）
+import { POS_RE, posHookGet, posHookPut, posRun, posInCtx, posSetOp } from './_poskv.js' // v4.71.186 銷售數據域依歸屬版本比對寫（同步流程包在 posRun 情境裡）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsCas, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
@@ -29,6 +30,7 @@ const M1U = clean(process.env.MAIL_USER), M1P = clean(process.env.MAIL_PASS)   /
 const M2U = clean(process.env.MAIL_USER2), M2P = clean(process.env.MAIL_PASS2) // money@gumgum.club（Eats365）
 
 export async function kvGet(id) { // export：joya-intraday.js（盤中更新）共用
+  if (POS_RE.test(String(id))) { const v = await posHookGet(id); if (v !== undefined) return v } // 銷售數據：同步情境內依歸屬版本化讀；情境外照舊讀 GD 副本
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
   const rows = r.ok ? await r.json() : []
   try { return rows[0]?.data?.v ? JSON.parse(rows[0].data.v) : null } catch (_) { return null }
@@ -118,6 +120,7 @@ const SHIFTPLAN_WRITE_QS = ['laborset', 'abmodset']
 const PAYROLL_WRITE_QS = ['payset', 'vioresset', 'vionotify']
 const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
+  if (POS_RE.test(String(id))) { await posHookPut(id, obj, editor); CHANGED.add(id); return true } // 銷售數據：依歸屬版本比對寫（失敗丟錯，撞版本丟 stale 讓 posRun 重做）
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
@@ -228,7 +231,8 @@ async function syncCtbc(days) {
 
 // ── ② Eats365 POS 日結（xlsx 附件）──────────────────────────
 // 解析函式已抽到 ./_pos-parse.js（sheetSections/parsePosWorkbook/parseTxSheet）——前端手動匯入共用同一套
-async function syncPos(days) {
+async function syncPos(days) { return posRun('POS日結自動收信', () => syncPos0(days)) } // v4.71.186 銷售數據寫入包在情境裡（撞版本整段重做：只讀信箱，沒有對外動作）
+async function syncPos0(days) {
   // 來源：money@gumgum.club（設 MAIL_USER2/MAIL_PASS2 後）＋ goodmask77（吃「轉寄/自動轉寄」的報表信）
   const accounts = []
   if (M2U && M2P) accounts.push([M2U, M2P])
@@ -326,7 +330,8 @@ async function syncPos(days) {
 
 // 共用回填插入（手動回填口＋喬亞自動抓取共用；同 syncPos 口徑：id 與 日期|店 都去重、明細月檔不覆蓋）
 // AB 每小時營收寫入熱力圖來源（sp_finance_pm_ab_hhrev_YYYY-MM）：{days:{date:{hour:rev}}}；來源＝Eats365 後台 hourlySalesRecordMap，可回補任意歷史日。回補口＋每日自動補抓共用（張良 2026-10-10 AB 熱力圖跟 GD 一樣）
-async function saveAbHourly(recs) {
+async function saveAbHourly(recs) { return posRun('AB每小時營收回補', () => saveAbHourly0(recs)) }
+async function saveAbHourly0(recs) {
   const byMo = {}
   for (const r of recs) {
     if (!r || !r.date || !r.hourly || !Object.keys(r.hourly).length) continue
@@ -346,7 +351,8 @@ async function saveAbHourly(recs) {
   return saved
 }
 
-export async function ingestPosRecords(recs, editor) { // export：boss-sync.js fillpos（AB 4~6月營收回填）共用
+export async function ingestPosRecords(recs, editor) { return posRun(editor || 'POS入庫', () => ingestPosRecords0(recs, editor)) } // export：boss-sync.js fillpos（AB 4~6月營收回填）共用；巢狀沿用外層情境
+async function ingestPosRecords0(recs, editor) {
   const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
   // v4.67.0 AB即時化：去重只看「正式(非盤中)」筆——盤中(intraday)是暫存，不能擋正式日結進來、也不參與去重
@@ -374,7 +380,8 @@ export async function ingestPosRecords(recs, editor) { // export：boss-sync.js 
 
 // GROUN:D 喬亞行動報表自動抓取（張良 2026-08-26）：每次 cron 跑，補「昨天以前 N 天」還沒入庫的日子
 // 只抓昨天以前（今天營業中、只增不改不能提早凍結）；營收 0 的公休日不入庫
-async function syncJoya(daysBack) {
+async function syncJoya(daysBack) { return posRun('喬亞行動報表自動抓取', () => syncJoya0(daysBack)) } // 只讀喬亞後台，沒有對外動作
+async function syncJoya0(daysBack) {
   if (!process.env.JOYA_USER) return { skipped: '未設 JOYA_* 環境變數' }
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
   const today = taipeiToday()
@@ -429,7 +436,10 @@ async function syncJoya(daysBack) {
   return { checked: dates.length, needed: need.length, closedDays: closed, slotPatched, staleIntraday: stale.length, ...out2 }
 }
 
+// 銷售數據手動口（v4.71.186）：整個請求包進銷售數據情境（寫入前都沒有對外動作；撞版本＝整段重做，回應還沒送出）
+const POS_Q = ['slotex', 'slotexset', 'eatsday', 'delday', 'twhol', 'dinefill', 'fcso', 'fcsp', 'fcadj', 'heathide', 'voidscan', 'ingest']
 export default async function handler(req, res) {
+  if (!posInCtx() && req.query && POS_Q.some(k => req.query[k])) return posRun('銷售數據手動口', () => handler(req, res))
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: '法規薪資已搬到新版：請從新版班表頁「法規／薪資／違規」進去（點 LINE 違規通知連結也會自動開新版）' }) // GD 側欄沒有法規薪資分頁，不能叫人找側欄（關卡 3 payroll 第一輪獨立 Claude A1）
@@ -2120,6 +2130,7 @@ export default async function handler(req, res) {
     try { sb3 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoSo = await sopWho(sb3.token)
     if (!whoSo) return res.status(403).json({ ok: false, error: permDeny() })
+    posSetOp(whoSo.name) // 銷售數據情境：操作者＝本人（驗收閘門認得出）
     if (!snap) return res.status(400).json({ ok: false, error: '今天沒有預測快照' })
     snap.soldout = snap.soldout || []
     const has = snap.soldout.includes(sb3.k)
@@ -2141,6 +2152,7 @@ export default async function handler(req, res) {
     const mkSp = (process.env.MENU_PROBE_KEY || '').trim()
     const byAdmin = mkSp && String(pb3.force || '') === mkSp // 管理金鑰（後台維運標記用，留痕=系統）
     if (!byAdmin && (!whoSp || (whoSp.role !== '主管' && !aprSp.includes(whoSp.name)))) return res.status(403).json({ ok: false, error: '特殊日由主管/審核人標記' })
+    if (whoSp) posSetOp(whoSp.name)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pb3.date || '')) return res.status(400).json({ ok: false })
     const cfgD = (await kvGet('sp_finance_pm_fc_cfg')) || {}
     cfgD.special = cfgD.special || {}
@@ -2159,6 +2171,7 @@ export default async function handler(req, res) {
     const defAd = await kvGet('sp_finance_pm_sop_def')
     const aprAd = (((defAd || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoAd || (whoAd.role !== '主管' && !aprAd.includes(whoAd.name))) return res.status(403).json({ ok: false, error: '人工調整由主管/審核人設定' })
+    posSetOp(whoAd.name)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ab3.date || '') || !ab3.k) return res.status(400).json({ ok: false })
     const nAdj = Math.round(Number(ab3.n) || 0)
     if (nAdj !== 0 && !String(ab3.why || '').trim()) return res.status(400).json({ ok: false, error: '人工調整必填原因（規格）' })
@@ -2177,7 +2190,7 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.fcrun) !== mk) return res.status(403).json({ ok: false })
     const { fcDaily } = await import('./_fc.js')
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const r6 = await fcDaily(kvGet, kvPut, today2)
+    const r6 = await posRun('銷量預測快照', () => fcDaily(kvGet, kvPut, today2))
     await announceChanged()
     return res.status(200).json({ ok: true, snapped: r6.snapped, backfilled: r6.backfilled, futureStore: r6.forecast.future.map(f => f.date + ':' + f.sys).join(' '), level: r6.forecast.level, calib: r6.forecast.calib })
   }
@@ -2243,7 +2256,7 @@ export default async function handler(req, res) {
     const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
     const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
     const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
-    if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售掃描')
+    if (devN) await posRun('AB停售掃描', () => kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售掃描'))
     const obsSo = (await import('./_inckv.js')).obsStamp() // 抓清單前記時間（關卡 3 OpenAI A1：較舊的觀測不得蓋掉較新的）
     const items = await eatsItemList(sess)
     const hm2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
@@ -5105,6 +5118,7 @@ export default async function handler(req, res) {
     try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoH = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(bh.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
     if (!whoH) return res.status(403).json({ ok: false, error: permDeny() })
+    posSetOp(whoH.name)
     const storeH = bh.store === 'abeach' ? 'abeach' : 'ground'
     const hd = (await kvGet('sp_finance_pm_heat_hide')) || {}
     hd[storeH] = hd[storeH] || {}
@@ -6231,11 +6245,12 @@ export default async function handler(req, res) {
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
   // 參考店1/2（iCHEF，2026-09-01）：後台即時＝今天的數字每次抓都是「到目前為止」→ 手動🔄/每小時 cron 都只掃近3天（快），?days=N 可回補
   // 參考店 1/2 已退役（張良 2026-09-24）——iCHEF 停抓、數據已刪
-  try { out.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { out.ab = { error: e?.message || String(e) } } // AB 即時（白天看今天；日結信到就被正式資料接手）
+  try { out.ab = await posRun('AB即時', () => syncEatsLive(kvGet, kvPut)) } catch (e) { out.ab = { error: e?.message || String(e) } } // AB 即時（白天看今天；日結信到就被正式資料接手）
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)
- } catch (e) { // v4.52.4 總兜底：把 HTML 500 轉成可讀 JSON 錯誤（回 200+ok:false＝前端一律看得到真正原因，不再只是「儲存失敗」）
+ } catch (e) { if (e && e.code === 'stale' && posInCtx()) throw e // 銷售數據情境：撞版本往外丟給 posRun 整段重做
+   // v4.52.4 總兜底：把 HTML 500 轉成可讀 JSON 錯誤（回 200+ok:false＝前端一律看得到真正原因，不再只是「儲存失敗」）
    const ep = Object.keys(req.query || {})[0] || req.method
    console.error('mail-sync handler 未捕捉錯誤:', ep, e)
    if (!res.headersSent) return res.status(200).json({ ok: false, error: '伺服器錯誤（' + ep + '）：' + (e?.message || String(e)) })
