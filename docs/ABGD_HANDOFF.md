@@ -67,6 +67,14 @@
 - 回饋切換後第一筆真實給分還沒核對。
 - 命名待回：core.memberships、sp_finance_pm_prep_routes、「abgd 集團（暫名）」、sp_finance_pm_sopsum_outbox、sp_finance_pm_pipub_log（已不用）。
 - GD repo 改私有。
+- 錢／點數／薪資的 B 模式域（points、grporder、pos）要不要照「並行到月底差 0 才上線」規則處理：待裁決。
+
+## 六、下一步（10-16 15:40 起；張良 10-16 選 A 之後）
+- **已切 30 域**（+crew 人資／打卡）。資料能直接搬的都搬完了；剩下的都卡在「新殼還沒有自己的登入與頁面」：
+  - 權限與身分（perm、identity、crewapp 名冊／身分證欄名單）：GD 每個請求的權限判斷，等新殼登入取代 GD 登入時一起搬。
+  - DD（dd 域：每則訊息的去重、對話脈絡）、通知（notify：每次推播寫通知中心）：熱路徑，跟登入一起搬。
+  - member（會員）最後；finance、tasks_eng 卡主 App 凍結。
+- 所以下一階段是**新殼頁面**：先做 GD 還在用、資料已在新殼的頁（銷售數據頁、名冊／入職頁、打卡頁、人資頁），再做新殼登入（取代 ?me= 與 4 位數登入碼），之後才搬 perm／identity／crewapp／dd／notify。
 
 ## 10-14 物料卡學到的（下一個功能照做）
 - 速度看 PERF_RULES 原文：API 是「伺服器端」P95 ≤ 0.5 秒（看 server-timing），台灣端到端另一個門檻 ≤ 1 秒，冷啟動另記不算。scratchpad perf3.mjs 兩種一起量。
