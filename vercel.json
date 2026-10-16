@@ -101,5 +101,17 @@
   ],
   "regions": [
     "bom1"
+  ],
+  "redirects": [
+    {
+      "source": "/member.html",
+      "destination": "/paused.html",
+      "permanent": false
+    },
+    {
+      "source": "/order.html",
+      "destination": "/paused.html",
+      "permanent": false
+    }
   ]
 }
