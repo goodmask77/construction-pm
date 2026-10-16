@@ -39,9 +39,10 @@
 | 銷售數據頁 F29（頁面） | ✅ 10-16 16:15 GD 側欄「銷售數據」入口改指新殼 /ops/sales（新切換口 op=route：資料域已在新殼才准開、入口版本同交易遞增、發布失敗改回）。畫面＝GD p01-core 看板＋行事曆＋備料＋曲線圖、p02 節奏表、p07 品項明細、p10 預測原樣轉出（scratchpad salesport.py／cssscope.py）；看板算法 GD api/_opsboard.js＝新殼 lib/ops/opsboard.js 同一份（正式資料比對兩家店完全相同）；寫入與預測／停售／行事曆經 GD 代發口 board_read／board_write（GD 原端點、權限照舊；正式實測熱力圖隱藏→新殼引擎版本 +1、GD 副本 18 秒跟上）；速度：版本指紋沒變＝沿用（伺服器 P50 0.12 秒）、資料剛更新時重算約 1 秒（P95）；關卡審查 OpenAI 兩輪＝可上線、Gemini 兩輪 A 項已修；首頁（今日營收那頁）仍在 GD |
 | 夥伴名冊 F26／入職 F27（頁面） | ✅ 10-16 16:55 GD 側欄入口指新殼 /ops/crew、/ops/onboarding（op=route；入口 hrm／onb 改掛 crew 域）。名冊資料仍留 GD（張良選 A），頁面＝GD p12-roster.js／p13-onboard.js 整檔副本，讀寫一律經**通用 GD 頁面轉接**（新殼 /api/ops/gd?p=頁&q=GD 端點 → GD 代發口 page_read／page_write，PAGES 白名單；身分證欄遮罩、權限照 GD）；看檔連結轉 GD 簽名網址 |
 | 換頁修正（全部 GD 頁面副本） | ✅ 10-16：①副本最外層 const／let 改 var（不重新整理換頁時「重複宣告」整頁失效；legacyfix.py）②副本不宣告全域 app（即時的 window.app）③**OwnedBox 認領 #app／#upd**（框架會保留上一頁＝同 id 兩個，副本拿到藏起來的舊容器＝空白）；正式站側欄連續換頁 5 頁實測全過 |
+| 新殼 LINE 登入＋新首頁（張良 10-16 選 A：新殼當主入口） | 🟡 10-16 17:45 已上線、**等張良手機實測**：新殼 /login「用 LINE 登入」→ 員工 LIFF（DD LIFE，跟 DD 同 Provider）→ GD /liff/?to=abgd → GD ?liffabgd（只收員工 LIFF 頻道的 token、認 GD 綁定、停權擋、簽 60 秒一次性票）→ 新殼 /api/core/auth/bridge 換登入。不需要新頻道密鑰或新 callback 網址。新殼首頁＝各區入口＋營業數據。**下一步**：張良實測可以＋確認 DD LIFE 是 Published → 把大家的入口改新殼（GD /liff/ 沒帶目的地＝新殼首頁；DD 發的連結；GD 舊版保留） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.179（main）、GD v4.71.190（main，已部署 16:35）。
+版本：新殼 v0.4.181（main）、GD v4.71.191（main，已部署 17:40）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
