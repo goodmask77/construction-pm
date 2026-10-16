@@ -12,6 +12,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { VOID_KEY, voidsFromSnapshots, negHoursFromSheetRows, recordVoidDay } from './_voids.js' // ⚠️ GD 退單／作廢偵測（v4.71.6 張良 2026-10-12）
+import { CREW_RE, crewHookGet, crewHookPut, crewHookDel, crewRun, crewInCtx, crewSetOp } from './_crewkv.js' // v4.71.187 夥伴名冊／人資／打卡域依歸屬版本比對寫（端點包在 crewRun 情境裡）
 import { POS_RE, posHookGet, posHookPut, posRun, posInCtx, posSetOp } from './_poskv.js' // v4.71.186 銷售數據域依歸屬版本比對寫（同步流程包在 posRun 情境裡）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsCas, pointsRules, computePointsBoard, FACETS } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則＋排行榜算法 v4.70.79）
@@ -31,6 +32,7 @@ const M2U = clean(process.env.MAIL_USER2), M2P = clean(process.env.MAIL_PASS2) /
 
 export async function kvGet(id) { // export：joya-intraday.js（盤中更新）共用
   if (POS_RE.test(String(id))) { const v = await posHookGet(id); if (v !== undefined) return v } // 銷售數據：同步情境內依歸屬版本化讀；情境外照舊讀 GD 副本
+  if (CREW_RE.test(String(id))) { const v = await crewHookGet(id); if (v !== undefined) return v } // 夥伴名冊域：情境內依歸屬版本化讀；情境外照舊讀 GD 副本
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
   const rows = r.ok ? await r.json() : []
   try { return rows[0]?.data?.v ? JSON.parse(rows[0].data.v) : null } catch (_) { return null }
@@ -121,6 +123,7 @@ const PAYROLL_WRITE_QS = ['payset', 'vioresset', 'vionotify']
 const SOP_WRITE_QS = ['sopst', 'sopact', 'sopstrict', 'sopedit', 'sopfull', 'sopref', 'sopdone', 'sopho', 'sopreport', 'sopresolve', 'sopreview', 'sopissue', 'issuecat', 'sopsugset', 'sopstamp', 'sopseed', 'sopset']
 export async function kvPut(id, obj, editor) {
   if (POS_RE.test(String(id))) { await posHookPut(id, obj, editor); CHANGED.add(id); return true } // 銷售數據：依歸屬版本比對寫（失敗丟錯，撞版本丟 stale 讓 posRun 重做）
+  if (CREW_RE.test(String(id))) { await crewHookPut(id, obj, editor); CHANGED.add(id); return true } // 夥伴名冊域：同上（crewRun 重做）；情境外寫入拒絕
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
@@ -439,8 +442,12 @@ async function syncJoya0(daysBack) {
 
 // 銷售數據手動口（v4.71.186）：整個請求包進銷售數據情境（寫入前都沒有對外動作；撞版本＝整段重做，回應還沒送出）
 const POS_Q = ['slotex', 'slotexset', 'eatsday', 'delday', 'twhol', 'dinefill', 'fcso', 'fcsp', 'fcadj', 'heathide', 'voidscan', 'ingest']
+// 夥伴名冊／人資／打卡端點（v4.71.187）：整個請求包進夥伴名冊情境——每個端點寫入前都沒有對外動作（推播、通知都在存檔之後）；撞版本＝整段重做，回應還沒送出
+//   上傳檔案的端點：檔案只傳一次（req 上記住），重做只重做讀改寫；入職審核 hrmpendset 不整包（審核函式自己有情境，推播在情境外）
+const CREW_Q = ['gdstaff', 'gdrole', 'punchme', 'punchstat', 'punchmakeup', 'punchmakeups', 'punchmakeupset', 'punchadmin', 'punchedit', 'punchfix', 'hridlock', 'hrmaster', 'hrdocup', 'hrdocdel', 'hrmasterup', 'hrmasterset', 'rosterset', 'onboardself', 'onboardfile', 'onboardmgr', 'onboardone', 'onboardins']
 export default async function handler(req, res) {
   if (!posInCtx() && req.query && POS_Q.some(k => req.query[k])) return posRun('銷售數據手動口', () => handler(req, res))
+  if (!crewInCtx() && req.query && (CREW_Q.some(k => req.query[k] !== undefined) || (req.query.prepperm && req.query.op === 'fixbind'))) return crewRun('夥伴名冊端點', () => handler(req, res))
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: '法規薪資已搬到新版：請從新版班表頁「法規／薪資／違規」進去（點 LINE 違規通知連結也會自動開新版）' }) // GD 側欄沒有法規薪資分頁，不能叫人找側欄（關卡 3 payroll 第一輪獨立 Claude A1）
@@ -3044,7 +3051,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.punchme) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}
     try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const { recordPunch } = await import('./punch.js')
     const fd = (pb.dir === 'in' || pb.dir === 'out') ? pb.dir : undefined // v4.57 可指定上班/下班（取消自動判讀時）
@@ -3056,7 +3063,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchstat) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const pj2 = await import('./punch.js')
     const today = await pj2.todayPunchesOf(whoP.rid)
@@ -3075,7 +3082,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchmakeup) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const dir = pb.dir === 'in' ? 'in' : 'out'
     const t = new Date(pb.ts)
@@ -3087,7 +3094,7 @@ export default async function handler(req, res) {
     const id = 'mk' + now.toString(36) + Math.random().toString(36).slice(2, 5)
     mk.list = (mk.list || []).slice(-300)
     mk.list.push({ id, rid: whoP.rid, name: whoP.name, dir, ts: t.toISOString(), reason: String(pb.reason || '').slice(0, 200), status: 'pending', reqAt: new Date().toISOString() })
-    await kvSet('sp_finance_pm_punch_makeup', mk)
+    await kvPut('sp_finance_pm_punch_makeup', mk, '補卡申請(' + whoP.name + ')') // v4.71.187 原本呼叫不存在的 kvSet＝補卡申請一直存不進去
     try {
       const defS = await kvGet('sp_finance_pm_sop_def')
       const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
@@ -3102,7 +3109,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchmakeups) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const defS = await kvGet('sp_finance_pm_sop_def')
     const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
@@ -3117,21 +3124,23 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchmakeupset) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const defS = await kvGet('sp_finance_pm_sop_def')
     const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
     if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '補卡由主管／審核人處理' })
     const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
     const it = (mk.list || []).find(x => x.id === pb.id)
-    if (!it || it.status !== 'pending') return res.status(400).json({ ok: false, error: '找不到或已處理' })
+    // v4.71.187 關卡 3：核准先搶處理權（processing 存檔＝別的主管同時退回會撞版本），再寫固定鍵打卡，最後標核准；處理中斷＝再按核准補完；退回只能從 pending
+    if (!it || !(it.status === 'pending' || (it.status === 'processing' && pb.action === 'approve'))) return res.status(400).json({ ok: false, error: it && it.status === 'processing' ? '另一位主管正在核准這筆' : '找不到或已處理' })
     if (pb.action === 'approve') {
+      if (it.status === 'pending') { it.status = 'processing'; it.procBy = whoP.name; await kvPut('sp_finance_pm_punch_makeup', mk, '補卡核准中(' + whoP.name + ')') }
       const pj2 = await import('./punch.js')
-      await pj2.recordPunchAt({ id: it.rid, name: it.name }, it.ts, it.dir, 'makeup', true)
+      await pj2.recordPunchAt({ id: it.rid, name: it.name }, it.ts, it.dir, 'makeup', true, it.id) // 鍵＝補卡編號：重做不會補出兩筆
       it.status = 'approved'
     } else { it.status = 'rejected'; it.decReason = String(pb.reason || '').slice(0, 100) }
     it.byName = whoP.name; it.decAt = new Date().toISOString()
-    await kvSet('sp_finance_pm_punch_makeup', mk)
+    await kvPut('sp_finance_pm_punch_makeup', mk, '補卡審核(' + whoP.name + ')')
     try { const { wpPush } = await import('./_webpush.js'); const hm = new Date(it.ts).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); await wpPush([it.rid], { title: pb.action === 'approve' ? '✅ 補卡已核准' : '↩️ 補卡被退回', body: `補【${it.dir === 'in' ? '上班' : '下班'}】${hm}${it.decReason ? '・' + it.decReason : ''}（${whoP.name}）`, url: '/prep', cat: 'other' }) } catch (_) {}
     return res.status(200).json({ ok: true })
   }
@@ -3140,7 +3149,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchadmin) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const defS = await kvGet('sp_finance_pm_sop_def')
     const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
@@ -3190,13 +3199,13 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchedit) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const defS = await kvGet('sp_finance_pm_sop_def')
     const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
     if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '限主管／審核人' })
     const dir = pb.dir === 'in' ? 'in' : 'out'
-    const delDoc = async k => fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const delDoc = async k => { if (!/^sp_crew_pch_/.test(String(k))) throw new Error('紀錄不合法'); await crewHookDel(k) } // 打卡逐筆：情境內依歸屬刪
     const pj2 = await import('./punch.js')
     if (pb.action === 'del') { if (!pb.key) return res.status(400).json({ ok: false, error: '缺 key' }); await delDoc(pb.key); return res.status(200).json({ ok: true }) }
     if (pb.action === 'edit') {
@@ -3221,7 +3230,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.punchfix) !== ok2) return res.status(403).json({ ok: false })
     let pb = {}
     try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoP = await sopWho(pb.token)
+    const whoP = await sopWho(pb.token); crewSetOp(whoP && whoP.name) // 夥伴名冊情境：操作者＝本人（驗收閘門認人、命令紀錄）
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const pj2 = await import('./punch.js')
     const oj2 = await import('./_onboard.js')
@@ -3230,7 +3239,7 @@ export default async function handler(req, res) {
     if (!lastP) return res.status(400).json({ ok: false, error: '今天還沒有打卡紀錄' })
     if (Date.now() - new Date(lastP.ts).getTime() > 5 * 60000) return res.status(400).json({ ok: false, error: '超過 5 分鐘，請找管理員處理' })
     const dirF = lastP.dir === 'in' ? 'out' : 'in'
-    await oj2.kvSet(lastP.key, { ...lastP, key: undefined, dir: dirF, fixedAt: new Date().toISOString() })
+    await oj2.kvSet(lastP.key, { ...lastP, key: undefined, dir: dirF, fixedAt: new Date().toISOString() }) // 情境內＝版本比對寫
     return res.status(200).json({ ok: true, dir: dirF })
   }
   // ── 📅 班表（張良 2026-09-21：/prep 排班＋整月打卡對照；工時/加班試算在前端、倍率口徑同 src/shift/payroll.js 1.34/1.67）──
@@ -4255,12 +4264,15 @@ export default async function handler(req, res) {
     const aprP9 = (((defP9 || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoP9 || !(aprP9.includes(whoP9.name) || whoP9.name === '張良瑋' || whoP9.role === '主管')) return res.status(403).json({ ok: false, error: '只有主管能審核名冊' })
     const rosP9 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
-    const per9 = (rosP9.people || []).find(x => x.id === bp.id && x.onboarding)
-    if (!per9) return res.status(404).json({ ok: false, error: '找不到這位待審核的夥伴（可能已處理）' })
     const ob9 = await import('./_onboard.js')
+    const rosF9 = await crewRun('入職審核讀名冊', () => kvGet('sp_crew_kb_roster')) || { people: [] } // 決策讀新版（不讀寫回延遲的副本）
+    const per9 = (rosF9.people || []).find(x => x.id === bp.id && (x.onboarding || (bp.action === 'approve' && x.approvedAt)))
+    if (!per9) return res.status(404).json({ ok: false, error: '找不到這位待審核的夥伴（可能已處理）' })
     if (bp.action === 'approve') {
-      const r9 = await ob9.approveApp(bp.id, bp.dept || per9.dept || '', whoP9.name, '')
+      // 已核准過（上次名冊存好、人資主檔沒加到）＝跳過核准、只補主檔（可重按補完）
+      const r9 = per9.onboarding ? await ob9.approveApp(bp.id, bp.dept || per9.dept || '', whoP9.name, '') : { ok: true, already: true }
       if (r9.error) return res.status(400).json({ ok: false, error: r9.error })
+      await crewRun('名冊審核加入(' + whoP9.name + ')', async () => {
       const docU9 = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }; docU9.rows = docU9.rows || []
       if (!docU9.rows.find(x => !/A Beach/.test(x.co || '') && x.name === per9.name)) {
         const today9 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
@@ -4269,6 +4281,7 @@ export default async function handler(req, res) {
         docU9.log = [{ by: whoP9.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: '審核加入名冊 ' + per9.name }, ...(docU9.log || [])].slice(0, 80)
         await kvPut('sp_crew_pm_hr_master', docU9, '名冊審核加入(' + whoP9.name + ')')
       }
+      })
     } else {
       const r9 = await ob9.rejectApp(bp.id, String(bp.reason || '').slice(0, 100), whoP9.name)
       if (r9.error) return res.status(400).json({ ok: false, error: r9.error })
@@ -4448,8 +4461,8 @@ export default async function handler(req, res) {
     const key0 = String(bd0.key || '').replace(/[^a-z]/g, '').slice(0, 20); if (!key0) return res.status(400).json({ ok: false })
     const ext0 = String(bd0.ext || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'jpg'
     const { uploadPrivate } = await import('./_onboard.js')
-    const path0 = `hrdocs/${/A Beach/.test(bd0.co) ? 'ab' : 'gd'}/${encodeURIComponent(bd0.name)}/${key0}-${Date.now().toString(36)}.${ext0}`
-    if (!(await uploadPrivate(path0, buf0, m0[1]))) return res.status(502).json({ ok: false, error: '上傳失敗' })
+    const path0 = req._hrUp || `hrdocs/${/A Beach/.test(bd0.co) ? 'ab' : 'gd'}/${encodeURIComponent(bd0.name)}/${key0}-${Date.now().toString(36)}.${ext0}`
+    if (!req._hrUp) { if (!(await uploadPrivate(path0, buf0, m0[1]))) return res.status(502).json({ ok: false, error: '上傳失敗' }); req._hrUp = path0 } // 撞版本整段重做時不重傳
     row0.docs = row0.docs || {}; row0.docs[key0] = row0.docs[key0] || { files: [] }
     row0.docs[key0].files.push({ path: path0, ext: ext0, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), by: whoD0.name })
     docM.log = [{ by: whoD0.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `上傳 ${bd0.name} ${key0}` }, ...(docM.log || [])].slice(0, 80)
@@ -6094,7 +6107,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.onboardself !== undefined) {
     let b4 = {}
     try { b4 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const who4 = await sopWho(b4.token)
+    const who4 = await sopWho(b4.token); crewSetOp(who4 && who4.name)
     if (!who4 || !who4.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再填。' })
     const doc4 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
     const p4 = (doc4.people || []).find(x => x.id === who4.rid)
@@ -6121,7 +6134,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.onboardfile !== undefined) {
     let bf = {}
     try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoF = await sopWho(bf.token)
+    const whoF = await sopWho(bf.token); crewSetOp(whoF && whoF.name)
     if (!whoF || !whoF.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再傳。' })
     const FIELD_FILE = { idDoc: 'idcard', bankDoc: 'bankbook', healthDoc1: 'health1', healthDoc2: 'health2', signDoc: 'signature' } // 只允許新人自傳這幾類機密檔（+健檢報告最多2張、+簽署簽名圖）
     if (!FIELD_FILE[bf.field]) return res.status(400).json({ ok: false, error: '不支援的檔案欄位' })
@@ -6169,7 +6182,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST' && req.query?.onboardins !== undefined) {
     let bI = {}
     try { bI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoI = await sopWho(bI.token)
+    const whoI = await sopWho(bI.token); crewSetOp(whoI && whoI.name)
     if (!whoI || !whoI.rid) return res.status(403).json({ ok: false, error: '請先綁定' })
     const defI = await kvGet('sp_finance_pm_sop_def'); const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
     if (!(whoI.role === '主管' || aprI.includes(whoI.name))) return res.status(403).json({ ok: false, error: '僅主管可確認加保' })
@@ -6250,7 +6263,7 @@ export default async function handler(req, res) {
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)
- } catch (e) { if (e && e.code === 'stale' && posInCtx()) throw e // 銷售數據情境：撞版本往外丟給 posRun 整段重做
+ } catch (e) { if (e && e.code === 'stale' && (posInCtx() || crewInCtx())) throw e // 銷售數據／夥伴名冊情境：撞版本往外丟給 posRun／crewRun 整段重做
    // v4.52.4 總兜底：把 HTML 500 轉成可讀 JSON 錯誤（回 200+ok:false＝前端一律看得到真正原因，不再只是「儲存失敗」）
    const ep = Object.keys(req.query || {})[0] || req.method
    console.error('mail-sync handler 未捕捉錯誤:', ep, e)

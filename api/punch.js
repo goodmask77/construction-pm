@@ -10,6 +10,7 @@ import { SB_URL, SB_KEY, svc, kvGet, kvSet, loadRoster } from './_onboard.js'
 import { compareDay, summarize, ATT_LABEL } from '../src/shift/attendance.js'
 import { schedKey, mondayOf } from '../src/shift/model.js'
 import { awardPts } from './_points.js' // 🏦 打卡給行為分
+import { crewRun, crewHookPrefix, crewHookDel } from './_crewkv.js' // v4.71.187 打卡逐筆屬夥伴名冊域：判向（讀今天）＋寫入包在同一個情境＝讀到新版
 
 const SECRET = crypto.createHash('sha256').update('punch:' + SB_KEY).digest() // 站點 token 簽章金鑰（由服務金鑰衍生，不另設環境變數）
 const TOKEN_TTL = 75 * 1000 // QR 每 30 秒換新，容忍慢掃 75 秒
@@ -47,23 +48,30 @@ const dayKey = () => tpeDate().replace(/-/g, '')
 
 // 逐筆讀某人某日打卡（LIKE 前綴；底線要跳脫——踩過的坑）
 export async function listPunches(prefix) { // mail-sync 班表分頁撈整月共用
+  const inCtx = await crewHookPrefix(prefix) // 情境內＝依歸屬讀（新殼引擎／GD 原表），照鍵排序
+  if (inCtx !== undefined) return byTs(Object.keys(inCtx).map(k => ({ key: k, ...inCtx[k] })))
   const esc = prefix.replace(/_/g, '\\_')
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc + '%')}&select=id,data&order=id`, { headers: svc })
   const rows = r.ok ? await r.json() : []
-  return rows.map(x => { try { return { key: x.id, ...JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean)
+  return byTs(rows.map(x => { try { return { key: x.id, ...JSON.parse(x.data.v) } } catch (_) { return null } }).filter(Boolean))
 }
+// 依打卡時間排（同時間照鍵名）：判向、改向、工時都看「最後一筆＝時間最晚」，補卡（固定鍵）補早上的卡不會被當成最新（v4.71.187 關卡 3）
+function byTs(list) { return list.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) }
 export async function todayPunchesOf(personId) { return listPunches(`sp_crew_pch_${dayKey()}_${personId}_`) }
 export async function todayPunchesAll() { return listPunches(`sp_crew_pch_${dayKey()}_`) }
 
 // 寫一筆打卡（自動判向：今天最後一筆是上班→這筆下班，否則上班；LINE 備援講明「上班/下班」則以字面為準）
 export async function recordPunch(person, src, verified, forceDir) {
-  const today = await todayPunchesOf(person.id)
-  const last = today[today.length - 1]
-  const dir = forceDir || (last && last.dir === 'in' ? 'out' : 'in')
-  const ts = new Date().toISOString()
-  const key = `sp_crew_pch_${dayKey()}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
-  const rec = { personId: person.id, name: person.name, ts, dir, src, verified: !!verified }
-  await kvSet(key, rec)
+  const { today, dir, ts, key, rec } = await crewRun('打卡(' + person.name + ')', async () => {
+    const today = await todayPunchesOf(person.id)
+    const last = today[today.length - 1]
+    const dir = forceDir || (last && last.dir === 'in' ? 'out' : 'in')
+    const ts = new Date().toISOString()
+    const key = `sp_crew_pch_${dayKey()}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+    const rec = { personId: person.id, name: person.name, ts, dir, src, verified: !!verified }
+    await kvSet(key, rec) // 新鍵＝只新增（跟搬家前一樣一次一筆；判向讀的是情境內新版）
+    return { today, dir, ts, key, rec }
+  })
   if (dir === 'in') await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
   // 今日累計（配對 in/out）
   const list = [...today, { ...rec, key }]
@@ -73,14 +81,17 @@ export async function recordPunch(person, src, verified, forceDir) {
 }
 
 // 補卡：在指定（過去）時間寫一筆打卡；日 key 取該時間的台北日，讓它落在正確那天/月檔
-export async function recordPunchAt(person, tsISO, dir, src, verified) {
+// idem：同一件事的固定編號（補卡申請編號）→ 鍵固定、已存在就不再寫（整段重做不會補出兩筆）
+export async function recordPunchAt(person, tsISO, dir, src, verified, idem) {
   const dISO = new Date(tsISO).toISOString()
   const dk = tpeDate(new Date(tsISO)).replace(/-/g, '')
-  const key = `sp_crew_pch_${dk}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+  const key = idem ? `sp_crew_pch_${dk}_${person.id}_${String(idem).replace(/[^A-Za-z0-9]/g, '').slice(0, 24)}` : `sp_crew_pch_${dk}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
   const rec = { personId: person.id, name: person.name, ts: dISO, dir, src: src || 'makeup', verified: !!verified }
-  await kvSet(key, rec)
+  await crewRun('補打卡(' + person.name + ')', async () => { if (idem && (await kvGet(key))) return; await kvSet(key, rec) })
   return { key, dir, ts: dISO }
 }
+// 刪一筆打卡（情境內依歸屬刪）
+export async function delPunch(key) { if (!/^sp_crew_pch_/.test(String(key))) throw new Error('紀錄不合法'); await crewRun('刪打卡', () => crewHookDel(key)) }
 
 // P2 出勤×班表比對（今日）：App 與 D哥 共用（attendance.js 同一套算法）。本週沒發布班表回 null。
 export async function attendanceCompareToday() {
@@ -139,13 +150,16 @@ export default async function handler(req, res) {
       const roster = await loadRoster()
       const p = roster.people.find(x => x.account === me.name || x.name === me.name)
       if (!p) return res.status(403).json({ error: '帳號未對應名冊' })
-      const today = await todayPunchesOf(p.id)
-      const last = today[today.length - 1]
-      if (!last) return res.status(400).json({ error: '今天還沒有打卡紀錄' })
-      if (Date.now() - new Date(last.ts).getTime() > 5 * 60000) return res.status(400).json({ error: '超過 5 分鐘，請找負責人處理' })
-      const dir = last.dir === 'in' ? 'out' : 'in'
-      await kvSet(last.key, { ...last, key: undefined, dir, fixedAt: new Date().toISOString() })
-      return res.status(200).json({ ok: true, dir })
+      const r9 = await crewRun('打卡改向(' + p.name + ')', async () => {
+        const today = await todayPunchesOf(p.id)
+        const last = today[today.length - 1]
+        if (!last) return { st: 400, body: { error: '今天還沒有打卡紀錄' } }
+        if (Date.now() - new Date(last.ts).getTime() > 5 * 60000) return { st: 400, body: { error: '超過 5 分鐘，請找負責人處理' } }
+        const dir = last.dir === 'in' ? 'out' : 'in'
+        await kvSet(last.key, { ...last, key: undefined, dir, fixedAt: new Date().toISOString() })
+        return { st: 200, body: { ok: true, dir } }
+      })
+      return res.status(r9.st).json(r9.body)
     }
 
     // 審核 LINE 備援打卡（核可 or 刪除）
@@ -155,10 +169,14 @@ export default async function handler(req, res) {
       const body = bodyOf(req)
       const key = String(body.recordId || '')
       if (!/^sp_crew_pch_/.test(key)) return res.status(400).json({ error: '紀錄不合法' })
-      const rec = await kvGet(key)
-      if (!rec) return res.status(404).json({ error: '找不到紀錄' })
-      if (body.ok) await kvSet(key, { ...rec, verified: true, verifiedBy: me.name, verifiedAt: new Date().toISOString() })
-      else await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: svc })
+      const st9 = await crewRun('打卡審核(' + me.name + ')', async () => {
+        const rec = await kvGet(key)
+        if (!rec) return 404
+        if (body.ok) await kvSet(key, { ...rec, verified: true, verifiedBy: me.name, verifiedAt: new Date().toISOString() })
+        else await crewHookDel(key)
+        return 200
+      })
+      if (st9 === 404) return res.status(404).json({ error: '找不到紀錄' })
       return res.status(200).json({ ok: true })
     }
 
