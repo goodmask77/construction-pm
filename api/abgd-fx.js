@@ -105,6 +105,32 @@ async function inlineRun(a, method) {
   await H({ method, query, body: a.body || {}, headers: {}, _who: { name, rid } }, res)
   return { ...(out || { ok: false, error: 'GD 沒有回結果' }), _http: st }
 }
+// 銷售數據頁（新殼 /ops/sales，v4.71.188）轉 GD 原本的端點：新殼傳人員編號，這裡找他的 GD 綁定 token 再呼叫原端點——
+//   權限檢查、版本比對寫（銷售數據 posRun）、操作紀錄都照 GD 原本的；只放行白名單（讀：預測、停售清單、行事曆；寫：備料、熱力圖隱藏、節奏表隱藏、品項隱藏、停售、特殊日、人工調）
+const BOARD_READ = new Set(['fc', 'fcso', 'twhol'])
+const BOARD_WRITE = new Set(['prepact', 'heathide', 'prephide', 'poshide', 'fcso', 'fcsp', 'fcadj'])
+const BOARD_QS = ['ym', 'store', 'date', 'days', 'n']
+async function boardRun(a, method) {
+  const q = String(a.q || '')
+  const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
+  if (!name) return { ok: false, error: '缺操作者' }
+  if (role === '停權') return { ok: false, error: '帳號已停權', _http: 403 }
+  if (!(method === 'GET' ? BOARD_READ : BOARD_WRITE).has(q)) return { ok: false, error: '不認識的操作', _http: 400 }
+  const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
+  const hit = Object.entries(bd.tokens || {}).find(([, v]) => v && rid && (v.rid === rid || v.uid === rid))
+  const tk = hit ? hit[0] : ''
+  if (!tk && q !== 'twhol') return { ok: false, error: '你的帳號還沒綁定 GD（私訊 DD「綁定GD 本名」）', _http: 403 }
+  const key = (process.env.OPS_BOARD_KEY || '').trim()
+  const query = { [q]: key }
+  for (const k of BOARD_QS) if (a.query && a.query[k] != null) query[k] = String(a.query[k]).slice(0, 40)
+  if (method === 'GET' && tk) query.me = tk
+  const body = method === 'POST' ? { ...(a.body || {}), token: tk } : {}
+  let st = 200, out = null
+  const res = { status (c) { st = c; return this }, json (o) { out = o; return this }, send (o) { out = { ok: false, html: String(o).slice(0, 200) }; return this }, setHeader () { return this }, writeHead () { return this }, end () { return this }, redirect () { return this } }
+  const H = (await import('./mail-sync.js')).default
+  await H({ method, query, body, headers: {} }, res)
+  return { ...(out || { ok: false, error: 'GD 沒有回結果' }), _http: st }
+}
 async function socialRun(a, method) {
   const kind = String(a.kind || 'social')
   const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
@@ -500,6 +526,8 @@ const ACTIONS = {
     const S = await import('./_social.js'); const IB = await import('./_inbox.js')
     return { ok: true, metaReady: S.metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: S.GV, configured: IB.ACCOUNTS.filter(IB.configured).map(a => a.key) }
   },
+  async board_read(a) { return boardRun(a, 'GET') }, // 新殼銷售數據頁：預測／停售清單／行事曆（唯讀）
+  async board_write(a) { return boardRun(a, 'POST') }, // 新殼銷售數據頁寫入：轉 GD 原端點（事件佔位，同一個 idem 只做一次）
   async inline_read(a) { return inlineRun(a, 'GET') }, // inline 即時直搜（外部 inline 搜尋）：唯讀，不佔事件位
   async inline_op(a) { return inlineRun(a, 'POST') }, // inline 行動建議勾選／派任務、連假 AI 文案：走事件佔位（同一個 idem 只執行一次）
   async social_read(a) { return socialRun(a, 'GET') }, // 行銷大師讀（社群總覽／LINE 官方統計；統計 run=1 會順便抓一次，寫入本身版本比對）：唯讀路徑
@@ -587,7 +615,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
