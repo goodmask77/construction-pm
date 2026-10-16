@@ -445,10 +445,10 @@ async function syncJoya0(daysBack) {
 const POS_Q = ['slotex', 'slotexset', 'eatsday', 'delday', 'twhol', 'dinefill', 'fcso', 'fcsp', 'fcadj', 'heathide', 'voidscan', 'ingest']
 // 夥伴名冊／人資／打卡端點（v4.71.187）：整個請求包進夥伴名冊情境——每個端點寫入前都沒有對外動作（推播、通知都在存檔之後）；撞版本＝整段重做，回應還沒送出
 //   上傳檔案的端點：檔案只傳一次（req 上記住），重做只重做讀改寫；入職審核 hrmpendset 不整包（審核函式自己有情境，推播在情境外）
-const CREW_Q = ['gdstaff', 'gdrole', 'punchme', 'punchstat', 'punchmakeup', 'punchmakeups', 'punchmakeupset', 'punchadmin', 'punchedit', 'punchfix', 'hridlock', 'hrmaster', 'hrdocup', 'hrdocdel', 'hrmasterup', 'hrmasterset', 'rosterset', 'onboardself', 'onboardfile', 'onboardmgr', 'onboardone', 'onboardins']
+const CREW_Q = ['gdstaff', 'gdrole', 'punchme', 'punchstat', 'punchmakeup', 'punchmakeups', 'punchmakeupset', 'punchadmin', 'punchedit', 'punchfix', 'hridlock', 'hrmaster', 'hrdocup', 'hrdocdel', 'hrmasterup', 'hrmasterset', 'rosterset', 'onboardself', 'onboardfile', 'onboardmgr', 'onboardone', 'onboardins', 'bindcode', 'animprefset', 'tabset', 'prepapply', 'preppermset', 'prepperm', 'prephide', 'prepfav'] // v4.71.196 加權限／身分寫入口
 export default async function handler(req, res) {
   if (!posInCtx() && req.query && POS_Q.some(k => req.query[k])) return posRun('銷售數據手動口', () => handler(req, res))
-  if (!crewInCtx() && req.query && (CREW_Q.some(k => req.query[k] !== undefined) || (req.query.prepperm && req.query.op === 'fixbind'))) return crewRun('夥伴名冊端點', () => handler(req, res))
+  if (!crewInCtx() && req.query && (CREW_Q.some(k => req.query[k] !== undefined))) return crewRun('夥伴名冊端點', () => handler(req, res))
   if (req.query && SHIFT_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_shift_g')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && SHIFTPLAN_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_labor')) !== 'gd') return res.status(409).json({ ok: false, error: ABGD_MOVED })
   if (req.query && PAYROLL_WRITE_QS.some(k => req.query[k]) && (await abgdOwnerOf('sp_finance_pm_payrates')) !== 'gd') return res.status(409).json({ ok: false, error: '法規薪資已搬到新版：請從新版班表頁「法規／薪資／違規」進去（點 LINE 違規通知連結也會自動開新版）' }) // GD 側欄沒有法規薪資分頁，不能叫人找側欄（關卡 3 payroll 第一輪獨立 Claude A1）
@@ -3694,18 +3694,19 @@ export default async function handler(req, res) {
     const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'approve', users: {}, pending: {} }
     if (!who || !pm.users[who.rid || who.uid]?.admin) return res.status(403).json({ ok: false, error: '只有管理者能改權限' })
     const rid = String(bp.rid || '')
+    let notifyA = null // v4.71.196 搬家前置：核准通知改成「存檔成功後」才發（撞版本整段重跑不會重複私訊）
     if (bp.op === 'approve' && pm.pending[rid]) {
       const appr = pm.pending[rid]
       const snap = (pm.removed || {})[rid] // v4.32.1 之前被移除過＝還原他原本的勾選；全新夥伴＝套團隊共同設定
       pm.users[rid] = { ...(snap ? { tabs: snap.tabs, hide: snap.hide } : prepPermTmpl(pm)), name: appr.name, edit: 1, by: who.name, ts: appr.ts }
       if (snap) delete pm.removed[rid]
       delete pm.pending[rid]
-      try { // 核准→DD 通知當事人（張良 2026-10-01）
+      notifyA = async () => { try { // 核准→DD 通知當事人（張良 2026-10-01）
         const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js')
         let uidA = appr.uid
         if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === rid || t.uid === rid) || {}).uid }
         if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准')
-      } catch (_) {}
+      } catch (_) {} }
     }
     else if (bp.op === 'reject') delete pm.pending[rid]
     else if (bp.op === 'revoke' && pm.users[rid] && !pm.users[rid].admin) { // v4.32.1 軟刪（張良：按移除就沒了要能復原）：搬到 removed 保留勾選，可一鍵復原
@@ -3736,6 +3737,7 @@ export default async function handler(req, res) {
       }
     }
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
+    if (notifyA) await notifyA()
     return res.status(200).json({ ok: true, perm: pm })
   }
   // 測試口（v4.33.1 張良：先發一則會議提醒給我測連結帶不帶身分）：?meetping=<MENU_PROBE_KEY>&name=張良
@@ -4736,9 +4738,10 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_prep_perm', pm, '綁定改正口')
       return res.status(200).json({ ok: true, fixed, pending: Object.values(pm.pending || {}).map(v => v.name), users: Object.values(pm.users || {}).map(v => v.name) })
     }
-    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { const sn = (pm.removed || {})[r]; pm.users[r] = { ...(sn ? { tabs: sn.tabs, hide: sn.hide } : prepPermTmpl(pm)), name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; if (sn) delete pm.removed[r]; delete pm.pending[r]
-      try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {}
-    } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)') }
+    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const okA = []; const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { const sn = (pm.removed || {})[r]; pm.users[r] = { ...(sn ? { tabs: sn.tabs, hide: sn.hide } : prepPermTmpl(pm)), name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; if (sn) delete pm.removed[r]; delete pm.pending[r]
+      okA.push([r, v]) // v4.71.196 通知改到存檔成功後才發
+    } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)')
+      for (const [r, v] of okA) { try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {} } }
     if (op === 'revoke') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.users)) if (v.name.includes(nm) && !v.admin) { pm.removed = pm.removed || {}; pm.removed[r] = { ...v, rts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }; delete pm.users[r] } await kvPut('sp_finance_pm_prep_perm', pm, '權限移除(AI代操)') } // v4.32.1 軟刪可復原
     if (op === 'restore') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.removed || {})) if (v.name.includes(nm)) { delete v.rts; pm.users[r] = v; delete pm.removed[r] } await kvPut('sp_finance_pm_prep_perm', pm, '權限復原(AI代操)') }
     if (op === 'normalize') { const nm = String(req.query.name || ''); const tp = prepPermTmpl(pm); for (const v of Object.values(pm.users)) if (!v.admin && v.name.includes(nm) && !v.tabs && !v.hide) { if (tp.tabs) v.tabs = { ...tp.tabs }; if (tp.hide) v.hide = { ...tp.hide } } await kvPut('sp_finance_pm_prep_perm', pm, '權限套團隊預設(AI代操)') } // v4.32.1 補正沒設定過的人
