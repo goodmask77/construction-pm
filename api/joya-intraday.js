@@ -111,7 +111,7 @@ export default async function handler(req, res) {
         await soldoutFlush(chg.pend, async (ev) => {
           if (!tkSo || !gidSo) return true // 沒設群／金鑰＝不發（舊行為），不留著重試
           const _mem = await _gm(gidSo)
-          const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo, 'X-Line-Retry-Key': ev.id }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: ev.list }) + await _qf(_mem) }] }) }) // 重送識別碼＝事件編號：送達但回應遺失時重送不會重複發
+          const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo, 'X-Line-Retry-Key': ev.id }, signal: AbortSignal.timeout(10000), body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: ev.list }) + await _qf(_mem) }] }) }) // 重送識別碼＝事件編號：送達但回應遺失時重送不會重複發
           if (pr.ok || pr.status === 409) return true // 409＝同一個重送識別碼 LINE 已收過
           console.log('absoldout push fail', pr.status, (await pr.text().catch(() => '')).slice(0, 160)); return false // 留著下一輪（30 分後）再送，6 小時內有效
         }, 'AB停售通知已送')
