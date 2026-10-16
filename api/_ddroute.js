@@ -9,6 +9,13 @@ const SB_URL = cleanEnv(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_UR
 const SB_KEY = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
 const ABGD = (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').trim().replace(/\/+$/, '')
 export const DD_ROUTE_VER = 1
+// 長期記事本三條（照 line-webhook.js 1.5) 原式）
+export const MEMO_LIST = /^(你記得(哪些|什麼|多少|啥)|你記住了(什麼|哪些|啥)?|你的?(記事本|長期記憶)|看記事本|記事本$)/
+export const MEMO_FORGET = /^(忘記|忘掉|別記|不要記了?|刪(除|掉)記憶)[\s:：,，、]*(.+)/s
+export const MEMO_REMEMBER = /^(記住|幫我記住?|幫我記一下|記一下|記個|備註一下?)[\s:：,，、]*(.+)/s
+// GD 在 1.5) 之前就會接走的指令關鍵字（日誌、報到／登入、卡片指令、授權、轉給CC、素材庫、綁定、連結、緊急聯絡人、名冊、文件、文件庫、檔案庫）：帶到就一律 GD（保守）
+// 第一輪 OpenAI A7：不再用開頭／結尾錨點近似 GD 條件——這些詞出現在句子任何位置就一律 GD（更保守；留 GD 的記事本寫入一樣經命令橋寫新殼正本）
+const BEFORE_MEMO = /心得|日誌|補充|上班|下班|回饋|投票|推播|出勤|測試卡片|報到|登入|授權|轉給|轉告|交給|丟給|CC|素材庫|綁定|連結|確認|緊急聯絡人|名冊|文件|檔案庫|相簿|pinterest|pin\.it/i
 
 export function ddClassify(ev) {
   const t = ev && ev.type
@@ -23,7 +30,7 @@ export function ddClassify(ev) {
   if (/^(轉給|轉告|交給|丟給)\s*CC/i.test(s)) return 'cc'
   if (/綁定/.test(s)) return 'bind'
   if (/^(我的連結|個人連結|連結|登入|重新登入|登入碼|登入連結)$/.test(s) || /報到/.test(s)) return 'login'
-  if (/^(記住|忘記|看記事本|記事本)/.test(s)) return 'memo'
+  if (MEMO_LIST.test(s) || MEMO_FORGET.test(s) || MEMO_REMEMBER.test(s)) return 'memo' // 跟 GD 1.5) 長期記事本同一組正規式
   if (/密碼/.test(s) && /^(記|查|刪|密碼清單)/.test(s)) return 'vault'
   if (/^(確認|取消)$/.test(s) || /^DD\s*(確認|取消)$/i.test(s)) return 'confirm'
   if (/^(今日|今天)(的)?任務|^任務卡$/.test(s)) return 'todaycard' // 跟 GD 2.5) 今日任務卡同一條正規式
@@ -67,6 +74,17 @@ export async function ddShadow(ev, route, sigOK) {
 //   GD 永遠不替歸新殼的事件做業務（交出去不收回）
 const GATES = {
   todaycard: async (ev, sigOK, ctx) => ev.source && ev.source.type === 'user' && sigOK !== false && !!(await ctx.operators())[ev.source.userId || ''],
+  // 記事本：私訊＋操作者＋驗簽沒失敗＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
+  memo: async (ev, sigOK, ctx) => {
+    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    const t = String((ev.message && ev.message.text) || '').trim()
+    if (BEFORE_MEMO.test(t)) return false
+    const mF = t.match(MEMO_FORGET), mR = mF ? null : t.match(MEMO_REMEMBER)
+    if (!(MEMO_LIST.test(t) || (mF && (mF[3] || '').trim()) || (mR && (mR[2] || '').trim()))) return false
+    if (!(await ctx.operators())[ev.source.userId || '']) return false
+    const { abgdOwner } = await import('./_abgdkv.js')
+    return (await abgdOwner('pm_bot_memory')) === 'abgd'
+  },
 }
 export async function ddOwner(ev, route, sigOK, ctx) {
   try {
