@@ -21,7 +21,7 @@ export const obsStamp = () => new Date().toISOString() + '|' + Math.random().toS
 //   每次觀測都寫（推進觀測戳記 obsAt、記今天基準）；manual＝手動掃描：回 { added, removed, current }（不發群）；排程：只有真的有變化才回結果（呼叫端據此發群），第一次建檔只落基準
 //   待發群事件跟狀態存同一份（pend：[{ id, at, list }]，關卡 3 OpenAI 第七輪 A1）：排程回 { pend }＝要送的（含之前沒送成功的），送成功再 soldoutDone 拿掉；超過 6 小時沒送成的丟掉
 const PEND_MS = 6 * 3600e3
-const livePend = (p, now) => (Array.isArray(p) ? p : []).filter(e => e && e.id && now - Date.parse(e.at || 0) < PEND_MS)
+const livePend = (p, now) => (Array.isArray(p) ? p : []).filter(e => { if (!e || !e.id) return false; if (now - Date.parse(e.at || 0) < PEND_MS) return true; console.log('absoldout pend expired（6 小時沒送成，丟掉）', e.id, String(e.list || '').slice(0, 80)); return false }) // 不設筆數上限（每 30 分最多一筆新事件，6 小時內十幾筆）；到期丟掉要留紀錄（關卡 3 OpenAI 第八輪 A1）
 export function soldoutApply(cur, { nowSo, obs, day, hm, stamp, manual, now = Date.now() }) {
   if (cur && cur.obsAt && cur.obsAt > obs) return manual ? { write: false, value: { skipped: '已有較新的掃描結果', current: cur.current || {}, added: [], removed: [] } } : { write: false, value: { pend: livePend(cur.pend, now) } }
   const doc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])], obsAt: obs, pend: livePend(cur.pend, now) } : { current: {}, log: [], obsAt: obs, pend: [] }
@@ -36,7 +36,7 @@ export function soldoutApply(cur, { nowSo, obs, day, hm, stamp, manual, now = Da
     if (manual) { doc.day = day; return { write: true, doc, value: { added, removed, current: doc.current } } } // 手動掃描＝靜默校正（舊行為，不發群）
     const lines = [...added.map(n => `🚫 ${n} 停售了（約 ${hm}）`), ...removed.map(n => `✅ ${n} 恢復販售（約 ${hm}）`)]
     const cn = Object.keys(doc.current)
-    doc.pend = [...doc.pend, { id: crypto.randomUUID(), at: new Date(now).toISOString(), list: `${lines.join('\n')}\n目前停售中：${cn.length ? cn.join('、') : '無'}` }].slice(-20)
+    doc.pend = [...doc.pend, { id: crypto.randomUUID(), at: new Date(now).toISOString(), list: `${lines.join('\n')}\n目前停售中：${cn.length ? cn.join('、') : '無'}` }]
     doc.day = day
     return { write: true, doc, value: { pend: doc.pend } }
   }
