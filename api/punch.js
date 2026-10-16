@@ -62,26 +62,17 @@ export async function todayPunchesAll() { return listPunches(`sp_crew_pch_${dayK
 
 // 寫一筆打卡（自動判向：今天最後一筆是上班→這筆下班，否則上班；LINE 備援講明「上班/下班」則以字面為準）
 export async function recordPunch(person, src, verified, forceDir) {
-  const { today, dir, ts, key, rec, dup } = await crewRun('打卡(' + person.name + ')', async () => {
+  const { today, dir, ts, key, rec } = await crewRun('打卡(' + person.name + ')', async () => {
     const today = await todayPunchesOf(person.id)
     const last = today[today.length - 1]
-    // 沒指定方向（自動判）且 60 秒內剛打過＝連按／兩台同時送，回剛那一筆（不再判成反方向多一張；關卡 3 crew 第二輪）
-    if (!forceDir && last && Date.now() - (Date.parse(last.ts) || 0) < 60e3) return { today: today.slice(0, -1), dir: last.dir, ts: last.ts, key: last.key, rec: last, dup: true }
     const dir = forceDir || (last && last.dir === 'in' ? 'out' : 'in')
     const ts = new Date().toISOString()
-    // 鍵＝人＋這一分鐘＋方向（v4.71.187 關卡 3）：同一分鐘同方向重複按／兩台同時送＝同一筆（只新增；已存在就回那一筆）；
-    //   同一分鐘不同方向＝不同鍵照記；已存在的是未驗證（LINE 備援）、這次是已驗證（QR／GD）＝把那筆升成已驗證
-    const key = `sp_crew_pch_${dayKey()}_${person.id}_m${Math.floor(Date.now() / 60000).toString(36)}${dir}`
-    const ex = await kvGet(key)
-    if (ex) {
-      if (verified && !ex.verified) { const up = { ...ex, verified: true, verifiedBy: src, verifiedAt: ts }; await kvSet(key, up); return { today: today.filter(x => x.key !== key), dir: ex.dir, ts: ex.ts, key, rec: up, dup: true } }
-      return { today: today.filter(x => x.key !== key), dir: ex.dir, ts: ex.ts, key, rec: ex, dup: true }
-    }
+    const key = `sp_crew_pch_${dayKey()}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
     const rec = { personId: person.id, name: person.name, ts, dir, src, verified: !!verified }
-    await kvSet(key, rec) // 只新增（同時有人新增同一鍵＝撞版本→整段重做→讀到已存在）
+    await kvSet(key, rec) // 新鍵＝只新增（跟搬家前一樣一次一筆；判向讀的是情境內新版）
     return { today, dir, ts, key, rec }
   })
-  if (dir === 'in' && !dup) await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
+  if (dir === 'in') await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
   // 今日累計（配對 in/out）
   const list = [...today, { ...rec, key }]
   let ms = 0

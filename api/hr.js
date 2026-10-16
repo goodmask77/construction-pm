@@ -255,7 +255,7 @@ export default async function handler(req, res) {
             }, '遲到即時通知（' + (okN ? '已發' : '沒發出去，撤回') + '）', 'NUEiP遲到通知')
           }
         }
-      } catch (_) {}
+      } catch (e) { console.log('[hr] 出勤通知失敗（下一輪會重搶未發的）', e?.message || e) }
     }
     return res.status(200).json({ ok: true, from, to, personDays: n, months: rep, notified })
   } catch (e) {
