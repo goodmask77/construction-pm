@@ -74,6 +74,13 @@ export async function ddShadow(ev, route, sigOK) {
 //   GD 永遠不替歸新殼的事件做業務（交出去不收回）
 const GATES = {
   todaycard: async (ev, sigOK, ctx) => ev.source && ev.source.type === 'user' && sigOK !== false && !!(await ctx.operators())[ev.source.userId || ''],
+  // v4.71.202 文件庫查詢（批 4，唯讀）：私訊＋驗簽沒失敗＋只收「文件庫」或「看／查／打開／列出 文件庫（有哪些／資料夾／清單）」——
+  //   刻意很窄：GD 的「文件 姓名」（/^文件\s*\S{2,10}\s*$/）會先接走「文件庫資料夾」這類說法；帶傳／發／送／撈或存／放／上傳／收／歸＝存檔撈檔（留 GD）
+  files: async (ev, sigOK) => {
+    if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    const t = String((ev.message && ev.message.text) || '').trim()
+    return t === '文件庫' || /^(看|查|打開|列出)\s*文件庫\s*(有哪些|資料夾|清單)?\s*[？?]?$/.test(t)
+  },
   // 轉給CC：私訊＋操作者且名字含「張良」（同 GD 原條件）＋驗簽沒失敗＋句首轉給／轉告／交給／丟給 CC＋沒帶到報到／登入（報到流程會先接走）＋CC 收件匣正本已在新殼
   cc: async (ev, sigOK, ctx) => {
     if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
