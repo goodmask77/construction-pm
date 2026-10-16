@@ -79,11 +79,20 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
   const byDate = await INL.inlineSearchFuture(token)
   const far = {}
   for (const [d, arr] of Object.entries(byDate)) if (d > boundary) far[d] = arr
-  const sum = (await inlGet('sp_finance_pm_inline')) || { firstDay: '2021-02-10', months: {} } // 只用來決定要掃哪些月；寫回走合併
-  const months = {}
-  // 要掃的月份＝遠期訂位所在月 ∪ 總覽裡 boundary 之後還有資料的月（才能清掉被取消而消失的日子）
-  const mos = new Set(Object.keys(far).map((d) => d.slice(0, 7)))
-  for (const mo of Object.keys(sum.months)) if (mo >= boundary.slice(0, 7)) mos.add(mo)
+  const months = {}, bMo = boundary.slice(0, 7)
+  // 要掃的月份＝遠期訂位所在月 ∪ 總覽裡 boundary 之後還有資料的月（才能清掉被取消而消失的日子）∪ 歷來登記過的候選月 farMonths
+  // 候選月登記（關卡 3 inline 第四輪 A1）：寫任何月檔前，先在總覽交易裡把這輪要寫的月登記上去（世代號還是自己的才准登記）；
+  //   較新一輪一定會掃到所有登記過的月並蓋章 → 較舊一輪在途的寫入不論何時抵達，不是撞到新章停手，就是被較新一輪掃到修正
+  const mine = new Set(Object.keys(far).map((d) => d.slice(0, 7)))
+  fence()
+  const reg = await inlTx('sp_finance_pm_inline', (cur) => {
+    fence()
+    if (!cur || Number(cur.farGen) !== gen) { const e = new Error('已有較新一輪遠期同步，停手'); e.code = 'lease'; throw e }
+    const fm = new Set([...(Array.isArray(cur.farMonths) ? cur.farMonths : []).filter((m) => m >= bMo), ...mine])
+    return { write: true, doc: { ...cur, farMonths: [...fm].sort() }, value: { farMonths: [...fm], sumMonths: Object.keys(cur.months || {}) } }
+  }, 'inline遠期同步登記')
+  const mos = new Set([...mine, ...reg.farMonths])
+  for (const mo of reg.sumMonths) if (mo >= bMo) mos.add(mo)
   let farResv = 0
   for (const mo of [...mos].sort()) {
     const key = 'sp_finance_pm_inline_' + mo
