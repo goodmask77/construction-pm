@@ -198,6 +198,8 @@ function renderBoard(d, store, view){
   if (view === 'prep') return renderPrep(d, store) // v4.42.0（張良拍板）：備料量+節奏表搬「備料」分頁、首頁=今日為王儀表板
   document.getElementById('upd').textContent = '' // v4.52 張良：日結資訊搬到「每日數據」右邊一行，這條橫幅拿掉
   let h = ''
+  // v4.71.192 張良 10-16「大家改從新版進來」：舊版首頁最上面提示開新版（有綁定＝自動登入；舊版照常可用）
+  if (typeof TK === 'function' && TK()) h += `<div onclick="abgdOpen('home','https://ab-gd.vercel.app/')" style="margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--psoft);border:1px solid var(--primary);color:var(--ink);font-weight:800;cursor:pointer">新版已上線：點這裡開新版（自動登入；舊版照常可用）</div>`
   // v4.48.1（張良「頂列只留GROUN:D；A Beach營收放首頁需要再切換」）：營收卡頂店別切換
   h += `<div style="display:inline-flex;background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px;margin-top:10px">
     <button onclick="load('ground')" style="padding:5px 14px;border-radius:7px;border:none;font-weight:800;font-size:13px;cursor:pointer;background:${store==='ground'?'var(--primary)':'transparent'};color:${store==='ground'?'#fff':'var(--sub,#8893A4)'}">GROUN:D</button>
