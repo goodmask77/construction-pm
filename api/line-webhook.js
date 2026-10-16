@@ -11,7 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { CREW_RE, crewTx } from './_crewkv.js' // v4.71.187 夥伴名冊／人資域：DD 的寫入一律走 crewEd（每次重讀最新、撞版本重做這一步；回覆 LINE 在存檔之後）
+import { CREW_RE, crewTx, crewLagWatch } from './_crewkv.js' // v4.71.187 夥伴名冊／人資域：DD 的寫入一律走 crewEd（每次重讀最新、撞版本重做這一步；回覆 LINE 在存檔之後）
 import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
@@ -2499,32 +2499,35 @@ export default async function handler(req, res) {
             const pd = (pmB.pending || {})[bdRid]
             if (!pd) { await repB((pmB.users || {})[bdRid]?.edit ? `✅ ${bdNm} 已經核准過了。` : `找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
             if (bdOp === 'ok') {
-              pmB.users[bdRid] = { name: pd.name, edit: 1, by: meB.name, ts: pd.ts }
-              delete pmB.pending[bdRid]
-              await kvSet('sp_finance_pm_prep_perm', pmB)
+              // v4.71.196 權限域版本化寫（每次重讀最新；別人同時處理過＝不重複核准、不重複通知）；有人正在拒絕（rejecting）＝不核准（關卡 3 auth 第二輪 OpenAI A6）
+              const { v: okB, lag: lagB } = await crewLagWatch(() => crewEd('sp_finance_pm_prep_perm', (pmX) => { pmX.users = pmX.users || {}; pmX.pending = pmX.pending || {}; const pX = pmX.pending[bdRid]; if (!pX || pX.rejecting) return false; pmX.users[bdRid] = { name: pX.name, edit: 1, by: meB.name, ts: pX.ts }; delete pmX.pending[bdRid] }, { mode: 'approve', users: {}, pending: {} }))
+              if (!okB) { await repB(`找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
+              let sentB = false
               try { // 核准→DD 通知當事人（同 /prep 權限設定 ✅ 的通知）
                 let uidA = pd.uid
                 if (!uidA) { const bdDoc = kvB['sp_finance_pm_prep_bind'] || {}; uidA = (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid }
-                if (uidA) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: uidA, messages: [{ type: 'text', text: '✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。' }] }) })
+                if (uidA) sentB = (await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: uidA, messages: [{ type: 'text', text: '✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。' }] }) })).ok
               } catch (_) {}
-              await repB(`✅ 已核准 ${pd.name}，他現在可以編輯了（我也通知他了）。`)
+              await repB(`✅ 已核准 ${pd.name}，他現在可以編輯了` + (sentB ? '（我也通知他了）。' : '。（通知他的私訊沒送出去，麻煩跟他說一聲）') + (lagB ? '\n（系統同步較慢，約 1 分鐘內完全生效）' : ''))
             } else {
-              delete pmB.pending[bdRid]
-              await kvSet('sp_finance_pm_prep_perm', pmB)
-              // v4.70.70 拒絕＝連綁定一起解除（張良 2026-10-12：原本只取消編輯權，連結跟綁定還在，他照樣能用連結看 /prep）
-              let unb = ''
-              try {
+              // 關卡 3 auth 第一、二輪 OpenAI A9／A6：①先在待審上標「拒絕處理中」（領取處理權：同時按核准會被擋）②解除綁定（bind、名冊）③刪待審
+              //   中途失敗：待審還在（帶 rejecting），再按一次拒絕會補做；核准按鈕對 rejecting 的不動作
+              const { v: unb, lag: lagR } = await crewLagWatch(async () => {
+                const claim = await crewEd('sp_finance_pm_prep_perm', (pmX) => { const pX = (pmX.pending || {})[bdRid]; if (!pX) return false; if (!pX.rejecting) pX.rejecting = meB.name; return { uid: pX.uid || '' } }, { mode: 'approve', users: {}, pending: {} })
+                if (!claim) return null
+                let t = ''
                 const bdDoc = kvB['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
-                const uidR = pd.uid || (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid
+                const uidR = claim.uid || (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid
                 if (uidR) {
-                  for (const [tk2, v2] of Object.entries(bdDoc.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) delete bdDoc.tokens[tk2]
-                  delete (bdDoc.byUid || {})[uidR]
-                  await kvSet('sp_finance_pm_prep_bind', bdDoc)
+                  await crewEd('sp_finance_pm_prep_bind', (bdX) => { let ch = false; for (const [tk2, v2] of Object.entries(bdX.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) { delete bdX.tokens[tk2]; ch = true } if ((bdX.byUid || {})[uidR]) { delete bdX.byUid[uidR]; ch = true } if (!ch) return false }, { byUid: {}, tokens: {} })
                   await crewEd('sp_crew_kb_roster', (rosR) => { const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR); if (!(pR && pR.lineUserId === uidR)) return false; delete pR.lineUserId }, { people: [] })
-                  unb = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
+                  t = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
                 }
-              } catch (_) {}
-              await repB(`❌ 已拒絕 ${pd.name} 的申請${unb}。沒有通知他。`)
+                await crewEd('sp_finance_pm_prep_perm', (pmX) => { const pX = (pmX.pending || {})[bdRid]; if (!pX || !pX.rejecting) return false; delete pmX.pending[bdRid] }, { mode: 'approve', users: {}, pending: {} })
+                return t
+              })
+              if (unb === null) { await repB(`找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
+              await repB(`❌ 已拒絕 ${pd.name} 的申請${unb}。沒有通知他。` + (lagR ? '（系統同步較慢，約 1 分鐘內完全生效）' : ''))
             }
           } catch (e) { console.log('bind approve postback error', e?.message); await repB('⚠️ 處理出錯，再按一次，或到 /prep → 設定 → 🔐權限設定 操作。') }
           continue
@@ -2730,7 +2733,6 @@ export default async function handler(req, res) {
         const appKey = mBind[1].toUpperCase() === 'AB' ? 'AB' : (mBind[1] === '看板' ? '看板' : 'GD')
         if (!BIND_APPS[appKey]) { await send('「' + appKey + '」的 App 還沒開通，目前可以綁定：GD（營運看板）。'); continue }
         try {
-          const kvb = await kvGetMany(['sp_finance_pm_prep_bind'])
           // v4.71.187 名冊綁定＝一次版本比對寫（每次重讀最新名冊再判斷；撞到別人同時改就重做這一步）；回覆在存檔之後
           let lnB = null
           const bR = await crewTx('sp_crew_kb_roster', async (cur) => {
@@ -2760,26 +2762,26 @@ export default async function handler(req, res) {
           }, 'D哥', 'DD綁定')
           if (bR.err) { await send(bR.err); continue }
           const rp = bR.rp, note2 = bR.note2, rosterDoc2 = bR.doc
-          const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
-          let tk2 = bind.byUid[userId]
-          const isNewBind = !tk2
-          if (!tk2) {
-            tk2 = 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
-            bind.byUid[userId] = tk2
-          }
-          bind.tokens[tk2] = { ...(bind.tokens[tk2] || {}), name: rp.name, rid: rp.id, uid: userId, ts: bind.tokens[tk2]?.ts || new Date().toISOString() }
-          await kvSet('sp_finance_pm_prep_bind', bind)
+          // v4.71.196 身分域版本化寫（每次重讀最新綁定表；新 token 只產一次，重做沿用）
+          const tkNew = 'pv' + crypto.randomBytes(16).toString('base64url') // 關卡 3 auth 第一輪 OpenAI A11：登入憑證用密碼學亂數
+          const { tk2, isNewBind } = await crewEd('sp_finance_pm_prep_bind', (bind) => {
+            bind.byUid = bind.byUid || {}; bind.tokens = bind.tokens || {}
+            let t = bind.byUid[userId]; const isNew = !t
+            if (!t) { t = tkNew; bind.byUid[userId] = t }
+            bind.tokens[t] = { ...(bind.tokens[t] || {}), name: rp.name, rid: rp.id, uid: userId, ts: bind.tokens[t]?.ts || new Date().toISOString() }
+            return { tk2: t, isNewBind: isNew }
+          }, { byUid: {}, tokens: {} })
           // 綁定即自動申請編輯權限（張良 2026-10-01：不要廢話；綁完=等待審核，核准後 DD 通知當事人）
           let pendTxt = ''
           try {
-            const permB = (await kvGetMany(['sp_finance_pm_prep_perm']))['sp_finance_pm_prep_perm'] || { mode: 'approve', users: {}, pending: {} }
             const pKey = rp.id || userId
-            if (permB.mode === 'approve' && !(permB.users[pKey] && permB.users[pKey].edit)) {
+            const pendOk = await crewEd('sp_finance_pm_prep_perm', (permB) => {
+              permB.users = permB.users || {}
+              if (!(permB.mode === 'approve' && !(permB.users[pKey] && permB.users[pKey].edit))) return false
               permB.pending = permB.pending || {}
               permB.pending[pKey] = { name: rp.name, uid: userId, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
-              await kvSet('sp_finance_pm_prep_perm', permB)
-              pendTxt = '\n已自動幫你申請編輯權限，核准前只能瀏覽、不能編輯；核准後我會通知你。'
-            }
+            }, { mode: 'approve', users: {}, pending: {} })
+            if (pendOk) pendTxt = '\n已自動幫你申請編輯權限，核准前只能瀏覽、不能編輯；核准後我會通知你。'
           } catch (_) {}
           await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${rp.onboarding ? '#tab=onb' : ''}${pendTxt}${note2}`)
           if (isNewBind) { // 新綁定→DD 通知老闆（張良 2026-09-21：任何人綁定完成要跟我說）
@@ -2806,13 +2808,15 @@ export default async function handler(req, res) {
             // v4.31.3 四位數登入碼（張良：綁定碼要更簡單＝打4個數字就好）：10分鐘有效、用一次就失效、過期自動清
             let codeMsg = ''
             try {
-              const lcDoc = (await kvGetMany(['sp_finance_pm_prep_logincode']))['sp_finance_pm_prep_logincode'] || { codes: {} }
-              const nowC = Date.now()
-              for (const [k9, v9] of Object.entries(lcDoc.codes || {})) if (!v9 || v9.exp < nowC) delete lcDoc.codes[k9]
-              let c9 = ''
-              do { c9 = String(Math.floor(1000 + Math.random() * 9000)) } while (lcDoc.codes[c9])
-              lcDoc.codes[c9] = { tk: tkL, exp: nowC + 10 * 60e3 }
-              await kvSet('sp_finance_pm_prep_logincode', lcDoc)
+              const c9 = await crewEd('sp_finance_pm_prep_logincode', (lcDoc) => { // v4.71.196 身分域版本化寫
+                lcDoc.codes = lcDoc.codes || {}
+                const nowC = Date.now()
+                for (const [k9, v9] of Object.entries(lcDoc.codes)) if (!v9 || v9.exp < nowC) delete lcDoc.codes[k9]
+                let c = ''
+                do { c = String(Math.floor(1000 + Math.random() * 9000)) } while (lcDoc.codes[c])
+                lcDoc.codes[c] = { tk: tkL, exp: nowC + 10 * 60e3 }
+                return c
+              }, { codes: {} })
               codeMsg = `🔢 登入碼【 ${c9} 】\nApp 按右上「登入」→ 輸入這 4 個數字就好（10分鐘內有效）\n\n`
             } catch (_) {}
             await send(`${codeMsg}🔑 或點個人連結自動登入（換手機/瀏覽器都通用）👇\nhttps://ground-pm.vercel.app/prep?me=${tkL}`)

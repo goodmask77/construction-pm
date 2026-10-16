@@ -7,10 +7,31 @@
 //   情境外：讀照舊讀 GD 副本；寫一律拒絕（漏包就會露出來）
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { abgdKv } from './_abgdkv.js'
-export const CREW_RE = /^(sp_crew_kb_roster|sp_crew_pm_hr_|sp_crew_pch_|sp_finance_pm_hr_idlock|sp_finance_pm_punch_makeup)/ // 這層管的全部鍵（兩類）
-const APP_RE = /^(sp_crew_kb_roster|sp_finance_pm_hr_idlock)/ // crewapp：留 GD 的兩份
-const cls = (id) => APP_RE.test(String(id)) ? 'app' : 'crew'
-const newKv = (op, c) => abgdKv({ domain: c === 'app' ? 'crewapp' : 'crew', lockKey: c === 'app' ? 'sp_crew_kb_roster' : 'sp_crew_pm_hr_master', operator: String(op || '夥伴名冊').slice(0, 30), label: '夥伴名冊', versioned: true })
+export const CREW_RE = /^(sp_crew_kb_roster|sp_crew_pm_hr_|sp_crew_pch_|sp_finance_pm_hr_idlock|sp_finance_pm_punch_makeup|sp_finance_pm_prep_(perm|tabs|fav|hide|animpref|bind|logincode)$)/ // 這層管的全部鍵（四類；v4.71.196 加權限 perm、身分 identity）
+const APP_RE = /^(sp_crew_kb_roster|sp_finance_pm_hr_idlock)/ // crewapp：名冊、身分證欄名單
+const PERM_RE = /^sp_finance_pm_prep_(perm|tabs|fav|hide|animpref)$/ // perm：權限名單、分頁名稱、常用清單、預做隱藏、動畫偏好
+const IDN_RE = /^sp_finance_pm_prep_(bind|logincode)$/ // identity：GD 綁定 token、4 位數登入碼
+const cls = (id) => APP_RE.test(String(id)) ? 'app' : PERM_RE.test(String(id)) ? 'perm' : IDN_RE.test(String(id)) ? 'idn' : 'crew'
+const KV_OF = { app: ['crewapp', 'sp_crew_kb_roster', '夥伴名冊'], perm: ['perm', 'sp_finance_pm_prep_perm', '權限設定'], idn: ['identity', 'sp_finance_pm_prep_bind', '登入綁定'], crew: ['crew', 'sp_crew_pm_hr_master', '夥伴名冊'] }
+const newKv = (op, c) => { const [domain, lockKey, label] = KV_OF[c] || KV_OF.crew; return abgdKv({ domain, lockKey, operator: String(op || label).slice(0, 30), label, versioned: true }) }
+// 權限／身分類（GD 每個請求的權限判斷都讀 GD 副本）：新殼正本寫成功後，等 GD 副本也變成這份內容才回（最多 8 秒；新殼命令寫完立刻反推）——停權／解除綁定按完＝GD 已擋得住；等不到＝留紀錄照回成功（每分鐘排程補）
+const AUTH_RE = /^(sp_crew_kb_roster|sp_finance_pm_hr_idlock|sp_finance_pm_prep_(perm|bind|logincode)$)/
+const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '')
+const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '')
+const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o }, {}) : x)
+// 等不到 GD 副本的次數：只算「這次操作」自己的寫入（crewLagWatch 包起來的那段；關卡 3 auth 第二輪 Gemini 2／OpenAI B3：不用全域計數，別人的延遲不會算到你頭上）
+const lagAls = new AsyncLocalStorage()
+export async function crewLagWatch(fn) { const st = { lag: 0 }; const v = await lagAls.run(st, fn); return { v, lag: st.lag > 0 } }
+export async function awaitGdCopy(id, doc, ms = 5000) { // 5 秒（第二輪 Gemini 4：一次操作最多寫三份，8 秒×3 太久）
+  const want = stable(doc), t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: AbortSignal.timeout(Math.max(500, Math.min(3000, ms - (Date.now() - t0)))) }); const rows = r.ok ? await r.json() : []; const v = rows[0] && rows[0].data && rows[0].data.v; if (v != null && stable(JSON.parse(v)) === want) return true } catch (_) {}
+    await sleep(400)
+  }
+  const st = lagAls.getStore(); if (st) st.lag++
+  console.log('[crewkv] GD 副本 5 秒內沒追上（排程會補）', id); return false
+}
+const afterPut = async (k, id, obj) => { if (k && k.mode === 'abgd' && AUTH_RE.test(String(id))) await awaitGdCopy(id, obj) }
 const als = new AsyncLocalStorage()
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 export async function crewRun(op, fn) {
@@ -26,7 +47,7 @@ export function crewSetOp(name) { const st = als.getStore(); if (st && !st.kv.cr
 export async function crewHookGet(id) { const k = await ctxKv(id); return k ? k.kvGet(id) : undefined }
 export async function crewHookPut(id, obj, editor) {
   const k = await ctxKv(id)
-  if (k) { await k.kvPut(id, obj, editor || '夥伴名冊'); return true }
+  if (k) { await k.kvPut(id, obj, editor || '夥伴名冊'); await afterPut(k, id, obj); return true }
   console.log('[crewkv] 情境外寫入被拒', id, editor)
   const e = new Error('夥伴名冊寫入要在情境裡（程式漏包了）：' + id); e.code = 'nocrew'; throw e
 }
@@ -36,7 +57,7 @@ export async function crewTx(key, mutate, editor, op) {
     const cur = await kv.kvGet(key)
     const res = await mutate(cur)
     if (!res || !res.write) return res ? res.value : undefined
-    try { await kv.kvPut(key, res.doc, editor || '夥伴名冊'); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
+    try { await kv.kvPut(key, res.doc, editor || '夥伴名冊'); await afterPut(kv, key, res.doc); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
     await sleep(100 + Math.random() * 300)
   }
   const e = new Error('夥伴名冊一直有人同時在改，這次沒存進去，請再試一次'); e.code = 'commitfail'; throw e
@@ -45,6 +66,7 @@ export async function crewTx(key, mutate, editor, op) {
 export async function crewHookPrefix(pf) { const k = await ctxKv(pf); return k ? k.kvPrefix(pf) : undefined }
 // 刪一份（打卡後台刪除、LINE 打卡退回）：情境外拒絕
 export async function crewHookDel(id) {
+  if (cls(id) !== 'crew') { const e = new Error('名冊／權限／身分是核心資料，不准整份刪除：' + id); e.code = 'nodel'; throw e } // 關卡 3 auth 第一輪 OpenAI B3
   const k = await ctxKv(id)
   if (k) { await k.kvDel(id); return true }
   const e = new Error('夥伴名冊刪除要在情境裡（程式漏包了）：' + id); e.code = 'nocrew'; throw e

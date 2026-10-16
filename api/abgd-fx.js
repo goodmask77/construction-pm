@@ -10,6 +10,7 @@ import { wpPush, wpPushUids, prepLink } from './_webpush.js'
 import { awardPtsStrict } from './_points.js'
 import { ddGet, ddFill, ddGroupGid, ddAll } from './_ddmsg.js'
 import { aiCall } from './_ai.js'
+import { crewTx } from './_crewkv.js'
 
 const TK = () => (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
 // 冪等：每個事件（含逐收件人的子事件）一個鍵 pm_abgd_fxk_<sha1>，用「insert 不覆寫」原子佔位（pm_abgd_ 前綴不屬於任何資料域）
@@ -588,11 +589,10 @@ const ACTIONS = {
   },
   async anim_pref(a) { // 新殼任務頁個人動畫偏好（同 mail-sync ?animpref／?animprefset，資料在 GD perm 域 sp_finance_pm_prep_animpref）；新殼已驗身分，a.rid＝本人
     const rid = String(a.rid || '').slice(0, 80); if (!rid) return { ok: false, error: '缺身分' }
-    const docA = (await kvGet('sp_finance_pm_prep_animpref')) || {}
-    if (a.op !== 'set') return { ok: true, pref: docA[rid] || null }
+    if (a.op !== 'set') { const docA = (await kvGet('sp_finance_pm_prep_animpref')) || {}; return { ok: true, pref: docA[rid] || null } }
     const p = a.pref || {}
-    docA[rid] = { inView: p.inView !== false, noDone: p.noDone !== false, followReduce: p.followReduce !== false, allOff: !!p.allOff } // 欄位清洗照 GD ?animprefset
-    if (!(await kvSet('sp_finance_pm_prep_animpref', docA))) return { ok: false, error: '存不進去，請稍後再試' }
+    const clean = { inView: p.inView !== false, noDone: p.noDone !== false, followReduce: p.followReduce !== false, allOff: !!p.allOff } // 欄位清洗照 GD ?animprefset
+    try { await crewTx('sp_finance_pm_prep_animpref', (cur) => { const d = cur || {}; d[rid] = clean; return { write: true, doc: d } }, '動畫偏好', '動畫偏好') } catch (_) { return { ok: false, error: '存不進去，請稍後再試' } } // v4.71.196 權限域版本化寫（搬家後走新殼正本）
     return { ok: true }
   },
   async err_notify(a) { // App 錯誤回報（原 mail-sync ?errlog 當日首見通知，文字照抄）：DD 私訊審核人（名冊有 lineUserId 的在職者）；新殼 issues 域排
