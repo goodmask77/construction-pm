@@ -84,7 +84,7 @@
 
 ### 剩下的階段（10-16 18:20 依張良指示更新）
 1. ~~設定／通知中心頁面~~（10-16 18:50 完成）→ ~~權限／身分／名冊資料~~：**10-16 19:10 改成最後跟「GD 停止運作」一起切**（GD 每個請求都讀這三份判斷權限，現在搬只增加跨庫與副本延遲；準備程式已上線＝GD v4.71.196、新殼 v0.4.186，行為等同搬家前＋修既有問題；切換前必做五項見 docs/ABGD_3AI_LOG.md「權限／身分／名冊」）。
-2. **DD（dd 域＋line-webhook.js）**：設計 v2.1（新殼 repo docs/ABGD_DD_PLAN.md）兩輪審查完；**入口留 GD**、GD 台帳一次決定歸屬、交出去不收回。**第 0 批地基 10-16 20:20 上線**（新殼 v0.4.187、GD v4.71.197；嚴格驗簽已開；影子比對開著＝只算權限不發不寫）。**批 1 試點「今日任務卡」10-17 凌晨上線並開路由**（新殼 v0.4.188、GD v4.71.199；關卡 3 七輪；等張良私訊實測）。新殼 lib/dd/（auth 權限契約、kv 依歸屬讀、send 回話佇列、todaycard、jobs、routes 登記）＋ /api/dd/{enqueue,tick,redrive}；GD _ddroute.js（分類、ddOwner GATES、轉交、台帳狀態機 pending→ok／giveup→gaveup）＋ abgd-fx dd_send／dd_redrive。下一步：看影子紀錄＋今日任務實測 → 批 2（記事本、轉給 CC、群組 join／leave，資料跟著切新殼正本）。**新開路由＝在 _ddroute.js GATES 加條件＋新殼 lib/dd/routes.ts 登記處理器＋改 sp_finance_pm_ddroutes.routes**。**待張良**：私訊「登入」改新殼登入連結？工程遺留動作停用？（批 3 前）
+2. **DD（dd 域＋line-webhook.js）**：設計 v2.1（新殼 repo docs/ABGD_DD_PLAN.md）兩輪審查完；**入口留 GD**、GD 台帳一次決定歸屬、交出去不收回。**第 0 批地基 10-16 20:20 上線**（新殼 v0.4.187、GD v4.71.197；嚴格驗簽已開；影子比對開著＝只算權限不發不寫）。**批 1 試點「今日任務卡」10-17 凌晨上線並開路由**（新殼 v0.4.188、GD v4.71.199；關卡 3 七輪；等張良私訊實測）。新殼 lib/dd/（auth 權限契約、kv 依歸屬讀、send 回話佇列、todaycard、jobs、routes 登記）＋ /api/dd/{enqueue,tick,redrive}；GD _ddroute.js（分類、ddOwner GATES、轉交、台帳狀態機 pending→ok／giveup→gaveup）＋ abgd-fx dd_send／dd_redrive。**批 2 記事本 10-17 01:20 上線**（ddmem 已切新殼 epoch 2、開 routes.memo；GD v4.71.200、新殼 v0.4.190；關卡 3 六輪）。下一步：等張良實測今日任務／看記事本 → 批 3（文件庫／檔案庫「查」、轉給 CC；轉給 CC 的 pm_cc_inbox 是 CC 撿單用，要先想 CC 的讀取口）。**新開路由＝在 _ddroute.js GATES 加條件＋新殼 lib/dd/routes.ts 登記處理器＋改 sp_finance_pm_ddroutes.routes**。**待張良**：私訊「登入」改新殼登入連結？工程遺留動作停用？（批 3 前）
 3. **外部串接統一切（關卡 4）**：LINE webhook（DD＋四個官方帳號收件匣）、員工 LIFF、Vercel 排程（NUEiP、喬亞、阿桑、inline、收信…）、阿桑 partner-api、短網址 /v/、公開頁（salary、menu-ground.html、sw.js）。
 4. **總體檢（關卡 5）**。
 - **不做**：主 App 遺留（取消）；會員、團體訂餐、綠界、客人 LIFF（暫停，要用再說）。
@@ -241,3 +241,9 @@
 - GD 正式站環境變數值有的帶「NAME=」前綴（SUPABASE_URL）：新寫 GD 檔一律用 clean（剝前綴）讀；本機用正式連線跑對不代表正式站對，上線後要看真實事件有沒有走到（這次靠新殼 ops.dd_shadow 0 筆才發現）。
 - 對外發送三層去重：core.effects 編號、GD 代發口主編號、子事件（reply／push／收件匣／對話記憶）各自的完成收據；結果不明一律不再發、只補收件匣；事件超過 20 小時不再呼叫 LINE（重試鍵 24 小時）。
 - 審查會一直往下挖：每輪只修「有具體失敗情境」的，並附對準該情境的測試；誤判要附證據（這次 Gemini 7 次誤判）。
+
+## 10-17 DD 批 2 學到的
+- 資料跟功能一起切時，**GD 讀取改讀正本**比「回話前等副本追上」簡單又可靠（副本只給其他讀者）。
+- 自動、背景型的寫入（AI 自動記住）不要做事後補寫：補寫會跨過使用者的「忘記」；只試一次＋版本比對＋讀太慢就放棄。
+- 「沒找到就不寫」會讓版本號不前進、擋不住在途舊寫入：刪除型操作沒找到也要寫回推進版本。
+- 測試庫手動改資料域狀態時，新殼反推會因 GD 歸屬對不上而凍結資料域（安全設計）：測試裡把反推換成假的。
