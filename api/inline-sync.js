@@ -88,9 +88,9 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
   const reg = await inlTx('sp_finance_pm_inline', (cur) => {
     fence()
     if (!cur || Number(cur.farGen) !== gen) { const e = new Error('已有較新一輪遠期同步，停手'); e.code = 'lease'; throw e }
-    // farMonths＝{ 月: 最後登記時間 }；只清「已在 boundary 月以前、且登記超過 1 小時」的（租約 10 分鐘，舊輪早就失效）——跨月推進時，剛登記的舊月照樣掃、蓋章（只蓋章，boundary 以前的日子不動；關卡 3 inline 第五輪 A1）
+    // farMonths＝{ 月: 最後登記時間 }；只清「已在 boundary 月以前、且登記超過 2 小時」的（租約 10 分鐘，舊輪早就失效）——跨月推進時，剛登記的舊月照樣掃、蓋章（只蓋章，boundary 以前的日子不動；關卡 3 inline 第五輪 A1）
     const nowMs = Date.now(), fm = {}
-    for (const [m, t] of Object.entries(Array.isArray(cur.farMonths) ? Object.fromEntries(cur.farMonths.map((x) => [x, nowMs])) : (cur.farMonths || {}))) if (m >= bMo || nowMs - Number(t) < 3600e3) fm[m] = Number(t) || nowMs
+    for (const [m, t] of Object.entries(Array.isArray(cur.farMonths) ? Object.fromEntries(cur.farMonths.map((x) => [x, nowMs])) : (cur.farMonths || {}))) if (m >= bMo || nowMs - Number(t) < 7200e3) fm[m] = Number(t) || nowMs // 2 小時：舊輪最晚取得租約後 9 分鐘停發新寫入（時間圍欄），已發出的寫入受 Vercel 函式 300 秒上限、資料庫單句 8 秒（authenticator statement_timeout／lock_timeout）限制，約 14 分鐘內一定結束或失敗
     for (const m of mine) fm[m] = nowMs
     return { write: true, doc: { ...cur, farMonths: fm }, value: { farMonths: Object.keys(fm), sumMonths: Object.keys(cur.months || {}) } }
   }, 'inline遠期同步登記')
