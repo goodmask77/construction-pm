@@ -100,19 +100,21 @@ export default async function handler(req, res) {
       for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
       // v4.71.158 異常通知域：依歸屬版本比對寫（每次重讀最新再比對），寫成功才發群
       const { soldoutTx } = await import('./_inckv.js')
-      const chg = await soldoutTx({ nowSo, obs: obsSo, day: todaySo, hm, stamp: hm }, 'AB停售變化') // 只拿最後成功那次的結果；沒變化／較舊的觀測＝null＝不發群
-      if (chg) {
-        const { added, removed } = chg
-        const soDoc = { current: chg.current }
-        const lines2 = []
-        added.forEach(n => lines2.push(`🚫 ${n} 停售了（約 ${hm}）`))
-        removed.forEach(n => lines2.push(`✅ ${n} 恢復販售（約 ${hm}）`))
-        const listSo = `${lines2.join('\n')}\n目前停售中：${Object.keys(soDoc.current).length ? Object.keys(soDoc.current).join('、') : '無'}`
+      const { soldoutFlush } = await import('./_inckv.js')
+      const chg = await soldoutTx({ nowSo, obs: obsSo, day: todaySo, hm, stamp: hm }, 'AB停售變化') // 狀態＋待發事件同一筆存；回 { pend }＝要送的（含之前沒送成的）
+      if (chg && chg.pend && chg.pend.length) {
         const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 DD自動訊息設定(soldoutAB)：群/文字（開關沿用上面 sp_finance_pm_notify 閘）
         const cfgSo = await ddGet('soldoutAB')
         const gidSo = await ddGroupGid(cfgSo.group)
         const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        if (tkSo && gidSo) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidSo); const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) + await _qf(_mem) }] }) }); if (!pr.ok) console.log('absoldout push fail', pr.status, (await pr.text().catch(() => '')).slice(0, 160)) } // 盡力通知：狀態已存，發送失敗只記錄（舊行為，關卡 3 列 B）
+        const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+        await soldoutFlush(chg.pend, async (ev) => {
+          if (!tkSo || !gidSo) return true // 沒設群／金鑰＝不發（舊行為），不留著重試
+          const _mem = await _gm(gidSo)
+          const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo, 'X-Line-Retry-Key': ev.id }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: ev.list }) + await _qf(_mem) }] }) }) // 重送識別碼＝事件編號：送達但回應遺失時重送不會重複發
+          if (pr.ok || pr.status === 409) return true // 409＝同一個重送識別碼 LINE 已收過
+          console.log('absoldout push fail', pr.status, (await pr.text().catch(() => '')).slice(0, 160)); return false // 留著下一輪（30 分後）再送，6 小時內有效
+        }, 'AB停售通知已送')
       }
     }
   } catch (e) { console.log('absoldout err', e?.message) }
