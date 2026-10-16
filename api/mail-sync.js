@@ -1252,9 +1252,11 @@ export default async function handler(req, res) {
           return res.status(200).json({ ok: true })
         } catch (e) { return res.status(409).json({ ok: false, error: String(e && e.message || e).slice(0, 120) }) }
       }
-      if (op === 'del') { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }); return res.status(200).json({ ok: true }) }
+      if (op === 'del' && key === 'sp_team_pm_activity') return res.status(403).json({ ok: false, error: '活動紀錄不能整份刪除' }) // v4.71.203：只會走到活動紀錄這把鍵；整份刪會蓋掉 DD／排程剛追加的（DD 批 5 關卡 3 第二輪 OpenAI A3）
       let val; try { val = JSON.parse(String(kb.value)) } catch (_) { return res.status(400).json({ ok: false, error: 'value 要是 JSON 字串' }) }
-      await kvPut(key, val, '/prep任務(' + w.name + ')')
+      // v4.71.203 活動紀錄：頁面送來的整包跟現有的合併（版本比對），不蓋掉 DD／排程剛追加的（DD 批 5 關卡 3 第一輪 OpenAI A3）
+      const { actAppend } = await import('./_actlog.js')
+      if (!Array.isArray(val) || !(await actAppend(key, val, '/prep任務(' + w.name + ')'))) return res.status(409).json({ ok: false, error: '活動紀錄沒存上，請再試一次' })
       await announceChanged()
       return res.status(200).json({ ok: true })
     }

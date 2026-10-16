@@ -20,7 +20,7 @@ const BEFORE_MEMO = /心得|日誌|補充|上班|下班|回饋|投票|推播|出
 export function ddClassify(ev) {
   const t = ev && ev.type
   if (t === 'unsend' || t === 'join' || t === 'leave' || t === 'follow' || t === 'unfollow' || t === 'memberJoined' || t === 'memberLeft') return t.toLowerCase()
-  if (t === 'postback') { const d = String((ev.postback && ev.postback.data) || ''); if (/^cf\|/.test(d)) return 'pb_confirm'; if (/^pi\|/.test(d)) return 'pb_issue'; if (/^bd\|/.test(d)) return 'pb_bind'; return 'pb_card' }
+  if (t === 'postback') { const d = String((ev.postback && ev.postback.data) || ''); if (/^cf\|/.test(d)) return 'pb_confirm'; if (/^pi\|/.test(d)) return 'pb_issue'; if (/^bd\|/.test(d)) return 'pb_bind'; if (/^tk\|/.test(d)) return 'tkcard'; return 'pb_card' }
   if (t !== 'message') return 'other'
   const m = ev.message || {}
   if (m.type === 'image' || m.type === 'file' || m.type === 'video') return 'media'
@@ -80,6 +80,16 @@ const GATES = {
     if (!(ev.source && ev.source.type === 'user' && sigOK !== false)) return false
     const t = String((ev.message && ev.message.text) || '').trim()
     return t === '文件庫' || /^(看|查|打開|列出)\s*文件庫\s*(有哪些|資料夾|清單)?\s*[？?]?$/.test(t)
+  },
+  // v4.71.203 團隊任務卡按鈕（批 5）：私訊＋驗簽沒失敗＋按鈕資料是「tk|動作|團|任務編號（|選項）」＋操作者＋團隊任務正本在新殼（tasks 域）——
+  //   其他空間（工程／夥伴／財務）的任務還在 GD，照舊；動作只收 GD 卡片會產生的那幾種
+  tkcard: async (ev, sigOK, ctx) => {
+    if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK !== false)) return false
+    const d = String((ev.postback && ev.postback.data) || '')
+    if (!/^tk\|(done|d1|pick|del|del2|keep|urg|cat|cat2|own|own2)\|團\|[^|]+(\|[^|]*)?$/.test(d)) return false
+    if (!(await ctx.operators())[ev.source.userId || '']) return false
+    const { abgdOwner } = await import('./_abgdkv.js')
+    return (await abgdOwner('sp_team_pm_task_x')) === 'abgd'
   },
   // 轉給CC：私訊＋操作者且名字含「張良」（同 GD 原條件）＋驗簽沒失敗＋句首轉給／轉告／交給／丟給 CC＋沒帶到報到／登入（報到流程會先接走）＋CC 收件匣正本已在新殼
   cc: async (ev, sigOK, ctx) => {

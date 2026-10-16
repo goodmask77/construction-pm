@@ -594,7 +594,7 @@ export default async function handler(req, res) {
         const id = (st.keys[key] && st.keys[key].tid) || ('tin-' + key), now = new Date().toISOString()
         let ex = null, made = false // 已有這件任務＝沿用它的負責人（重按、回應遺失後重送、換人重按都不會讓勾選狀態跟任務對不上；關卡 3 inline 第一輪 A6）
         { const { abgdKv } = await import('./_abgdkv.js'); const kvT = await abgdKv({ domain: 'tasks', lockKey: 'sp_team_pm_task_x', operator: w.name, label: '任務' }); ex = await kvT.kvGet('sp_team_pm_task_' + id); if (!ex) { made = await kvT.kvInsert('sp_team_pm_task_' + id, { id, title, note: '來自 inline 近期展望「要你做的事」', status: 'todo', catId: '__inbox__', owner, start: '', due, priority: 'normal', tags: ['inline'], createdAt: now, updatedAt: now, createdBy: w.name }, '/prep inline(' + w.name + ')'); if (!made) ex = await kvT.kvGet('sp_team_pm_task_' + id) } } // 只新增（已存在＝別人剛建好，改讀它）；v4.71.115 依資料歸屬：任務域搬到新殼後走命令橋
-        if (made) try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvPut('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }, ...arr].slice(0, 200), '/prep inline') } catch (_) {}
+        if (made) try { const { actAppend } = await import('./_actlog.js'); await actAppend('sp_team_pm_activity', [{ ts: now, user: w.name, action: '新增', detail: `從 inline 行動建議派任務「${title}」${owner ? '給 ' + owner : ''}` }], '/prep inline') } catch (_) {}
         await announceChanged()
         rec = { st: 'task', by: w.name, at: now, tid: id, owner: made ? owner : ((ex && ex.owner) || undefined) }
       } else return res.status(400).json({ ok: false, error: '未知 op' })

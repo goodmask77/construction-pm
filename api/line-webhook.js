@@ -1613,7 +1613,7 @@ function describeAction(a) {
 }
 
 async function appendActivity(key, user, action, detail) {
-  try { const cur = (await kvGetMany([key]))[key]; const arr = Array.isArray(cur) ? cur : []; await kvSet(key, [{ ts: new Date().toISOString(), user, action, detail }, ...arr].slice(0, 200)) } catch (_) {}
+  try { const { actAppend } = await import('./_actlog.js'); await actAppend(key, [{ ts: new Date().toISOString(), user, action, detail }], 'dd-ai') } catch (_) {} // v4.71.203 版本比對追加（不跟其他寫入點互相蓋掉）
 }
 
 // 真正執行：載入要動到的資料 → 套用 → 存回 → 記操作紀錄
