@@ -137,6 +137,7 @@ async function boardRun(a, method) {
 //   PAGES 登記每頁准許的讀／寫端點與網址參數；新殼傳人員編號 → 找他的 GD 綁定 token（只比人員編號，多筆用目前生效那筆）→ GET 帶 me、POST 帶 body.token
 //   GD 端點回轉址（例：入職文件看檔＝5 分鐘簽名網址）＝回 { redirect }，由新殼轉過去
 const PAGES = {
+  gear: { get: ['menu', 'tabcfg', 'ddmsg', 'ddlog', 'aicfg', 'aimodels', 'aiab', 'ddhealth', 'gdrole'], post: ['gdrole', 'prepapply', 'preppermset', 'tabset', 'ddmsgset', 'ddgrpset', 'aitest', 'aicfgset'], qs: ['refresh', 'provider', 'kind', 'route', 'days'] }, // 設定（權限面板、分頁名稱、DD 自動訊息與群組、AI 模型、DD 健康）
   onb: { get: ['onboardself', 'onboardmgr'], post: ['onboardself', 'onboardfile', 'onboardins'], qs: [] }, // 入職（新人自填四步、證件自傳、主管入職管理、確認加保）
   hrm: { get: ['hrmaster', 'onboardone', 'hrdocurl'], post: ['hrmasterup', 'hridlock', 'hrmpendset', 'hrdocup', 'hrdocdel', 'onboardins'], qs: ['co', 'nm', 'key', 'i', 'dl', 'rid'] }, // 夥伴名冊（含身分證欄遮罩、入職文件、待審核、加保）
 }
