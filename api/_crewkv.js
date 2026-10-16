@@ -22,7 +22,7 @@ export async function crewRun(op, fn) {
 }
 async function ctxKv(id) { const st = als.getStore(); if (!st) return null; const c = cls(id); if (!st.kv[c]) st.kv[c] = newKv(st.op, c); return st.kv[c] }
 export const crewInCtx = () => !!als.getStore()
-export function crewSetOp(name) { const st = als.getStore(); if (st && !Object.keys(st.kv).length && name) st.op = String(name).slice(0, 30) }
+export function crewSetOp(name) { const st = als.getStore(); if (st && !st.kv.crew && name) st.op = String(name).slice(0, 30) } // 新殼那類還沒建讀寫物件前才改得到（權限判斷先讀名冊＝GD 那類，不影響）
 export async function crewHookGet(id) { const k = await ctxKv(id); return k ? k.kvGet(id) : undefined }
 export async function crewHookPut(id, obj, editor) {
   const k = await ctxKv(id)
