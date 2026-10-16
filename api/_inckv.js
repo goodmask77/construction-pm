@@ -15,6 +15,7 @@ export async function incTx(key, mutate, editor, op, deadline) {
     late()
     const res = mutate(cur)
     if (!res || !res.write) return res ? res.value : undefined
+    late() // 寫入發起前再檢查一次（關卡 3 Gemini 第二輪 B）
     try { await kv.kvPut(key, res.doc, editor || '異常通知'); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
     await new Promise(r => setTimeout(r, 100 + Math.random() * 300))
   }
@@ -36,7 +37,7 @@ export function soldoutApply(cur, { nowSo, obs, day, hm, stamp, manual, now = Da
   const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
   if (added.length || removed.length) {
     doc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || stamp]))
-    added.forEach(n => { doc.current[n] = stamp; doc.log.unshift({ d: day, t: hm, n, op: '停售' }) })
+    added.forEach(n => doc.log.unshift({ d: day, t: hm, n, op: '停售' })) // current 上一行已給新停售品 stamp
     removed.forEach(n => doc.log.unshift({ d: day, t: hm, n, op: '恢復' }))
     doc.log = doc.log.slice(0, 300)
     if (manual) { doc.day = day; return { write: true, doc, value: { added, removed, current: doc.current } } } // 手動掃描＝靜默校正（舊行為，不發群）
@@ -53,6 +54,7 @@ export async function soldoutTx(opts, editor) { return incTx('sp_finance_pm_abso
 // 送待發事件：send(ev) 回 true＝已送達（或 LINE 說同一個重送識別碼已收過）；送成功的從文件拿掉（重讀最新再拿，撞版本重做）
 //   整輪共用一個截止時間 budgetMs（含清帳）：發送只用到截止前 reserveMs（留給清帳）；每筆整段（含查群成員、額度尾巴）最多 perMs；
 //   清帳（拿掉已送 id）也受剩餘時間限制，逾時＝先回傳、事件留著，下一輪用同一個重送識別碼再送（LINE 去重）（關卡 3 OpenAI 第九、十輪 A1）
+// 逾時只是不再等：底層請求（查群成員、LINE 發送、清帳寫入）仍可能在背景完成——送達了下一輪同一重送識別碼 LINE 去重、清帳冪等（關卡 3 Gemini 第二輪 B）
 const within = (p, ms, msg) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(msg)), Math.max(0, ms)); p.then((v) => { clearTimeout(t); res(v) }, (e) => { clearTimeout(t); rej(e) }) })
 export async function soldoutFlush(pend, send, editor, { perMs = 12000, budgetMs = 25000, reserveMs = 8000 } = {}) {
   const done = [], end = Date.now() + budgetMs, sendEnd = end - reserveMs
