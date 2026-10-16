@@ -70,9 +70,10 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
   const lease = Math.random().toString(36).slice(2, 10), untilMs = Date.now() + 10 * 60e3, leaseUntil = new Date(untilMs).toISOString()
   // 時間圍欄（關卡 3 inline 第二輪 A1）：持有者每次寫入（含交易內每次重做）前都檢查「離租約到期至少還有 60 秒」，不夠就停手——每次寫入最長 20 秒逾時，新一輪要等租約過期才拿得到，所以舊輪不會在新輪期間提交
   const fence = () => { if (Date.now() > untilMs - 60e3) { const e = new Error('遠期同步租約快到期，停手（下一輪重來）'); e.code = 'lease'; throw e } }
-  const got = await inlTx('sp_finance_pm_inline', (cur) => { const L = cur && cur.farLease; if (L && L.until > new Date().toISOString() && L.id !== lease) return { write: false, value: false }; return { write: true, doc: { firstDay: '2021-02-10', months: {}, ...(cur || {}), farLease: { id: lease, until: leaseUntil } }, value: true } }, 'inline遠期同步租約')
-  if (!got) return { farSkip: '另一輪遠期同步進行中（10 分鐘租約）' }
-  let released = false
+  // 儲存端圍欄（關卡 3 inline 第三輪 A1）：取得租約時世代號 farGen +1；這一輪寫的每份月檔都蓋上 farGen，月檔交易（版本比對）裡看到比自己新的 farGen＝已有較新一輪，停手不寫
+  const gen = await inlTx('sp_finance_pm_inline', (cur) => { const L = cur && cur.farLease; if (L && L.until > new Date().toISOString() && L.id !== lease) return { write: false, value: 0 }; const g = (Number(cur && cur.farGen) || 0) + 1; return { write: true, doc: { firstDay: '2021-02-10', months: {}, ...(cur || {}), farGen: g, farLease: { id: lease, until: leaseUntil, gen: g } }, value: g } }, 'inline遠期同步租約')
+  if (!gen) return { farSkip: '另一輪遠期同步進行中（10 分鐘租約）' }
+  let released = false, wroteAny = false // 已經開始寫月檔＝出錯時不提早放租約（在途寫入可能逾時後才提交；讓它 10 分鐘到期）
   try {
   const obsT = obsStamp() // 抓來源之前取
   const byDate = await INL.inlineSearchFuture(token)
@@ -88,14 +89,17 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
     const key = 'sp_finance_pm_inline_' + mo
     for (const [d, arr] of Object.entries(far)) if (d.slice(0, 7) === mo) farResv += arr.length
     let wrote = false
-    fence()
+    fence(); wroteAny = true
     const st = await inlTx(key, (cur) => { // 窗外（boundary 之後）的日子以搜尋結果為準：有＝覆蓋、沒有＝刪掉那天；每天觀測戳記較新才動
       fence()
+      if (cur && Number(cur.farGen) > gen) { const e = new Error('已有較新一輪遠期同步寫過這個月，停手'); e.code = 'lease'; throw e }
       const dayVals = {}
       for (const d of Object.keys((cur && cur.days) || {})) if (d > boundary && !far[d]) dayVals[d] = []
       for (const [d, arr] of Object.entries(far)) if (d.slice(0, 7) === mo) dayVals[d] = arr
-      if (!Object.keys(dayVals).length) return { write: false, value: null }
-      const r = applyInlineDays(cur, { dayVals, obsT, stat: moStat }); wrote = r.write; return r
+      const r = applyInlineDays(cur, { dayVals, obsT, stat: moStat })
+      const doc = r.write ? r.doc : { ...(cur || { days: {}, obsD: {} }), wseq: (Number(cur && cur.wseq) || 0) + 1 } // 掃過的月份一律蓋 farGen（沒有日子變也寫一次，較舊一輪才看得到）
+      doc.farGen = gen; wrote = true
+      return { write: true, doc, value: r.write ? r.value : { ...moStat(doc), seq: doc.wseq } }
     }, 'inline遠期同步')
     if (st && wrote) months[mo] = { ...st, del: !st.days }
   }
@@ -118,7 +122,7 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
   await announceChanged()
   return { farDays: Object.keys(far).length, farResv, ...notesInfo }
   } finally { // 中途出錯也放掉自己的租約（Gemini 第二輪）；放不掉就等它 10 分鐘到期
-    if (!released) await inlTx('sp_finance_pm_inline', (cur) => (cur && cur.farLease && cur.farLease.id === lease ? { write: true, doc: (({ farLease, ...x }) => x)(cur) } : { write: false }), 'inline遠期同步放租約').catch(() => {})
+    if (!released && !wroteAny) await inlTx('sp_finance_pm_inline', (cur) => (cur && cur.farLease && cur.farLease.id === lease ? { write: true, doc: (({ farLease, ...x }) => x)(cur) } : { write: false }), 'inline遠期同步放租約').catch(() => {})
   }
 }
 
