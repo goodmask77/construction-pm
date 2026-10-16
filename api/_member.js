@@ -510,6 +510,19 @@ export async function settlement ({ month }) {
   return { ok: true, month: mo, pointValue: pv, stores: Object.entries(S).map(([k, v]) => ({ key: k, ...v, issuedValue: Math.round(v.issued * pv), spentValue: Math.round(v.spent * pv), net: Math.round(v.spent * pv) - Math.round(v.issued * pv) })) }
 }
 
+// 會員系統暫停（張良 2026-10-16「會員跟自建點餐、綠界先不用，不要給客人看到會員系統跟連結；LINE 官方那六格也取消」）：
+//   收件匣自動回（加好友歡迎、會員／點數、門市與客服、團訂卡片）全停；客人頁 /member、/order 轉暫停頁（vercel.json）；圖文選單用 richMenuOff 取消。恢復＝這裡改 false＋vercel.json 轉寫改回＋richMenuSetup
+export const MEMBER_PAUSED = true
+// 取消圖文選單（不刪選單本身，之後 richMenuSetup 可重掛）：取消「全部好友預設」＋已入會的人逐批解除連結
+export async function richMenuOff ({ who }) {
+  const token = await gdToken(); const cfg = await loadCfg()
+  const d = await fetch('https://api.line.me/v2/bot/user/all/richmenu', { method: 'DELETE', headers: { authorization: 'Bearer ' + token } })
+  const idn = await sel('member_identities', 'provider=eq.line&select=line_uid'); const uids = idn.map(i => i.line_uid).filter(Boolean); let unlinked = 0
+  for (let i = 0; i < uids.length; i += 500) { const r = await fetch('https://api.line.me/v2/bot/richmenu/bulk/unlink', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ userIds: uids.slice(i, i + 500) }) }); if (r.ok || r.status === 202) unlinked += Math.min(500, uids.length - i) }
+  const chk = await fetch('https://api.line.me/v2/bot/user/all/richmenu', { headers: { authorization: 'Bearer ' + token } }) // 讀回：沒有預設選單＝404
+  const n = { ...cfg, richmenu: { ...(cfg.richmenu || {}), offAt: nowIso(), offBy: who && who.name, unlinked } }; await kvSet(CFG_KEY, n, '圖文選單取消(' + ((who && who.name) || '') + ')')
+  return { ok: d.ok || d.status === 404, defaultCleared: chk.status === 404, unlinked, members: uids.length, delStatus: d.status }
+}
 // ── 🧭 圖文選單（v4.70.96）：六格兩版（會員／非會員），用 GROUN:D 官方帳號金鑰建；入會當下把那個人切到會員版 ──
 const ORIGIN = 'https://ground-pm.vercel.app'
 async function gdToken () { const IB = await import('./_inbox.js'); const a = IB.acctOf('gd'); const { token } = IB.creds(a); if (!token) throw new Error('GROUN:D 官方帳號金鑰未設'); return token }

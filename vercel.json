@@ -14,11 +14,11 @@
     },
     {
       "source": "/order/:code",
-      "destination": "/order.html"
+      "destination": "/paused.html"
     },
     {
       "source": "/member",
-      "destination": "/member.html"
+      "destination": "/paused.html"
     }
   ],
   "crons": [
