@@ -94,13 +94,15 @@ export default async function handler(req, res) {
       const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
       const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
       if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售偵測')
+      const obsSo = new Date().toISOString() // 抓清單前記時間（關卡 3 OpenAI A1：手動掃描與排程重疊時，較舊的觀測不得蓋掉較新的、也不發群）
       const items = await eatsItemList(sess)
       const nowSo = {}
       for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
       // v4.71.158 異常通知域：依歸屬版本比對寫（每次重讀最新再比對），寫成功才發群
       const { incTx } = await import('./_inckv.js')
       const chg = await incTx('sp_finance_pm_absoldout', (cur) => {
-        const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])] } : { current: {}, log: [] }
+        if (cur && cur.obsAt && cur.obsAt > obsSo) return { write: false, value: null }
+        const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])], obsAt: obsSo } : { current: {}, log: [], obsAt: obsSo }
         const prev = soDoc.current
         const added = Object.keys(nowSo).filter(n => !(n in prev))
         const removed = Object.keys(prev).filter(n => !(n in nowSo))

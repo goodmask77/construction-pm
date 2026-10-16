@@ -2244,6 +2244,7 @@ export default async function handler(req, res) {
     const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
     const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
     if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售掃描')
+    const obsSo = new Date().toISOString() // 抓清單前記時間（關卡 3 OpenAI A1：較舊的觀測不得蓋掉較新的）
     const items = await eatsItemList(sess)
     const hm2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
@@ -2251,7 +2252,8 @@ export default async function handler(req, res) {
     for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
     const { incTx } = await import('./_inckv.js') // v4.71.158 異常通知域：依歸屬版本比對寫（撞版本重讀重算）
     const rs = await incTx('sp_finance_pm_absoldout', (cur) => {
-      const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])] } : { current: {}, log: [] }
+      if (cur && cur.obsAt && cur.obsAt > obsSo) return { write: false, value: { current: Object.keys(cur.current || {}).length, added: 0, removed: 0, skipped: '已有較新的掃描結果' } }
+      const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])], obsAt: obsSo } : { current: {}, log: [], obsAt: obsSo }
       const prev = soDoc.current
       const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
       soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || (today2 + ' ' + hm2)]))

@@ -154,14 +154,15 @@ export default async function handler(req, res) {
     return rows
   }
   // 寫入：月分片 upsert＋（窗完整時）刪窗內沒出現的列
-  const writeRows = async (E, rows, from, to, allowDelete) => {
+  const writeRows = async (E, rows, from, to, allowDelete, obsAt) => { // obsAt：這批來源抓取時間（交接異常用來擋舊批蓋新批）
     const byM = {}
     for (const r of rows) { const d = E.df(r); if (!d || d.length < 7) continue; (byM[d.slice(0, 7)] = byM[d.slice(0, 7)] || {})[E.pk(r)] = r }
     const months = allowDelete ? monthsBetween(from, to) : Object.keys(byM)
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
+      const obsT = obsAt || new Date().toISOString() // 這批來源資料的抓取時間（關卡 3 OpenAI A1：重疊執行時，較舊的那批晚寫不得蓋掉較新的）
       const apply = (doc) => { if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { const d = E.df(r); if (d >= from && d <= to && !((byM[m] || {})[k])) delete doc.rows[k] } Object.assign(doc.rows, byM[m] || {}); doc.updatedAt = new Date().toISOString(); return doc } // 窗內沒再出現＝來源已刪
-      if (E.slug === 'inc') { await incTx(id, (cur) => ({ write: true, doc: apply(cur ? { ...cur, rows: { ...(cur.rows || {}) } } : { rows: {} }) }), `boss同步 ${E.slug} ${m}`); continue } // 交接異常：依歸屬版本比對寫（重讀重算）
+      if (E.slug === 'inc') { await incTx(id, (cur) => (cur && cur.obsAt && cur.obsAt > obsT ? { write: false } : { write: true, doc: { ...apply(cur ? { ...cur, rows: { ...(cur.rows || {}) } } : { rows: {} }), obsAt: obsT } }), `boss同步 ${E.slug} ${m}`); continue } // 交接異常：依歸屬版本比對寫（重讀重算）
       const doc = apply((await kvGet(id)) || { rows: {} })
       await kvPut(id, doc, `boss同步 ${E.slug} ${m}`)
     }
@@ -180,14 +181,14 @@ export default async function handler(req, res) {
         } else if (state.bf[E.slug] !== 'done') { // 首次回填（分段 366 天；成功一段推進一段）
           const from = state.bf[E.slug] || '2026-01-01'
           const to0 = addDays(from, 365), to = to0 > today ? (E.fwd ? addDays(today, E.fwd) : today) : to0
-          const rows = await fetchRange(E, from, to)
-          await writeRows(E, rows, from, to, false) // 回填不刪
+          const obsAt = new Date().toISOString(); const rows = await fetchRange(E, from, to)
+          await writeRows(E, rows, from, to, false, obsAt) // 回填不刪
           state.bf[E.slug] = to >= today ? 'done' : addDays(to, 1)
           done.push(`${E.slug}:回填${from}~${to}:${rows.length}`)
         } else { // 增量窗：整段重拉 upsert＋刪除偵測
           const from = addDays(today, -E.back), to = E.fwd ? addDays(today, E.fwd) : today
-          const rows = await fetchRange(E, from, to)
-          await writeRows(E, rows, from, to, true)
+          const obsAt = new Date().toISOString(); const rows = await fetchRange(E, from, to)
+          await writeRows(E, rows, from, to, true, obsAt)
           done.push(`${E.slug}:${rows.length}`)
         }
         if (E.pend && !(state.res[E.slug] || {}).ok) justLive.push(E.ep) // 預接端點第一次打通
