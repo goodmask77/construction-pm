@@ -133,6 +133,37 @@ async function boardRun(a, method) {
   await H({ method, query, body, headers: {} }, res)
   return { ...(out || { ok: false, error: 'GD 沒有回結果' }), _http: st }
 }
+// 新殼「GD 頁面轉接」（v4.71.189）：新殼頁面＝GD 頁面前端副本，讀寫一律呼叫 GD 原端點（權限、遮罩、版本比對寫照舊）。
+//   PAGES 登記每頁准許的讀／寫端點與網址參數；新殼傳人員編號 → 找他的 GD 綁定 token（只比人員編號，多筆用目前生效那筆）→ GET 帶 me、POST 帶 body.token
+//   GD 端點回轉址（例：入職文件看檔＝5 分鐘簽名網址）＝回 { redirect }，由新殼轉過去
+const PAGES = {
+  hrm: { get: ['hrmaster', 'onboardone', 'hrdocurl'], post: ['hrmasterup', 'hridlock', 'hrmpendset', 'hrdocup', 'hrdocdel', 'onboardins'], qs: ['co', 'nm', 'key', 'i', 'dl', 'rid'] }, // 夥伴名冊（含身分證欄遮罩、入職文件、待審核、加保）
+}
+function tokenOfRid(bd, rid) {
+  const mine = rid ? Object.entries(bd.tokens || {}).filter(([, v]) => v && v.rid === rid) : []
+  const hit = mine.find(([t, v]) => (bd.byUid || {})[v.uid] === t) || mine.sort((x, y) => String((y[1] || {}).ts || '').localeCompare(String((x[1] || {}).ts || '')))[0]
+  return hit ? hit[0] : ''
+}
+async function pageRun(a, method) {
+  const page = String(a.p || ''), q = String(a.q || '')
+  const spec = PAGES[page]
+  const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
+  if (!name) return { ok: false, error: '缺操作者' }
+  if (role === '停權') return { ok: false, error: '帳號已停權', _http: 403 }
+  if (!spec || !(method === 'GET' ? spec.get : spec.post).includes(q)) return { ok: false, error: '不認識的操作', _http: 400 }
+  const tk = tokenOfRid((await kvGet('sp_finance_pm_prep_bind')) || {}, rid)
+  if (!tk) return { ok: false, error: '你的帳號還沒綁定 GD（私訊 DD「綁定GD 本名」）', _http: 403 }
+  const query = { [q]: (process.env.OPS_BOARD_KEY || '').trim() }
+  for (const k of spec.qs || []) if (a.query && a.query[k] != null) query[k] = String(a.query[k]).slice(0, 80)
+  if (method === 'GET') query.me = tk
+  const body = method === 'POST' ? { ...(a.body || {}), token: tk } : {}
+  let st = 200, out = null, loc = null
+  const res = { status (c) { st = c; return this }, json (o) { out = o; return this }, send (o) { out = { ok: false, html: String(o).slice(0, 200) }; return this }, setHeader () { return this }, writeHead () { return this }, end () { return this }, redirect (c, u) { loc = typeof c === 'string' ? c : u; st = 302; return this } }
+  const H = (await import('./mail-sync.js')).default
+  await H({ method, query, body, headers: {} }, res)
+  if (loc) return { ok: true, redirect: loc, _http: 200 }
+  return { ...(out || { ok: false, error: 'GD 沒有回結果' }), _http: st }
+}
 async function socialRun(a, method) {
   const kind = String(a.kind || 'social')
   const name = String((a.who || {}).name || '').slice(0, 30), rid = String((a.who || {}).rid || ''), role = String((a.who || {}).role || '一般')
@@ -528,6 +559,8 @@ const ACTIONS = {
     const S = await import('./_social.js'); const IB = await import('./_inbox.js')
     return { ok: true, metaReady: S.metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: S.GV, configured: IB.ACCOUNTS.filter(IB.configured).map(a => a.key) }
   },
+  async page_read(a) { return pageRun(a, 'GET') }, // 新殼 GD 頁面轉接：讀（唯讀）
+  async page_write(a) { return pageRun(a, 'POST') }, // 新殼 GD 頁面轉接：寫（事件佔位，同一個 idem 只做一次）
   async board_read(a) { return boardRun(a, 'GET') }, // 新殼銷售數據頁：預測／停售清單／行事曆（唯讀）
   async board_write(a) { return boardRun(a, 'POST') }, // 新殼銷售數據頁寫入：轉 GD 原端點（事件佔位，同一個 idem 只做一次）
   async inline_read(a) { return inlineRun(a, 'GET') }, // inline 即時直搜（外部 inline 搜尋）：唯讀，不佔事件位
@@ -617,7 +650,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
