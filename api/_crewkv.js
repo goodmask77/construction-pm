@@ -17,13 +17,27 @@ export async function crewRun(op, fn) {
     catch (e) { if (i >= 4 || !(e && e.code === 'stale')) throw e; await sleep(150 + Math.random() * 400) }
   }
 }
+// 權限相關的兩份（名冊：角色／停權／LINE 綁定；身分證欄名單）：新殼正本寫成功後，等 GD 副本也變成這份內容才回（最多 8 秒），
+//   GD 各處權限判斷讀的是副本——「停權按完」＝GD 已經擋得住（關卡 3 crew 第四輪 OpenAI A1）；等不到＝留紀錄，照樣回成功（排程每分鐘補）
+const AUTH_KEYS = new Set(['sp_crew_kb_roster', 'sp_finance_pm_hr_idlock'])
+const SB_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '')
+const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '')
+const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o }, {}) : x)
+export async function awaitGdCopy(id, doc, ms = 8000) {
+  const want = stable(doc), t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }); const rows = r.ok ? await r.json() : []; const v = rows[0] && rows[0].data && rows[0].data.v; if (v != null && stable(JSON.parse(v)) === want) return true } catch (_) {}
+    await sleep(400)
+  }
+  console.log('[crewkv] GD 副本 8 秒內沒追上（排程會補）', id); return false
+}
 async function ctxKv() { const st = als.getStore(); if (!st) return null; if (!st.kvP) st.kvP = newKv(st.op); return st.kvP }
 export const crewInCtx = () => !!als.getStore()
 export function crewSetOp(name) { const st = als.getStore(); if (st && !st.kvP && name) st.op = String(name).slice(0, 30) }
 export async function crewHookGet(id) { const k = await ctxKv(); return k ? k.kvGet(id) : undefined }
 export async function crewHookPut(id, obj, editor) {
   const k = await ctxKv()
-  if (k) { await k.kvPut(id, obj, editor || '夥伴名冊'); return true }
+  if (k) { await k.kvPut(id, obj, editor || '夥伴名冊'); if (k.mode === 'abgd' && AUTH_KEYS.has(id)) await awaitGdCopy(id, obj); return true }
   console.log('[crewkv] 情境外寫入被拒', id, editor)
   const e = new Error('夥伴名冊寫入要在情境裡（程式漏包了）：' + id); e.code = 'nocrew'; throw e
 }
@@ -33,7 +47,7 @@ export async function crewTx(key, mutate, editor, op) {
     const cur = await kv.kvGet(key)
     const res = await mutate(cur)
     if (!res || !res.write) return res ? res.value : undefined
-    try { await kv.kvPut(key, res.doc, editor || '夥伴名冊'); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
+    try { await kv.kvPut(key, res.doc, editor || '夥伴名冊'); if (kv.mode === 'abgd' && AUTH_KEYS.has(key)) await awaitGdCopy(key, res.doc); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
     await sleep(100 + Math.random() * 300)
   }
   const e = new Error('夥伴名冊一直有人同時在改，這次沒存進去，請再試一次'); e.code = 'commitfail'; throw e
