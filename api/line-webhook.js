@@ -1479,7 +1479,8 @@ async function loadPointsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = true, pointsText = '') {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = false, pointsText = '') {
+  moneyOK = moneyOK === true // v4.71.205 只有明確 true 才給金額（預設與空值一律當外部群）
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張良確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
   // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
@@ -1488,11 +1489,11 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
     + '\n\n【你可以查 A Beach 訂位檔期（唯讀，不用確認）】有人問某天「有沒有訂位/有沒有檔期/空不空/那天能不能辦/包場」時，輸出一行 JSON 指令讓系統代查：\n```json\n{"type":"query_resv","date":"2027-06-18"}\n```\ndate 用 YYYY-MM-DD（單日）或 YYYY-MM（整月）；要查一段期間加 "to":"YYYY-MM-DD"。系統會把「檔期狀況」查好回填給你，你再據此回答——你沒有「稍後再傳」的能力，要查就必須在這一則同時輸出這段 JSON（只說要查卻沒帶 JSON＝永遠不會查）。'
     + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張良 🙏」，不要用 query_resv 的 name/top。'))
   // v4.70.42 批次 1b 量測：每段資料各佔多少字（健康頁「資料段落佔比」；要瘦身先看哪段最肥）
-  const SEC = { 規則: (canAct ? BOT_AGENT_GUIDE : '') + BOT_PERSONA + readonlyGuard + moneyGuard, 記憶: memoryText || '', 快照: snapshotsToContext(snaps, moneyOK), 任務: tasksText || '', 帳戶: moneyOK ? (accountsText || '') : '', 內帳: moneyOK ? (financeText || '') : '', 動態: activityText || '', 估價: moneyOK ? (estimatesText || '') : '', 夥伴班表人資: crewText || '', 積分: moneyOK ? (pointsText || '') : '', 結論: conclusionsText || '', 試算表: sheetText || '', '營收/阿桑/EM': moneyOK ? (posText || '') : '', 供應鏈: moneyOK ? (supplyText || '') : '', LINE額度: lineQuotaText || '', 目錄: catalogText || '', 文件庫: filelibText || '', 群組訊息: moneyOK ? (groupChatText || '') : '', 對話歷史: (Array.isArray(history) ? history : []).map(h => String(h.content || '')).join('') }
+  const SEC = { 規則: (canAct ? BOT_AGENT_GUIDE : '') + BOT_PERSONA + readonlyGuard + moneyGuard, 記憶: memoryText || '', 快照: snapshotsToContext(snaps, moneyOK), 任務: tasksText || '', 帳戶: moneyOK ? (accountsText || '') : '', 內帳: moneyOK ? (financeText || '') : '', 動態: moneyOK ? (activityText || '') : '', 估價: moneyOK ? (estimatesText || '') : '', 夥伴班表人資: moneyOK ? (crewText || '') : '', 積分: moneyOK ? (pointsText || '') : '', 結論: conclusionsText || '', 試算表: sheetText || '', '營收/阿桑/EM': moneyOK ? (posText || '') : '', 供應鏈: moneyOK ? (supplyText || '') : '', LINE額度: lineQuotaText || '', 目錄: moneyOK ? (catalogText || '') : '', 文件庫: filelibText || '', 群組訊息: moneyOK ? (groupChatText || '') : '', 對話歷史: (Array.isArray(history) ? history : []).map(h => String(h.content || '')).join('') }
   if (_aiAgg) { _aiAgg.sec = {}; for (const [k, v] of Object.entries(SEC)) _aiAgg.sec[k] = String(v).length; _aiAgg.lean = DD_LEAN }
   _secFull = SEC // query_section 代查用（完整版）
   const L = (name, v) => leanCut(name, v) // DD_LEAN=1 才縮，否則原樣
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + QUERY_GUIDE + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + L('快照', snapshotsToContext(snaps, moneyOK)) + L('任務', tasksText || '') + (moneyOK ? (accountsText || '') : '') + L('內帳', moneyOK ? (financeText || '') : '') + L('動態', activityText || '') + L('估價', moneyOK ? (estimatesText || '') : '') + L('夥伴班表人資', crewText || '') + L('積分', moneyOK ? (pointsText || '') : '') + L('結論', conclusionsText || '') + L('試算表', sheetText || '') + L('營收/阿桑/EM', moneyOK ? (posText || '') : '') + L('供應鏈', moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + L('目錄', catalogText || '') + L('文件庫', filelibText || '') + L('群組訊息', moneyOK ? (groupChatText || '') : '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + QUERY_GUIDE + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + L('快照', snapshotsToContext(snaps, moneyOK)) + L('任務', tasksText || '') + (moneyOK ? (accountsText || '') : '') + L('內帳', moneyOK ? (financeText || '') : '') + L('動態', moneyOK ? (activityText || '') : '') + L('估價', moneyOK ? (estimatesText || '') : '') + L('夥伴班表人資', moneyOK ? (crewText || '') : '') + L('積分', moneyOK ? (pointsText || '') : '') + L('結論', conclusionsText || '') + L('試算表', sheetText || '') + L('營收/阿桑/EM', moneyOK ? (posText || '') : '') + L('供應鏈', moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + L('目錄', moneyOK ? (catalogText || '') : '') + L('文件庫', filelibText || '') + L('群組訊息', moneyOK ? (groupChatText || '') : '')
   let hist = Array.isArray(history) ? history : []
   if (DD_LEAN && hist.length > 18) { const head = (hist[0] && /【系統】以下是我們更早之前對話的濃縮摘要/.test(String(hist[0].content || ''))) ? hist.slice(0, 2) : []; hist = [...head, ...hist.slice(-16)] } // 1b：逐字對話留最近 16 則（舊的本來就有濃縮摘要）
   if (DD_LEAN) hist = hist.map(h => (String(h.content || '').length > 1500 ? { ...h, content: String(h.content).slice(0, 1500) + '…（略）' } : h))
@@ -3254,7 +3255,8 @@ export default async function handler(req, res) {
       }
       if (!isDM) {
         const gcfg = asObj((await kvGetMany(['pm_bot_groups']))['pm_bot_groups'])
-        moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
+        // v4.71.205 一定要是 true／false：沒登記的群算出 undefined，傳進 answer() 會變成預設值 true＝外部群拿到金額段落（DD 搬家盤點發現）
+        moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || !!(gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, pointsText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(secretOK), loadShiftText(), loadPunchText(), loadHrText(), secretOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId)), loadPointsText()])
@@ -3277,11 +3279,12 @@ export default async function handler(req, res) {
           const qgo = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_grporder"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.90 團體訂餐 // v4.70.43 段落完整版（金額段在外部群本來就是空字串）
           if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length && !qss.length && !qmb.length && !qgo.length) return null
           let dataTxt = ''
-          for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
+          // v4.71.205 外部群（moneyOK=false）不給營業額、出勤代查（張良鐵則：外部群不外洩金額／內部資訊；DD 搬家盤點發現沒擋）
+          for (const m of qms) { if (!moneyOK) { dataTxt += '（這個群不提供營業額資料——要查請私訊張良）\n\n'; continue } try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
             ? (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''), String(q.kw || '')))
             : ((q.name || q.top) ? '（這個群只能查「某天檔期狀況」，不提供客人姓名/電話/常客等個資查詢——要查客人資料請私訊張良）' : await queryResvPublic(String(q.date || ''), String(q.to || '')))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
-          for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
+          for (const m of qhs) { if (!moneyOK) { dataTxt += '（這個群不提供出勤／人資資料——要查請私訊張良）\n\n'; continue } try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
           for (const m of qos) { try { const q = JSON.parse(m[0]); dataTxt += await queryOrders(q.month, q.store, q.supplier, q.items) + '\n\n' } catch (e) { dataTxt += '（叫貨單查詢指令解析失敗）\n' } }
           for (const m of qbs) { try { const q = JSON.parse(m[0]); dataTxt += await queryBoss(q.feed, q.month, q.kw, q.limit) + '\n\n' } catch (e) { dataTxt += '（阿桑資料查詢指令解析失敗）\n' } }
