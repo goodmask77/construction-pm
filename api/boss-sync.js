@@ -13,7 +13,8 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords, abgdOwnerOf } from './mail-sync.js'
-import { incTx, obsStamp } from './_inckv.js' // v4.71.158 交接異常月檔（異常通知域）依歸屬版本比對寫
+import { incTx, obsStamp } from './_inckv.js'
+import { bossTx, bossGet, applyDays, applySnap, mergeState } from './_bosskv.js' // v4.71.172 boss 域依歸屬版本比對寫 // v4.71.158 交接異常月檔（異常通知域）依歸屬版本比對寫
 import { snapshotRecipeCosts } from './_recipe.js'
 import { orderedKvGet } from './_jsonborder.js' // abgd 食譜 F10：快照算法讀到的鍵順序與新殼一致
 import { EPS, OFF } from './_bossfeeds.js' // 批次 3：每小時同步後，價格／換算／配方有變就寫食譜成本快照（永不改寫）
@@ -101,9 +102,7 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.histfill) !== mk) return res.status(403).json({ ok: false })
     const from0 = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : '2021-01-01'
     const slugs = String(req.query.slugs || 'revd,sett').split(',').map(s => s.trim()).filter(s => EPS.some(E => E.slug === s))
-    const st0 = (await kvGet('sp_finance_pm_boss_state')) || { bf: {}, rot: 0, res: {} }
-    for (const s of slugs) st0.bf[s] = from0
-    await kvPut('sp_finance_pm_boss_state', st0, 'boss歷史回填重啟')
+    await bossTx('sp_finance_pm_boss_state', (cur) => { const st0 = { bf: {}, rot: 0, res: {}, ...(cur || {}) }; st0.bf = { ...(st0.bf || {}) }; st0.bfGen = { ...(st0.bfGen || {}) }; for (const s of slugs) { st0.bf[s] = from0; st0.bfGen[s] = (Number(st0.bfGen[s]) || 0) + 1 } return { write: true, doc: st0 } }, 'boss歷史回填重啟') // 加世代：結尾合併時手動重啟優先（不被同時跑的排程蓋回 done）
     return res.status(200).json({ ok: true, slugs, from: from0, hint: '之後每跑一次同步吃一段366天，?force 催跑到 bf 顯示 done' })
   }
   // 一次性回填（張良 2026-10-03「7/1 前營收頁沒 AB 資料」→ 2026-10-04 放寬到 2021 起全史）：
@@ -136,7 +135,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ...out })
   }
 
-  const state = (await kvGet('sp_finance_pm_boss_state')) || { bf: {}, rot: 0, res: {} }
+  const state = { bf: {}, rot: 0, res: {}, ...((await bossGet('sp_finance_pm_boss_state')) || {}) } // v4.71.172 依歸屬讀（讀失敗丟錯，不當沒有）
+  state.bf = { ...(state.bf || {}) }; state.res = { ...(state.res || {}) }
   const today = tpeToday()
   if (!force && state.auth401 === today) return res.status(200).json({ ok: false, skipped: '金鑰 401，今天已停跑（換好金鑰後 ?force 手動跑）' })
 
@@ -162,24 +162,10 @@ export default async function handler(req, res) {
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
       const obsT = obsAt || obsStamp() // 這批來源資料的抓取時間（關卡 3 OpenAI A1：重疊執行時，較舊的那批晚寫不得蓋掉較新的）
-      const apply = (doc) => { if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { const d = E.df(r); if (d >= from && d <= to && !((byM[m] || {})[k])) delete doc.rows[k] } Object.assign(doc.rows, byM[m] || {}); doc.updatedAt = new Date().toISOString(); return doc } // 窗內沒再出現＝來源已刪
-      if (E.slug === 'inc') { // 交接異常：依歸屬版本比對寫（重讀重算）；每天各記觀測時間 obsD，只動「這批比文件裡那天更新」的日子（關卡 3 OpenAI 第二輪 A1：不同日期窗逆序提交不漏列）
-        const days = allowDelete ? daysBetween(from > m + '-01' ? from : m + '-01', to < m + '-31' ? to : m + '-31').filter(d => d.slice(0, 7) === m) : [...new Set(Object.values(byM[m] || {}).map(r => E.df(r)))]
-        await incTx(id, (cur) => {
-          const doc = cur ? { ...cur, rows: { ...(cur.rows || {}) }, obsD: { ...(cur.obsD || {}) } } : { rows: {}, obsD: {} }
-          const ok = new Set(days.filter(d => !(doc.obsD[d] && doc.obsD[d] > obsT)))
-          for (let chg = true; chg;) { chg = false; for (const [k, r] of Object.entries(byM[m] || {})) { const old = doc.rows[k]; const d0 = old && E.df(old), d1 = E.df(r); if (d0 && d0 !== d1 && !ok.has(d0) && ok.has(d1)) { ok.delete(d1); chg = true } } } // 同一筆改了日期：原本那天不可寫＝新的那天這批也不動、不標已更新；連鎖搬日反覆傳到不再變（關卡 3 OpenAI 第三、四輪 A1）
-          if (!ok.size) return { write: false }
-          if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { if (ok.has(E.df(r)) && !((byM[m] || {})[k])) delete doc.rows[k] } // 窗內沒再出現＝來源已刪（只限這批較新的日子）
-          for (const [k, r] of Object.entries(byM[m] || {})) if (ok.has(E.df(r))) doc.rows[k] = r
-          for (const d of ok) doc.obsD[d] = obsT
-          doc.updatedAt = new Date().toISOString()
-          return { write: true, doc }
-        }, `boss同步 ${E.slug} ${m}`)
-        continue
-      } // 交接異常：依歸屬版本比對寫（重讀重算）
-      const doc = apply((await kvGet(id)) || { rows: {} })
-      await kvPut(id, doc, `boss同步 ${E.slug} ${m}`)
+      // v4.71.172 全部月檔（交接異常＝incidents 域、其他＝boss 域）依歸屬版本比對寫（重讀重算）；每天各記觀測時間 obsD，只動「這批比文件裡那天更新」的日子（關卡 3 異常通知 OpenAI 十三輪定案的算法，_bosskv.applyDays 共用）
+      const days = allowDelete ? daysBetween(from > m + '-01' ? from : m + '-01', to < m + '-31' ? to : m + '-31').filter(d => d.slice(0, 7) === m) : [...new Set(Object.values(byM[m] || {}).map(r => E.df(r)))]
+      const mut = (cur) => applyDays(cur, { days, byRows: byM[m] || {}, df: E.df, allowDelete, obsT })
+      await (E.slug === 'inc' ? incTx : bossTx)(id, mut, `boss同步 ${E.slug} ${m}`)
     }
   }
 
@@ -189,9 +175,8 @@ export default async function handler(req, res) {
     for (const E of order) {
       try {
         if (E.snapshot) { // 快照型：每次全抓、整批覆蓋（staff 含離職全保留＝API 本來就會回）
-          const rows = await fetchRange(E, null, null)
-          const doc = { rows: Object.fromEntries(rows.map(r => [E.pk(r), r])), updatedAt: new Date().toISOString(), count: rows.length }
-          await kvPut(`sp_finance_pm_boss_${E.slug}`, doc, `boss同步 ${E.slug} 全量`)
+          const obsT = obsStamp(); const rows = await fetchRange(E, null, null)
+          await bossTx(`sp_finance_pm_boss_${E.slug}`, (cur) => applySnap(cur, { rows, pk: E.pk, obsT }), `boss同步 ${E.slug} 全量`) // 較舊的一批晚到不蓋較新的
           done.push(`${E.slug}:${rows.length}`)
         } else if (state.bf[E.slug] !== 'done') { // 首次回填（分段 366 天；成功一段推進一段）
           const from = state.bf[E.slug] || '2026-01-01'
@@ -247,7 +232,7 @@ export default async function handler(req, res) {
   } catch (e) { rcpSnap = { err: e.message } }
   state.lastRun = new Date().toISOString()
   state.rcpSnap = rcpSnap
-  await kvPut('sp_finance_pm_boss_state', state, 'boss同步狀態')
+  try { await bossTx('sp_finance_pm_boss_state', (cur) => ({ write: true, doc: mergeState(cur, state) }), 'boss同步狀態') } catch (e) { errs.push('state:' + e.message) } // 結尾重讀最新再合併（兩次執行重疊不互蓋）；存不進去（驗收閘門、切換中）＝記錯，下一輪重來
   await announceChanged()
   const pend = Object.fromEntries(EPS.filter(E => E.pend).map(E => [E.slug, (state.res[E.slug] || {}).ok ? 'live' : 'wait404']))
   return res.status(200).json({ ok: !errs.length, requests: used, done, errs, justLive, pend, rcpSnap, rot: state.rot, bf: state.bf })
