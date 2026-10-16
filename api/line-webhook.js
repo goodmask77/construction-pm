@@ -11,7 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { CREW_RE, crewTx } from './_crewkv.js' // v4.71.187 夥伴名冊／人資域：DD 的寫入一律走 crewEd（每次重讀最新、撞版本重做這一步；回覆 LINE 在存檔之後）
+import { CREW_RE, crewTx, crewLagN } from './_crewkv.js' // v4.71.187 夥伴名冊／人資域：DD 的寫入一律走 crewEd（每次重讀最新、撞版本重做這一步；回覆 LINE 在存檔之後）
 import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
@@ -2500,6 +2500,7 @@ export default async function handler(req, res) {
             if (!pd) { await repB((pmB.users || {})[bdRid]?.edit ? `✅ ${bdNm} 已經核准過了。` : `找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
             if (bdOp === 'ok') {
               // v4.71.196 權限域版本化寫（每次重讀最新；別人同時處理過＝不重複核准、不重複通知）
+              const lagB = crewLagN() // 等 GD 副本沒追上的次數（回覆要講）
               const okB = await crewEd('sp_finance_pm_prep_perm', (pmX) => { pmX.users = pmX.users || {}; pmX.pending = pmX.pending || {}; const pX = pmX.pending[bdRid]; if (!pX) return false; pmX.users[bdRid] = { name: pX.name, edit: 1, by: meB.name, ts: pX.ts }; delete pmX.pending[bdRid] }, { mode: 'approve', users: {}, pending: {} })
               if (!okB) { await repB(`找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
               try { // 核准→DD 通知當事人（同 /prep 權限設定 ✅ 的通知）
@@ -2507,21 +2508,21 @@ export default async function handler(req, res) {
                 if (!uidA) { const bdDoc = kvB['sp_finance_pm_prep_bind'] || {}; uidA = (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid }
                 if (uidA) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: uidA, messages: [{ type: 'text', text: '✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。' }] }) })
               } catch (_) {}
-              await repB(`✅ 已核准 ${pd.name}，他現在可以編輯了（我也通知他了）。`)
+              await repB(`✅ 已核准 ${pd.name}，他現在可以編輯了（我也通知他了）。` + (crewLagN() > lagB ? '\n（系統同步較慢，約 1 分鐘內完全生效）' : ''))
             } else {
+              // 關卡 3 auth 第一輪 OpenAI A9：先解除綁定、再刪待審——解除中途失敗，待審還在，再按一次會補做；不會變成「申請已拒絕、舊連結還有效」
+              const lagR = crewLagN()
+              let unb = ''
+              const bdDoc = kvB['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
+              const uidR = pd.uid || (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid
+              if (uidR) {
+                await crewEd('sp_finance_pm_prep_bind', (bdX) => { for (const [tk2, v2] of Object.entries(bdX.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) delete bdX.tokens[tk2]; delete (bdX.byUid || {})[uidR] }, { byUid: {}, tokens: {} })
+                await crewEd('sp_crew_kb_roster', (rosR) => { const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR); if (!(pR && pR.lineUserId === uidR)) return false; delete pR.lineUserId }, { people: [] })
+                unb = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
+              }
               const okR = await crewEd('sp_finance_pm_prep_perm', (pmX) => { if (!(pmX.pending || {})[bdRid]) return false; delete pmX.pending[bdRid] }, { mode: 'approve', users: {}, pending: {} })
               if (!okR) { await repB(`找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
-              // v4.70.70 拒絕＝連綁定一起解除（張良 2026-10-12：原本只取消編輯權，連結跟綁定還在，他照樣能用連結看 /prep）
-              let unb = ''
-              try {
-                const bdDoc = kvB['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
-                const uidR = pd.uid || (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid
-                if (uidR) {
-                  await crewEd('sp_finance_pm_prep_bind', (bdX) => { for (const [tk2, v2] of Object.entries(bdX.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) delete bdX.tokens[tk2]; delete (bdX.byUid || {})[uidR] }, { byUid: {}, tokens: {} })
-                  await crewEd('sp_crew_kb_roster', (rosR) => { const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR); if (!(pR && pR.lineUserId === uidR)) return false; delete pR.lineUserId }, { people: [] })
-                  unb = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
-                }
-              } catch (_) {}
+              if (crewLagN() > lagR) unb += '（系統同步較慢，約 1 分鐘內完全生效）'
               await repB(`❌ 已拒絕 ${pd.name} 的申請${unb}。沒有通知他。`)
             }
           } catch (e) { console.log('bind approve postback error', e?.message); await repB('⚠️ 處理出錯，再按一次，或到 /prep → 設定 → 🔐權限設定 操作。') }
@@ -2758,7 +2759,7 @@ export default async function handler(req, res) {
           if (bR.err) { await send(bR.err); continue }
           const rp = bR.rp, note2 = bR.note2, rosterDoc2 = bR.doc
           // v4.71.196 身分域版本化寫（每次重讀最新綁定表；新 token 只產一次，重做沿用）
-          const tkNew = 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+          const tkNew = 'pv' + crypto.randomBytes(16).toString('base64url') // 關卡 3 auth 第一輪 OpenAI A11：登入憑證用密碼學亂數
           const { tk2, isNewBind } = await crewEd('sp_finance_pm_prep_bind', (bind) => {
             bind.byUid = bind.byUid || {}; bind.tokens = bind.tokens || {}
             let t = bind.byUid[userId]; const isNew = !t
