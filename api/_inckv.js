@@ -3,7 +3,9 @@
 import crypto from 'node:crypto'
 import { abgdKv } from './_abgdkv.js'
 const newKv = (op) => abgdKv({ domain: 'incidents', lockKey: 'sp_finance_pm_boss_inc_', operator: String(op || '異常通知').slice(0, 30), label: '異常通知', versioned: true })
-export async function incTx(key, mutate, editor, op, deadline) { // deadline（毫秒時刻，可省）：每次讀、寫、重做前檢查，過了就停（不在背景繼續重試）
+// deadline（毫秒時刻，可省）約定：截止後「不再發起」新的讀、寫或重做；已送出的那一個請求允許完成（最多讀 15 秒／寫 20 秒；
+//   送出的寫入就算中途取消，伺服器端也可能已提交，取消不能保證不寫，所以不宣稱截止即停）。這裡只用於清帳＝拿掉已送 id，晚到完成也是冪等（關卡 3 OpenAI 第十二輪）
+export async function incTx(key, mutate, editor, op, deadline) {
   const late = () => { if (deadline && Date.now() >= deadline) { const e = new Error('超過這輪時間，停止'); e.code = 'deadline'; throw e } }
   for (let i = 0; i < 8; i++) {
     late()
