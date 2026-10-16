@@ -67,9 +67,13 @@ const moStat = (doc) => {
 async function syncFuture(token, runToday = twToday()) { // runToday：同一輪跟滾動窗共用（跨午夜不漏交接日；關卡 3 inline 第一輪 B）
   const boundary = addDays(runToday, 45) // ≤boundary 由滾動窗負責
   // 租約（關卡 3 inline 第一輪 A2）：遠期是「45 天後全部」的完整快照，同一時間只准一輪在做——兩輪交錯時，較舊那輪不能把較新那輪已確認消失的訂位寫回來
-  const lease = Math.random().toString(36).slice(2, 10), leaseUntil = new Date(Date.now() + 10 * 60e3).toISOString()
+  const lease = Math.random().toString(36).slice(2, 10), untilMs = Date.now() + 10 * 60e3, leaseUntil = new Date(untilMs).toISOString()
+  // 時間圍欄（關卡 3 inline 第二輪 A1）：持有者每次寫入（含交易內每次重做）前都檢查「離租約到期至少還有 60 秒」，不夠就停手——每次寫入最長 20 秒逾時，新一輪要等租約過期才拿得到，所以舊輪不會在新輪期間提交
+  const fence = () => { if (Date.now() > untilMs - 60e3) { const e = new Error('遠期同步租約快到期，停手（下一輪重來）'); e.code = 'lease'; throw e } }
   const got = await inlTx('sp_finance_pm_inline', (cur) => { const L = cur && cur.farLease; if (L && L.until > new Date().toISOString() && L.id !== lease) return { write: false, value: false }; return { write: true, doc: { firstDay: '2021-02-10', months: {}, ...(cur || {}), farLease: { id: lease, until: leaseUntil } }, value: true } }, 'inline遠期同步租約')
   if (!got) return { farSkip: '另一輪遠期同步進行中（10 分鐘租約）' }
+  let released = false
+  try {
   const obsT = obsStamp() // 抓來源之前取
   const byDate = await INL.inlineSearchFuture(token)
   const far = {}
@@ -84,7 +88,9 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
     const key = 'sp_finance_pm_inline_' + mo
     for (const [d, arr] of Object.entries(far)) if (d.slice(0, 7) === mo) farResv += arr.length
     let wrote = false
+    fence()
     const st = await inlTx(key, (cur) => { // 窗外（boundary 之後）的日子以搜尋結果為準：有＝覆蓋、沒有＝刪掉那天；每天觀測戳記較新才動
+      fence()
       const dayVals = {}
       for (const d of Object.keys((cur && cur.days) || {})) if (d > boundary && !far[d]) dayVals[d] = []
       for (const [d, arr] of Object.entries(far)) if (d.slice(0, 7) === mo) dayVals[d] = arr
@@ -102,13 +108,18 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
     const today = runToday
     dayNotes = {} // 今天起的全部備註 → AI 直接讀
     for (const [d, arr] of Object.entries(notes)) if (d >= today) dayNotes[d] = arr
-    await inlTx('sp_finance_pm_inline_notes', (cur) => (cur && cur.obsAt && cur.obsAt > nObs ? { write: false } : { write: true, doc: { days: notes, updatedAt: new Date().toISOString(), obsAt: nObs } }), 'inline備註同步') // 全史另存一檔；較舊的一批不蓋較新的
+    fence(); await inlTx('sp_finance_pm_inline_notes', (cur) => (fence(), cur && cur.obsAt && cur.obsAt > nObs ? { write: false } : { write: true, doc: { days: notes, updatedAt: new Date().toISOString(), obsAt: nObs } }), 'inline備註同步') // 全史另存一檔；較舊的一批不蓋較新的
     notesAt = nObs
     notesInfo = { noteDays: Object.keys(notes).length, futureNoteDays: Object.keys(dayNotes).length }
-  } catch (e) { notesInfo = { notesError: e?.message } }
-  await inlTx('sp_finance_pm_inline', (cur) => { const doc = mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }); if (doc.farLease && doc.farLease.id === lease) delete doc.farLease; return { write: true, doc } }, 'inline遠期同步') // 總覽重讀最新再合併；放掉自己的租約
+  } catch (e) { if (e && e.code === 'lease') throw e; notesInfo = { notesError: e?.message } }
+  fence()
+  await inlTx('sp_finance_pm_inline', (cur) => { fence(); const doc = mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }); if (doc.farLease && doc.farLease.id === lease) delete doc.farLease; return { write: true, doc } }, 'inline遠期同步') // 總覽重讀最新再合併；放掉自己的租約
+  released = true
   await announceChanged()
   return { farDays: Object.keys(far).length, farResv, ...notesInfo }
+  } finally { // 中途出錯也放掉自己的租約（Gemini 第二輪）；放不掉就等它 10 分鐘到期
+    if (!released) await inlTx('sp_finance_pm_inline', (cur) => (cur && cur.farLease && cur.farLease.id === lease ? { write: true, doc: (({ farLease, ...x }) => x)(cur) } : { write: false }), 'inline遠期同步放租約').catch(() => {})
+  }
 }
 
 // ── 顧客資料庫＋營運洞察（張良 2026-10-04「建立inline顧客資料庫+九大數據分析頁」）──────

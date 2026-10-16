@@ -36,11 +36,13 @@ export function mergeSum(cur, { months, far, notes, lastSync }) {
   const s = { firstDay: '2021-02-10', months: {}, ...(cur || {}) }
   s.months = { ...(s.months || {}) }; s.monthsGone = { ...(s.monthsGone || {}) }
   for (const [mo, st] of Object.entries(months || {})) {
-    const o = s.months[mo], have = Math.max(o && o.seq != null ? Number(o.seq) : -1, s.monthsGone[mo] != null ? Number(s.monthsGone[mo]) : -1)
-    if (Number(st.seq) < have) continue // 較舊的月檔狀態不蓋（包括已被較新一輪刪掉的月份）
+    const o = s.months[mo], om = o && o.seq != null ? Number(o.seq) : -1, g = s.monthsGone[mo] != null ? Number(s.monthsGone[mo]) : -1, q = Number(st.seq)
     const { del, ...x } = st
-    if (del) { delete s.months[mo]; s.monthsGone[mo] = Number(st.seq) } else { s.months[mo] = x; delete s.monthsGone[mo] }
+    if (del) { if (q < Math.max(om, g)) continue; delete s.months[mo]; s.monthsGone[mo] = q } // 較舊的不刪
+    else { if (q < om || q <= g) continue; s.months[mo] = x; delete s.monthsGone[mo] } // 已刪的月份：流水號要嚴格大於墓碑才加回（同流水號＝同一份已刪的狀態；關卡 3 inline 第二輪 A2）
   }
+  const keep = new Date(Date.now() - 730 * 86400e3).toISOString().slice(0, 7) // 墓碑只留兩年（Gemini 第二輪）
+  for (const mo of Object.keys(s.monthsGone)) if (mo < keep) delete s.monthsGone[mo]
   if (far && (!s.farAt || String(far.at) >= String(s.farAt))) { s.farFuture = far.list; s.farAt = far.at }
   if (notes && (!s.notesAt || String(notes.at) >= String(s.notesAt))) { s.dayNotes = notes.dayNotes; s.notesAt = notes.at }
   if (lastSync && String(lastSync) > String(s.lastSync || '')) s.lastSync = lastSync
