@@ -3,10 +3,14 @@
 import crypto from 'node:crypto'
 import { abgdKv } from './_abgdkv.js'
 const newKv = (op) => abgdKv({ domain: 'incidents', lockKey: 'sp_finance_pm_boss_inc_', operator: String(op || '異常通知').slice(0, 30), label: '異常通知', versioned: true })
-export async function incTx(key, mutate, editor, op) {
+export async function incTx(key, mutate, editor, op, deadline) { // deadline（毫秒時刻，可省）：每次讀、寫、重做前檢查，過了就停（不在背景繼續重試）
+  const late = () => { if (deadline && Date.now() >= deadline) { const e = new Error('超過這輪時間，停止'); e.code = 'deadline'; throw e } }
   for (let i = 0; i < 8; i++) {
+    late()
     const kv = await newKv(op || editor)
+    late()
     const cur = await kv.kvGet(key)
+    late()
     const res = mutate(cur)
     if (!res || !res.write) return res ? res.value : undefined
     try { await kv.kvPut(key, res.doc, editor || '異常通知'); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
@@ -55,7 +59,7 @@ export async function soldoutFlush(pend, send, editor, { perMs = 12000, budgetMs
     try { if (await within(Promise.resolve().then(() => send(ev)), Math.min(perMs, left), '發送逾時')) done.push(ev.id) } catch (e) { console.log('absoldout send err', ev.id, e?.message) }
   }
   if (done.length) {
-    try { await within(incTx('sp_finance_pm_absoldout', (cur) => { if (!cur || !Array.isArray(cur.pend) || !cur.pend.some(e => done.includes(e.id))) return { write: false }; return { write: true, doc: { ...cur, pend: cur.pend.filter(e => !done.includes(e.id)) } } }, editor || 'AB停售通知已送'), end - Date.now(), '清帳逾時') }
+    try { await within(incTx('sp_finance_pm_absoldout', (cur) => { if (!cur || !Array.isArray(cur.pend) || !cur.pend.some(e => done.includes(e.id))) return { write: false }; return { write: true, doc: { ...cur, pend: cur.pend.filter(e => !done.includes(e.id)) } } }, editor || 'AB停售通知已送', undefined, end), end - Date.now(), '清帳逾時') }
     catch (e) { console.log('absoldout 已送但清帳沒完成（下一輪同一個重送識別碼再送，LINE 去重）', done.join(','), e?.message) }
   }
   return done
