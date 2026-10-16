@@ -117,7 +117,9 @@ async function boardRun(a, method) {
   if (role === '停權') return { ok: false, error: '帳號已停權', _http: 403 }
   if (!(method === 'GET' ? BOARD_READ : BOARD_WRITE).has(q)) return { ok: false, error: '不認識的操作', _http: 400 }
   const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
-  const hit = Object.entries(bd.tokens || {}).find(([, v]) => v && rid && (v.rid === rid || v.uid === rid))
+  // 只比人員編號（不跟 LINE 編號混比）；同一人有多筆（換手機重綁）＝優先目前生效的那筆（byUid 指向它），其次最新的；全部都是同一個人（sopWho 依 token 認出的 rid 一樣）
+  const mine = rid ? Object.entries(bd.tokens || {}).filter(([, v]) => v && v.rid === rid) : []
+  const hit = mine.find(([t, v]) => (bd.byUid || {})[v.uid] === t) || mine.sort((x, y) => String((y[1] || {}).ts || '').localeCompare(String((x[1] || {}).ts || '')))[0]
   const tk = hit ? hit[0] : ''
   if (!tk && q !== 'twhol') return { ok: false, error: '你的帳號還沒綁定 GD（私訊 DD「綁定GD 本名」）', _http: 403 }
   const key = (process.env.OPS_BOARD_KEY || '').trim()
