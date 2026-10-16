@@ -3246,13 +3246,16 @@ export default async function handler(req, res) {
       if (isDM) {
         if (op) secretOK = true
         else {
+          // v4.71.207 私訊也要是自己人才給資料：名冊上綁定的人（lineUserId 對得到）才 moneyOK；沒綁定的陌生人（DD 是公開官方帳號，誰都能加好友）＝當外部（DD 搬家設計審查時發現原本私訊一律給）；名冊讀不到＝當外部
+          moneyOK = false
           try {
             const kvS = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_sop_def', 'sp_finance_pm_hr_idlock'])
-            const meS = (((kvS['sp_crew_kb_roster'] || {}).people) || []).find(p => p.lineUserId === userId)
+            const meS = (((kvS['sp_crew_kb_roster'] || {}).people) || []).find(p => p && typeof p.lineUserId === 'string' && p.lineUserId && p.lineUserId === userId)
             const aprS = (((kvS['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
             const lockS = ((kvS['sp_finance_pm_hr_idlock'] || {}).rids) || []
+            moneyOK = !!meS
             secretOK = !!(meS && (aprS.includes(meS.name) || lockS.includes(meS.id)))
-          } catch (_) { secretOK = false }
+          } catch (_) { secretOK = false; moneyOK = false }
         }
       }
       if (!isDM) {
