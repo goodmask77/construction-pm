@@ -93,7 +93,7 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
     for (const [m, t] of Object.entries(Array.isArray(cur.farMonths) ? Object.fromEntries(cur.farMonths.map((x) => [x, nowMs])) : (cur.farMonths || {}))) if (m >= bMo || nowMs - Number(t) < 7200e3) fm[m] = Number(t) || nowMs // 2 小時：舊輪最晚取得租約後 9 分鐘停發新寫入（時間圍欄），已發出的寫入受 Vercel 函式 300 秒上限、資料庫單句 8 秒（authenticator statement_timeout／lock_timeout）限制，約 14 分鐘內一定結束或失敗
     for (const m of mine) fm[m] = nowMs
     return { write: true, doc: { ...cur, farMonths: fm }, value: { farMonths: Object.keys(fm), sumMonths: Object.keys(cur.months || {}) } }
-  }, 'inline遠期同步登記')
+  }, 'inline遠期同步登記', undefined, { deadline: untilMs - 60e3 })
   const mos = new Set([...mine, ...reg.farMonths])
   for (const mo of reg.sumMonths) if (mo >= bMo) mos.add(mo)
   let farResv = 0
@@ -112,7 +112,7 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
       const doc = r.write ? r.doc : { ...(cur || { days: {}, obsD: {} }), wseq: (Number(cur && cur.wseq) || 0) + 1 } // 掃過的月份一律蓋 farGen（沒有日子變也寫一次，較舊一輪才看得到）
       doc.farGen = gen; wrote = true
       return { write: true, doc, value: r.write ? r.value : { ...moStat(doc), seq: doc.wseq } }
-    }, 'inline遠期同步')
+    }, 'inline遠期同步', undefined, { deadline: untilMs - 60e3 })
     if (st && wrote) months[mo] = { ...st, del: !st.days }
   }
   // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）；候補(ty=4)不算「被訂」排除
@@ -124,12 +124,12 @@ async function syncFuture(token, runToday = twToday()) { // runToday：同一輪
     const today = runToday
     dayNotes = {} // 今天起的全部備註 → AI 直接讀
     for (const [d, arr] of Object.entries(notes)) if (d >= today) dayNotes[d] = arr
-    fence(); await inlTx('sp_finance_pm_inline_notes', (cur) => (fence(), cur && cur.obsAt && cur.obsAt > nObs ? { write: false } : { write: true, doc: { days: notes, updatedAt: new Date().toISOString(), obsAt: nObs } }), 'inline備註同步') // 全史另存一檔；較舊的一批不蓋較新的
+    fence(); await inlTx('sp_finance_pm_inline_notes', (cur) => (fence(), cur && cur.obsAt && cur.obsAt > nObs ? { write: false } : { write: true, doc: { days: notes, updatedAt: new Date().toISOString(), obsAt: nObs } }), 'inline備註同步', undefined, { deadline: untilMs - 60e3 }) // 全史另存一檔；較舊的一批不蓋較新的
     notesAt = nObs
     notesInfo = { noteDays: Object.keys(notes).length, futureNoteDays: Object.keys(dayNotes).length }
   } catch (e) { if (e && e.code === 'lease') throw e; notesInfo = { notesError: e?.message } }
   fence()
-  await inlTx('sp_finance_pm_inline', (cur) => { fence(); const doc = mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }); if (doc.farLease && doc.farLease.id === lease) delete doc.farLease; return { write: true, doc } }, 'inline遠期同步') // 總覽重讀最新再合併；放掉自己的租約
+  await inlTx('sp_finance_pm_inline', (cur) => { fence(); const doc = mergeSum(cur, { months, far: { list: farList, at: obsT }, notes: notesAt ? { dayNotes, at: notesAt } : null, lastSync: new Date().toISOString() }); if (doc.farLease && doc.farLease.id === lease) delete doc.farLease; return { write: true, doc } }, 'inline遠期同步', undefined, { deadline: untilMs - 60e3 }) // 總覽重讀最新再合併；放掉自己的租約
   released = true
   await announceChanged()
   return { farDays: Object.keys(far).length, farResv, ...notesInfo }

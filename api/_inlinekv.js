@@ -3,13 +3,13 @@
 //   寫入：依歸屬走 GD 或新殼、一律版本比對寫（撞版本重讀重算，最多 8 次）；月檔每天各記觀測戳記 obsD；總覽的遠期清單、備註、每月統計各帶觀測戳記
 import { abgdKv } from './_abgdkv.js'
 const newKv = (op) => abgdKv({ domain: 'inline', lockKey: 'sp_finance_pm_inline', operator: String(op || 'inline同步').slice(0, 30), label: 'inline 訂位資料', versioned: true })
-export async function inlTx(key, mutate, editor, op) {
+export async function inlTx(key, mutate, editor, op, opts) { // opts.deadline：寫入期限（毫秒時刻；過了就丟 code=lease 不寫）
   for (let i = 0; i < 8; i++) {
     const kv = await newKv(op || editor)
     const cur = await kv.kvGet(key)
     const res = mutate(cur)
     if (!res || !res.write) return res ? res.value : undefined
-    try { await kv.kvPut(key, res.doc, editor || 'inline同步'); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
+    try { await kv.kvPut(key, res.doc, editor || 'inline同步', opts && opts.deadline ? { deadline: opts.deadline } : undefined); return res.value } catch (e) { if (!(e && e.code === 'stale')) throw e }
     await new Promise(r => setTimeout(r, 100 + Math.random() * 300))
   }
   const e = new Error('inline 訂位資料一直有人同時在改，這次沒存進去'); e.code = 'commitfail'; throw e
