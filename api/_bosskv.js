@@ -30,9 +30,12 @@ export function applyDays(cur, { days, byRows, df, allowDelete, obsT, now = new 
   return { write: true, doc }
 }
 // 快照（整份覆蓋）：文件裡的觀測比這批新＝不寫
+//   原本有資料、這批卻是空的＝不寫（來源出錯或漏頁時不清空正式資料；回 value.emptyGuard 讓呼叫端記錯）（關卡 3 boss OpenAI 第一輪 B）
 export function applySnap(cur, { rows, pk, obsT, now = new Date().toISOString() }) {
   if (cur && cur.obsAt && cur.obsAt > obsT) return { write: false }
-  return { write: true, doc: { rows: Object.fromEntries(rows.map(r => [pk(r), r])), updatedAt: now, count: rows.length, obsAt: obsT } }
+  if (!rows.length && cur && Object.keys(cur.rows || {}).length) return { write: false, value: { emptyGuard: Object.keys(cur.rows || {}).length } }
+  const m = Object.fromEntries(rows.map(r => [pk(r), r]))
+  return { write: true, doc: { rows: m, updatedAt: now, count: Object.keys(m).length, obsAt: obsT }, value: { dup: rows.length - Object.keys(m).length } }
 }
 // 同步狀態合併（結尾重讀最新再合併，兩次執行重疊時不互蓋）：
 //   res 每個端點取 at 較新的；bf（回填進度）先比世代 bfGen（手動「歷史回填重啟」會加世代），同世代 done 最大、否則日期大的；auth401 取大的；rot／lastRun／rcpSnap 用這次的
@@ -47,5 +50,6 @@ export function mergeState(cur, mine) {
     if (out.bf[s] == null) delete out.bf[s]
   }
   if (String(c.auth401 || '') > String(mine.auth401 || '')) out.auth401 = c.auth401
+  if (String(c.lastRun || '') > String(mine.lastRun || '')) out.lastRun = c.lastRun // 完成時間取大；rot（輪替起點）、rcpSnap 用這次的＝盡力而為（重疊時頂多某端點早一輪或晚一輪跑，增量窗會補）
   return out
 }

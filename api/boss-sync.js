@@ -161,7 +161,8 @@ export default async function handler(req, res) {
     const months = allowDelete ? monthsBetween(from, to) : Object.keys(byM)
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
-      const obsT = obsAt || obsStamp() // 這批來源資料的抓取時間（關卡 3 OpenAI A1：重疊執行時，較舊的那批晚寫不得蓋掉較新的）
+      const obsT = obsAt // 這批來源資料的抓取時間（抓之前取、跨月沿用；必填，關卡 3 boss OpenAI 第一輪 B：漏傳不能默默改用提交時間）
+      if (!obsT) throw new Error('writeRows 缺觀測時間')
       // v4.71.172 全部月檔（交接異常＝incidents 域、其他＝boss 域）依歸屬版本比對寫（重讀重算）；每天各記觀測時間 obsD，只動「這批比文件裡那天更新」的日子（關卡 3 異常通知 OpenAI 十三輪定案的算法，_bosskv.applyDays 共用）
       const days = allowDelete ? daysBetween(from > m + '-01' ? from : m + '-01', to < m + '-31' ? to : m + '-31').filter(d => d.slice(0, 7) === m) : [...new Set(Object.values(byM[m] || {}).map(r => E.df(r)))]
       const mut = (cur) => applyDays(cur, { days, byRows: byM[m] || {}, df: E.df, allowDelete, obsT })
@@ -176,7 +177,9 @@ export default async function handler(req, res) {
       try {
         if (E.snapshot) { // 快照型：每次全抓、整批覆蓋（staff 含離職全保留＝API 本來就會回）
           const obsT = obsStamp(); const rows = await fetchRange(E, null, null)
-          await bossTx(`sp_finance_pm_boss_${E.slug}`, (cur) => applySnap(cur, { rows, pk: E.pk, obsT }), `boss同步 ${E.slug} 全量`) // 較舊的一批晚到不蓋較新的
+          const sv = await bossTx(`sp_finance_pm_boss_${E.slug}`, (cur) => applySnap(cur, { rows, pk: E.pk, obsT }), `boss同步 ${E.slug} 全量`) // 較舊的一批晚到不蓋較新的
+          if (sv && sv.emptyGuard) errs.push(`${E.slug}:來源回空、原有 ${sv.emptyGuard} 筆，不清空`)
+          if (sv && sv.dup) errs.push(`${E.slug}:主鍵重複 ${sv.dup} 筆`)
           done.push(`${E.slug}:${rows.length}`)
         } else if (state.bf[E.slug] !== 'done') { // 首次回填（分段 366 天；成功一段推進一段）
           const from = state.bf[E.slug] || '2026-01-01'
