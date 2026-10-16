@@ -168,6 +168,7 @@ export default async function handler(req, res) {
         await incTx(id, (cur) => {
           const doc = cur ? { ...cur, rows: { ...(cur.rows || {}) }, obsD: { ...(cur.obsD || {}) } } : { rows: {}, obsD: {} }
           const ok = new Set(days.filter(d => !(doc.obsD[d] && doc.obsD[d] > obsT)))
+          for (const [k, r] of Object.entries(byM[m] || {})) { const old = doc.rows[k]; const d0 = old && E.df(old), d1 = E.df(r); if (d0 && d0 !== d1 && !ok.has(d0)) ok.delete(d1) } // 同一筆改了日期：原本那天有較新觀測＝新的那天這批不動、也不標已更新（關卡 3 OpenAI 第三輪 A1）
           if (!ok.size) return { write: false }
           if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { if (ok.has(E.df(r)) && !((byM[m] || {})[k])) delete doc.rows[k] } // 窗內沒再出現＝來源已刪（只限這批較新的日子）
           for (const [k, r] of Object.entries(byM[m] || {})) if (ok.has(E.df(r))) doc.rows[k] = r
