@@ -3866,6 +3866,33 @@ export default async function handler(req, res) {
   }
   // LIFF 換身分口：POST ?liffauth=1 {at}（LIFF access token）→ 伺服器跟 LINE 驗證拿 userId → 回個人 token
   // 安全：不信前端給的 userId，一定拿 at 去 LINE API 驗（不然誰都能冒名）
+  // 🔑 用 LINE 登入新殼（v4.71.191 張良 10-16 選 A：新殼當主入口）：員工 LIFF（DD LIFE，跟 DD 同 Provider）拿 access token →
+  //   ①向 LINE 驗 token 而且「一定要是員工 LIFF 那個頻道發的」（client_id＝LIFF_STAFF_ID 前段；別的頻道的 token 一律拒）②換 userId → 查 GD 綁定 → 認人（停權擋）
+  //   ③直接簽 60 秒一次性橋接票（同 ?bridge 規格）→ 前端 POST 到新殼 /api/core/auth/bridge 換登入。前端不用帶任何金鑰
+  if (req.method === 'POST' && req.query?.liffabgd) {
+    res.setHeader('Cache-Control', 'private, no-store')
+    let bl = {}; try { bl = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const at = String(bl.at || '')
+    const chan = String((process.env.LIFF_STAFF_ID || '').trim().split('-')[0] || '')
+    if (!at) return res.status(400).json({ ok: false, error: '缺 access token' })
+    if (!chan) return res.status(500).json({ ok: false, error: '員工 LIFF 還沒設定' })
+    try {
+      const vr = await (await fetch('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(at), { signal: AbortSignal.timeout(10000) })).json()
+      if (!vr || String(vr.client_id || '') !== chan || !(vr.expires_in > 0)) return res.status(403).json({ ok: false, error: 'LINE 登入無效，請再點一次' })
+      const pf = await (await fetch('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + at }, signal: AbortSignal.timeout(10000) })).json()
+      if (!pf || !pf.userId) return res.status(403).json({ ok: false, error: '拿不到 LINE 身分' })
+      const bdA = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      const tkA = (bdA.byUid || {})[pf.userId] || null
+      const w = tkA ? await sopWho(tkA) : null
+      if (!w || !w.rid) return res.status(403).json({ ok: false, error: '還沒綁定（私訊 DD「綁定GD 你的本名」），或帳號已停權', unbound: !tkA })
+      const sec = (process.env.BRIDGE_SECRET || '').trim()
+      if (!sec) return res.status(500).json({ ok: false, error: 'BRIDGE_SECRET 未設定' })
+      const now = Math.floor(Date.now() / 1000)
+      const payload = Buffer.from(JSON.stringify({ jti: crypto.randomUUID(), rid: w.rid, name: w.name, iss: 'gd', aud: 'abgd', iat: now, exp: now + 60 })).toString('base64url')
+      const sig = crypto.createHmac('sha256', sec).update(payload).digest('base64url')
+      return res.status(200).json({ ok: true, ticket: payload + '.' + sig, name: w.name, base: (process.env.ABGD_BASE_URL || 'https://ab-gd.vercel.app').replace(/\/$/, '') })
+    } catch (_) { return res.status(502).json({ ok: false, error: 'LINE 驗證失敗，請再點一次' }) }
+  }
   if (req.method === 'POST' && req.query?.liffauth) {
     let bl9 = {}; try { bl9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const at9 = String(bl9.at || '')
