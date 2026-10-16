@@ -2247,19 +2247,22 @@ export default async function handler(req, res) {
     const items = await eatsItemList(sess)
     const hm2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const soDoc = (await kvGet('sp_finance_pm_absoldout')) || { current: {}, log: [] }
-    const prev = soDoc.current || {}
     const nowSo = {}
     for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
-    const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
-    soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || (today2 + ' ' + hm2)]))
-    added.forEach(n => { soDoc.current[n] = today2 + ' ' + hm2; soDoc.log.unshift({ d: today2, t: hm2, n, op: '停售' }) })
-    removed.forEach(n => soDoc.log.unshift({ d: today2, t: hm2, n, op: '恢復' }))
-    soDoc.log = soDoc.log.slice(0, 300)
-    soDoc.day = today2
-    await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售手動掃描')
+    const { incTx } = await import('./_inckv.js') // v4.71.158 異常通知域：依歸屬版本比對寫（撞版本重讀重算）
+    const rs = await incTx('sp_finance_pm_absoldout', (cur) => {
+      const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])] } : { current: {}, log: [] }
+      const prev = soDoc.current
+      const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
+      soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || (today2 + ' ' + hm2)]))
+      added.forEach(n => { soDoc.current[n] = today2 + ' ' + hm2; soDoc.log.unshift({ d: today2, t: hm2, n, op: '停售' }) })
+      removed.forEach(n => soDoc.log.unshift({ d: today2, t: hm2, n, op: '恢復' }))
+      soDoc.log = soDoc.log.slice(0, 300)
+      soDoc.day = today2
+      return { write: true, doc: soDoc, value: { current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length } }
+    }, 'AB停售手動掃描', 'AB停售手動掃描')
     await announceChanged()
-    return res.status(200).json({ ok: true, current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length })
+    return res.status(200).json({ ok: true, ...rs })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.aiwhich) { // v4.70.81 每個 AI 功能頁角落「這裡由哪家 AI 處理」小標籤；只回供應商＋模型名，不含金鑰

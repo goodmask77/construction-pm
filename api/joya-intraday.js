@@ -90,7 +90,6 @@ export default async function handler(req, res) {
   try {
     if (abHit && (await kvGet('sp_finance_pm_notify') || {}).soldoutAB !== 0) {
       const todaySo = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-      const soDoc = (await kvGet('sp_finance_pm_absoldout')) || { current: {}, log: [] }
       const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
       const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
       const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
@@ -98,15 +97,26 @@ export default async function handler(req, res) {
       const items = await eatsItemList(sess)
       const nowSo = {}
       for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
-      const prev = soDoc.current || {}
-      const added = Object.keys(nowSo).filter(n => !(n in prev))
-      const removed = Object.keys(prev).filter(n => !(n in nowSo))
-      if (added.length || removed.length) {
-        soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || hm]))
-        added.forEach(n => { soDoc.current[n] = hm; soDoc.log.unshift({ d: todaySo, t: hm, n, op: '停售' }) })
-        removed.forEach(n => soDoc.log.unshift({ d: todaySo, t: hm, n, op: '恢復' }))
-        soDoc.log = soDoc.log.slice(0, 300)
-        await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售變化')
+      // v4.71.158 異常通知域：依歸屬版本比對寫（每次重讀最新再比對），寫成功才發群
+      const { incTx } = await import('./_inckv.js')
+      const chg = await incTx('sp_finance_pm_absoldout', (cur) => {
+        const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])] } : { current: {}, log: [] }
+        const prev = soDoc.current
+        const added = Object.keys(nowSo).filter(n => !(n in prev))
+        const removed = Object.keys(prev).filter(n => !(n in nowSo))
+        if (added.length || removed.length) {
+          soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || hm]))
+          added.forEach(n => { soDoc.current[n] = hm; soDoc.log.unshift({ d: todaySo, t: hm, n, op: '停售' }) })
+          removed.forEach(n => soDoc.log.unshift({ d: todaySo, t: hm, n, op: '恢復' }))
+          soDoc.log = soDoc.log.slice(0, 300)
+          return { write: true, doc: soDoc, value: { added, removed, current: soDoc.current } }
+        }
+        if (!soDoc.day || soDoc.day !== todaySo) { soDoc.day = todaySo; return { write: true, doc: soDoc, value: null } } // 每天首輪落個檔（沒變化也記狀態基準）
+        return { write: false, value: null }
+      }, 'AB停售變化')
+      if (chg) {
+        const { added, removed } = chg
+        const soDoc = { current: chg.current }
         const lines2 = []
         added.forEach(n => lines2.push(`🚫 ${n} 停售了（約 ${hm}）`))
         removed.forEach(n => lines2.push(`✅ ${n} 恢復販售（約 ${hm}）`))
@@ -116,9 +126,6 @@ export default async function handler(req, res) {
         const gidSo = await ddGroupGid(cfgSo.group)
         const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
         if (tkSo && gidSo) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidSo); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) + await _qf(_mem) }] }) }) }
-      } else if (!soDoc.day || soDoc.day !== todaySo) { // 每天首輪落個檔（沒變化也記狀態基準）
-        soDoc.day = todaySo
-        await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售基準')
       }
     }
   } catch (e) { console.log('absoldout err', e?.message) }
