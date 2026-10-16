@@ -41,9 +41,10 @@
 | 換頁修正（全部 GD 頁面副本） | ✅ 10-16：①副本最外層 const／let 改 var（不重新整理換頁時「重複宣告」整頁失效；legacyfix.py）②副本不宣告全域 app（即時的 window.app）③**OwnedBox 認領 #app／#upd**（框架會保留上一頁＝同 id 兩個，副本拿到藏起來的舊容器＝空白）；正式站側欄連續換頁 5 頁實測全過 |
 | 新殼 LINE 登入＋新首頁＋大家改從新版進來 | ✅ 10-16 18:00：張良手機實測 LINE 登入可以、DD LIFE 已 Published。新殼 /login「用 LINE 登入」→ 員工 LIFF → GD ?liffabgd（只收員工 LIFF 頻道 token、認綁定、停權擋、60 秒一次性票）→ 新殼 bridge。**入口**：LIFF 通用連結（沒指定目的地）＝新殼首頁（v4.71.192）；深層連結照舊進 GD（分頁本來就轉新版）；舊版首頁最上面「新版已上線」一鍵自動登入新版（正式站實測）。新殼首頁＝各區入口＋營業數據 |
 | **取消／暫停（張良 10-16）** | ①主 App 遺留（零用金、財務帳本、工程任務）**取消不搬**：張良已把工程資料抓下來，主 App 不用了。②**會員系統、團體訂餐（自建點餐）、綠界金流暫停**、不給客人看到：GROUN:D 官方帳號圖文選單（六格）已取消（預設清除、7 位會員解除連結，選單本身沒刪）；客人頁 /member、/order、/member.html、/order.html 全導暫停頁；收件匣加好友歡迎／會員點數／門市客服／團訂卡片自動回停（_member.js MEMBER_PAUSED、_inbox.js MEMBER_OFF）；GD 側欄與新殼側欄藏會員、團體訂餐。資料都沒刪；恢復方法寫在程式註解。③新殼手機版頁面清單改可收合（選單鈕；收起時上方 81px） |
+| 設定 F31／通知中心 F32（頁面） | ✅ 10-16 18:50：新殼 /settings（GD 設定頁副本：權限面板、分頁名稱、DD 自動訊息與群組、AI 模型、DD 健康）GD 側欄入口已指新殼；新殼 /ops/notify（GD 通知中心副本，點通知跳新殼對應頁；新殼側欄「通知」）。資料仍在 GD（perm、dd、notify 域），經 GD 頁面轉接讀寫。新表 core.proxy_pages＝純轉接頁清單（開入口不要求資料域在新殼）。手機推播（Web Push）仍在 GD App，跟外部串接一起切。教訓：副本要掃「用到但沒定義的 GD 全域常數」（設定頁漏 EYE_I＝權限面板卡載入中，正式站實測才抓到） |
 | 其餘 | 待搬 | 見 FEATURE_MAP |
 
-版本：新殼 v0.4.182（main）、GD v4.71.193（main，已部署 18:20）。
+版本：新殼 v0.4.185（main）、GD v4.71.195（main，已部署 18:45）。
 
 ## 二、第 2 波順序（10-14 盤點結論）
  ~~成本總覽~~（10-15 已切；菜商報價排程改新殼 /api/ops/cron/cost-veg 每小時:05；快照灌入腳本已改打新殼維護口）→ ~~食譜~~（10-15 已切；成本快照改新殼 /api/ops/cron/recipe-snap 每小時:12；?gdfive 已停用）→ ~~菜單成本 F12~~（10-15 已切，pricing 域）→ ~~菜單 F18~~（10-15 12:20 已切；POS 牌價／成本／改名／隱藏四鍵移到 pos 域，跟銷售數據一起搬；主 App 已停用這些寫入 v4.71.81）→ ~~盤點／包材／採購~~（10-15 14:48 已切；**平日 10:55～11:40 不切入也不回切**；回切前查有沒有排隊中的 low_stock 通知）→ ~~物料庫分類~~（10-15 16:12 已切 matlib 域）→ boss 同步資料＋異常通知 F16＋銷售數據 pos 一起（boss-sync 會寫 AB 營收；boss_inc_ 歸 incidents；切 boss 域時比對要排除已拆出的 boss_matcat／boss_inc_）（最難：joya-intraday／mail-sync／eats-rhythm／boss-sync／inline-sync 五個排程＋主 App Finance.jsx、Supply.jsx 用 anon 直接寫且吞錯誤）。
@@ -82,7 +83,7 @@
 - 新殼銷售數據頁速度：平常伺服器 P50 約 0.18 秒；資料剛更新後第一次約 1.2 秒（共用快取 ops.board_cache：全部機器只算一次）。
 
 ### 剩下的階段（10-16 18:20 依張良指示更新）
-1. **設定／通知中心／權限／身分／名冊（地基一起）**：新殼已是主入口（LINE 登入實測可以）。新殼設定頁、通知中心（Web Push 要在新殼網域重新訂閱）；perm／identity／crewapp 一起切。
+1. ~~設定／通知中心頁面~~（10-16 18:50 完成）→ **權限／身分／名冊資料（perm／identity／crewapp）一起切**。
 2. **DD（dd 域＋line-webhook.js）**：最大一塊；先過設計審查（webhook 指新殼 vs GD 留 webhook 轉送）。
 3. **外部串接統一切（關卡 4）**：LINE webhook（DD＋四個官方帳號收件匣）、員工 LIFF、Vercel 排程（NUEiP、喬亞、阿桑、inline、收信…）、阿桑 partner-api、短網址 /v/、公開頁（salary、menu-ground.html、sw.js）。
 4. **總體檢（關卡 5）**。
