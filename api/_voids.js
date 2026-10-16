@@ -79,7 +79,7 @@ export async function notifyVoidDay({ kvGet, kvPut, date, approvers, token, send
   const pend = open.filter(e => !expired.includes(e)).slice(0, 10)
   for (const e of expired) console.log('[voids] 退單通知超過 20 小時或試 8 次都沒送成，放棄（請人工確認）', date, e.t, e.rev)
   if (!pend.length && !expired.length) return { sent: 0 }
-  const giveUp = () => { day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)] }
+  const giveUp = () => { if (!expired.length) return; day.ntf = [...day.ntf, ...expired.map(e => e.t)]; day.ntfGaveUp = [...(day.ntfGaveUp || []), ...expired.map(e => e.t)] }
   if (!token || !approvers.length) { if (expired.length) { giveUp(); doc.updatedAt = new Date().toISOString(); await kvPut(key, doc, '退單通知（放棄過期）') } return { sent: 0, pending: pend.length, gaveUp: expired.length } } // 沒設定也要把過期的放棄寫進去（不積壓；關卡 3 pos 第四輪）
   // ① 領取：先記次數（和放棄的）再送
   for (const e of pend) tries[e.t] = (Number(tries[e.t]) || 0) + 1
