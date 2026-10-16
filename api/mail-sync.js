@@ -2250,19 +2250,9 @@ export default async function handler(req, res) {
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const nowSo = {}
     for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
-    const { incTx } = await import('./_inckv.js') // v4.71.158 異常通知域：依歸屬版本比對寫（撞版本重讀重算）
-    const rs = await incTx('sp_finance_pm_absoldout', (cur) => {
-      if (cur && cur.obsAt && cur.obsAt > obsSo) return { write: false, value: { current: Object.keys(cur.current || {}).length, added: 0, removed: 0, skipped: '已有較新的掃描結果' } }
-      const soDoc = cur ? { ...cur, current: { ...(cur.current || {}) }, log: [...(cur.log || [])], obsAt: obsSo } : { current: {}, log: [], obsAt: obsSo }
-      const prev = soDoc.current
-      const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
-      soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || (today2 + ' ' + hm2)]))
-      added.forEach(n => { soDoc.current[n] = today2 + ' ' + hm2; soDoc.log.unshift({ d: today2, t: hm2, n, op: '停售' }) })
-      removed.forEach(n => soDoc.log.unshift({ d: today2, t: hm2, n, op: '恢復' }))
-      soDoc.log = soDoc.log.slice(0, 300)
-      soDoc.day = today2
-      return { write: true, doc: soDoc, value: { current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length } }
-    }, 'AB停售手動掃描', 'AB停售手動掃描')
+    const { soldoutTx } = await import('./_inckv.js') // v4.71.163 異常通知域：與排程共用停售算法；依歸屬版本比對寫（撞版本重讀重算）
+    const so = await soldoutTx({ nowSo, obs: obsSo, day: today2, hm: hm2, stamp: today2 + ' ' + hm2, manual: true }, 'AB停售手動掃描')
+    const rs = { current: Object.keys(so.current || {}).length, added: so.added.length, removed: so.removed.length, ...(so.skipped ? { skipped: so.skipped } : {}) }
     await announceChanged()
     return res.status(200).json({ ok: true, ...rs })
   }
