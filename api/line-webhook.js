@@ -52,15 +52,55 @@ async function kvGetMany(ids) {
     return out
   } catch (_) { return {} }
 }
-// v4.70.41 自動記進「轉給 CC」收件匣（DD 承認查不到資料時用；同一問題 24 小時內只記一次）
+// v4.71.201 DD 搬家批 3：CC 收件匣 pm_cc_inbox 讀寫依歸屬（ddcc 域：GD 正本＝版本比對寫 GD 表；新殼正本＝經命令橋）；讀＝依歸屬讀正本（歸屬查不到／切換中＝讀不到就回錯，不用可能落後的副本）
+function ccShape(cur, exists) { // 格式壞＝丟錯不寫（不把壞資料當空收件匣覆蓋）
+  if (exists === true && (cur === null || cur === undefined)) { const e = new Error('CC 收件匣存在但內容是空的'); e.code = 'badshape'; throw e }
+  if (cur === null || cur === undefined) return { list: [] }
+  if (!cur || typeof cur !== 'object' || Array.isArray(cur) || !Array.isArray(cur.list) || cur.list.length > 100 || cur.list.some(x => !ccItemOk(x)) || new Set(cur.list.map(x => x.id)).size !== cur.list.length) { const e = new Error('CC 收件匣格式壞了'); e.code = 'badshape'; throw e }
+  return cur
+}
+// 每一件（同新殼 ccshape.ts）：編號去空白後非空、狀態只能 open／done、時間／結果／標籤若有要是字串
+function ccItemOk(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return false
+  if (typeof x.id !== 'string' || !x.id.trim() || typeof x.text !== 'string' || (x.status !== 'open' && x.status !== 'done')) return false
+  for (const k of ['ts', 'startedAt', 'doneAt', 'result', 'tag']) if (x[k] !== undefined && typeof x[k] !== 'string') return false
+  if (Object.prototype.hasOwnProperty.call(x, 'ntf')) return false // 已撤掉的通知待送欄位：一律拒（第四輪 OpenAI A2；正式資料 0 件有）
+  return true
+}
+// 收一件（第一輪 OpenAI A3／A5）：同編號已有＝dup；滿 100 件先清最舊的「已完成」；全是沒處理完的＝full（拒收，不刪任何待辦）
+function ccInsert(doc, item) {
+  doc.list = doc.list || []
+  if (doc.list.some(x => x.id === item.id)) return 'dup'
+  while (doc.list.length >= 100) { let i = -1; for (let k = doc.list.length - 1; k >= 0; k--) if (doc.list[k].status === 'done') { i = k; break } if (i < 0) return 'full'; doc.list.splice(i, 1) } // 只清已完成的
+  doc.list = [item, ...doc.list]; return 'added'
+}
+const CC_FULL = 'CC 收件匣滿了（100 件都還沒處理完），這件先沒收；等 CC 消化一些再傳一次。'
+const ccEvId = (eid) => 'cc' + crypto.createHash('sha1').update(String(eid || crypto.randomUUID())).digest('hex').slice(0, 12) // 同一 LINE 事件＝同一編號（重送不重收；同毫秒不撞號）
+async function ccKv() { return abgdKv({ domain: 'ddcc', lockKey: 'pm_cc_inbox', operator: 'DD', label: 'CC 收件匣', versioned: true }) }
+async function ccRead() { const kv = await ccKv(); const gx = await kv.kvGetX('pm_cc_inbox'); return ccShape(gx.doc, gx.exists) }
+async function ccTx(mut) { // 撞版本／切換中暫時失敗＝重建讀寫物件重讀重做（最多 6 次、退避）；格式壞不重試
+  let last = null
+  for (let i = 0; i < 6; i++) {
+    try { const kv = await ccKv(); const gx = await kv.kvGetX('pm_cc_inbox'); const doc = JSON.parse(JSON.stringify(ccShape(gx.doc, gx.exists))); const o = mut(doc); if (!o || !o.write) return o ? o.value : null; await kv.kvPut('pm_cc_inbox', doc, 'DD'); return o.value }
+    catch (e) { if (e && e.code === 'badshape') throw e; last = e }
+    if (i < 5) await new Promise(r => setTimeout(r, Math.min(2500, 150 * 2 ** i) + Math.random() * 200))
+  }
+  throw last || new Error('CC 收件匣存不進去')
+}
+// v4.70.41 自動記進「轉給 CC」收件匣（DD 承認查不到資料時用；同一問題 24 小時內只記一次）；回 added／duplicate／full／failed（第一輪 OpenAI A8：故障與去重分開，故障記健康頁）
 async function ccInboxAdd(text, tag) {
+  const key = String(text).slice(0, 80); const dayAgo = Date.now() - 86400e3
+  const id = 'cc' + crypto.randomUUID().replace(/-/g, '').slice(0, 12) // 同一次操作重試沿用同一編號（ccTx 重做時 ccInsert 看到同編號＝dup）
+  let r0 = 'failed'
   try {
-    const doc = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
-    const key = String(text).slice(0, 80); const dayAgo = Date.now() - 86400e3
-    if ((doc.list || []).some(x => x.tag === tag && String(x.text).slice(0, 80) === key && Date.parse((x.ts || '').replace(' ', 'T') + '+08:00') > dayAgo)) return false
-    doc.list = [{ id: 'cc' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: String(text).slice(0, 2000), status: 'open', tag }, ...(doc.list || [])].slice(0, 100)
-    await kvSet('pm_cc_inbox', doc); return true
-  } catch (_) { return false }
+    r0 = await ccTx((doc) => {
+      if ((doc.list || []).some(x => x.tag === tag && String(x.text).slice(0, 80) === key && Date.parse((x.ts || '').replace(' ', 'T') + '+08:00') > dayAgo)) return { write: false, value: 'duplicate' }
+      const st = ccInsert(doc, { id, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: String(text).slice(0, 2000), status: 'open', tag })
+      return st === 'added' ? { write: true, value: 'added' } : { write: false, value: st === 'dup' ? 'duplicate' : 'full' }
+    })
+  } catch (e) { r0 = 'failed' }
+  if (r0 === 'failed' || r0 === 'full') ddHealthLog({ kind: 'error', err: 'DD 查不到資料自動記給 CC 沒記上（' + r0 + '）：' + String(text).slice(0, 60) }).catch(() => {})
+  return r0
 }
 // v4.70.40 單鍵讀取（原本沒有這個函式：loadEmText 從 v4.43.7 起呼叫 kvGet 一直 ReferenceError 被 try 吞掉＝DD 從沒看過 EM 包場資料；query_orders 也用）
 async function kvGet(id) { return (await kvGetMany([id]))[id] || null }
@@ -2367,36 +2407,51 @@ export default async function handler(req, res) {
   }
   // 「轉給CC」收件匣（v4.41.3 張良 2026-10-04「C能幹最好,關鍵密碼就是轉給CC」）：讀口＋銷單口（CC 本機排程撿單用）
   const ccAuth = (v) => { const a = (process.env.MENU_PROBE_KEY || '').trim(), b = (process.env.CC_AGENT_KEY || '').trim(), s = String(v || ''); return !!((a && s === a) || (b && s === b)) } // v4.68.7 雲端代理用 CC_AGENT_KEY 也可
-  if (req.method === 'GET' && req.query?.ccinbox) {
-    if (!ccAuth(req.query.ccinbox)) return res.status(403).json({ ok: false })
-    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
-    return res.status(200).json({ ok: true, list: (doc9.list || []).filter(x => x.status === 'open') })
-  }
   // v4.45.6 CC 私訊張良共用小函式（開工/完成都用）：找 bind 裡名字含「張良」的 uid 發文字
-  const ccNotifyBoss = async (text) => { try {
+  const ccNotifyBoss = async (text, rkey) => { try {
     const bdC9 = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
     let uidC9 = null
     for (const [u9, tk9] of Object.entries(bdC9.byUid || {})) { if (/張良/.test(((bdC9.tokens || {})[tk9] || {}).name || '')) { uidC9 = u9; break } }
-    if (uidC9 && TOKEN) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uidC9, messages: [{ type: 'text', text }] }) })
-  } catch (_) {} }
+    if (!uidC9 || !TOKEN) return false
+    const h9 = { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }
+    if (rkey) { const hx = crypto.createHash('sha1').update(String(rkey)).digest('hex'); h9['X-Line-Retry-Key'] = `${hx.slice(0, 8)}-${hx.slice(8, 12)}-4${hx.slice(13, 16)}-a${hx.slice(17, 20)}-${hx.slice(20, 32)}` } // 同一則固定重試鍵（LINE 24 小時內擋重複送）
+    const r9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: h9, body: JSON.stringify({ to: uidC9, messages: [{ type: 'text', text }] }), signal: AbortSignal.timeout(8000) })
+    return r9.ok || r9.status === 409
+  } catch (_) { return false } }
+  // 開工／完成通知（v4.71.201 關卡 3 批 3 第三輪後 CC 的取捨）：跟搬家前一樣「存檔成功後送一次、盡力而為」——這是給張良看的進度訊息，狀態以收件匣為準；
+  //   送不出去＝健康頁記一筆，不補發（補發要處理 24 小時重試鍵期限、標記失敗、輪替…，複雜度遠超過這則訊息的價值）
+  const ccSendNtf = async (it, kind) => {
+    try {
+      let foot = ''; if (kind === 'done') { try { foot = await Promise.race([quotaFoot(1), new Promise((r9) => setTimeout(() => r9(''), 2000))]) } catch (_) { foot = '' } } // 用量註腳 2 秒拿不到＝不附
+      const text = kind === 'start' ? `🛠 CC 開工\n📥 ${String(it.text || '').slice(0, 140)}\n做完會再回報你` : `✅ CC 完成許願\n📥 ${String(it.text || '').slice(0, 120)}\n🛠 結果：${it.result || '已處理'}${foot}`
+      if (!(await ccNotifyBoss(text, 'cc:' + it.id + ':' + kind))) ddHealthLog({ kind: 'error', err: 'CC ' + (kind === 'start' ? '開工' : '完成') + '回報沒送出：' + it.id }).catch(() => {})
+    } catch (e) { ddHealthLog({ kind: 'error', err: 'CC 回報送出出錯：' + String(e?.message || '').slice(0, 60) }).catch(() => {}) }
+  }
+  if (req.method === 'GET' && req.query?.ccinbox) {
+    if (!ccAuth(req.query.ccinbox)) return res.status(403).json({ ok: false })
+    // 依歸屬讀正本；讀不到＝503（不是沒有待辦；CC 要稍後重試，不可當清空）
+    let doc9; try { doc9 = await ccRead() } catch (e) { res.setHeader('Retry-After', '60'); return res.status(503).json({ ok: false, retry: true, error: 'CC 收件匣讀不到：' + String(e?.message || '').slice(0, 80) }) }
+    return res.status(200).json({ ok: true, list: (doc9.list || []).filter(x => x.status === 'open') })
+  }
   // 開工回報（v4.45.6 CC許願：撿單當下即時告訴張良「開工」）：GET ?ccstart=K&id=
   if (req.method === 'GET' && req.query?.ccstart) {
     if (!ccAuth(req.query.ccstart)) return res.status(403).json({ ok: false })
-    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
-    const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
-    if (it9 && !it9.startedAt) { it9.startedAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); await kvSet('pm_cc_inbox', doc9); await ccNotifyBoss(`🛠 CC 開工\n📥 ${String(it9.text || '').slice(0, 140)}\n做完會再回報你`) }
-    return res.status(200).json({ ok: !!it9 })
+    // 狀態轉移結果明確回（第一輪 OpenAI A2／A7）：started／already_started／already_done（完成後不准再開工）／not_found；存不進去＝503
+    const idS = String(req.query.id || '')
+    let out
+    try { out = await ccTx((doc) => { const it9 = (doc.list || []).find(x => x.id === idS); if (!it9) return { write: false, value: { state: 'not_found' } }; if (it9.status === 'done') return { write: false, value: { state: 'already_done' } }; if (it9.startedAt) return { write: false, value: { state: 'already_started', it: it9 } }; it9.startedAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); return { write: true, value: { state: 'started', it: it9 } } }) }
+    catch (e) { return res.status(503).json({ ok: false, retry: true, code: 'result_unconfirmed', error: '無法確認結果（可能已存、也可能沒存），請用同一編號重打：' + String(e?.message || '').slice(0, 80) }) }
+    if (out.state === 'started') await Promise.race([ccSendNtf(out.it, 'start'), new Promise((r9) => setTimeout(r9, 10000))]) // 存檔成功才送；已開工再按不再送；整條通知（讀收件人、LINE）最多等 10 秒（第四輪 OpenAI A1）
+    return res.status(200).json({ ok: out.state === 'started' || out.state === 'already_started', state: out.state })
   }
   if (req.method === 'GET' && req.query?.ccdone) {
     if (!ccAuth(req.query.ccdone)) return res.status(403).json({ ok: false })
-    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
-    const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
-    if (it9) {
-      it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = String(req.query.note || '').slice(0, 300); await kvSet('pm_cc_inbox', doc9)
-      const footC9 = await quotaFoot(1)
-      await ccNotifyBoss(`✅ CC 完成許願\n📥 ${String(it9.text || '').slice(0, 120)}\n🛠 結果：${it9.result || '已處理'}${footC9}`)
-    }
-    return res.status(200).json({ ok: !!it9 })
+    const idD = String(req.query.id || ''), noteD = String(req.query.note || '').slice(0, 300)
+    let outD
+    try { outD = await ccTx((doc) => { const it9 = (doc.list || []).find(x => x.id === idD); if (!it9) return { write: false, value: { state: 'not_found' } }; if (it9.status === 'done') return { write: false, value: { state: 'already_done', it: it9 } }; it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = noteD; return { write: true, value: { state: 'done', it: it9 } } }) }
+    catch (e) { return res.status(503).json({ ok: false, retry: true, code: 'result_unconfirmed', error: '無法確認結果（可能已存、也可能沒存），請用同一編號重打：' + String(e?.message || '').slice(0, 80) }) }
+    if (outD.state === 'done') await Promise.race([ccSendNtf(outD.it, 'done'), new Promise((r9) => setTimeout(r9, 10000))]) // 存檔成功才送；已完成再按不再送；整條通知（用量註腳、讀收件人、LINE）最多等 10 秒
+    return res.status(200).json({ ok: outD.state !== 'not_found', state: outD.state })
   }
   // 問題回報（v4.68.6 CC 全自動：卡住需張良決定時 DD 問他，不硬幹）：GET ?ccask=K&id=&q=
   if (req.method === 'GET' && req.query?.ccask) {
@@ -2767,11 +2822,13 @@ export default async function handler(req, res) {
       if (mCC && canAct && /張良/.test(op?.name || '')) {
         const bodyCC = (mCC[1] || '').trim()
         if (!bodyCC) { await send('要轉什麼給 CC？整句寫在「轉給CC」後面（例：轉給CC 把備料表加一欄昨日實際用量）。'); continue }
-        const docCC = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
-        docCC.list = [{ id: 'cc' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: bodyCC.slice(0, 2000), status: 'open' }, ...(docCC.list || [])].slice(0, 100)
-        await kvSet('pm_cc_inbox', docCC)
+        let nOpen = 0, stCC = ''
+        const idCC = ccEvId(ev.webhookEventId)
+        try { nOpen = await ccTx((docCC) => { stCC = ccInsert(docCC, { id: idCC, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: bodyCC.slice(0, 2000), status: 'open' }); return { write: stCC === 'added', value: docCC.list.filter(x => x.status === 'open').length } }) }
+        catch (_) { await send('CC 收件匣這次存不進去，請再傳一次 🙏'); continue }
+        if (stCC === 'full') { await send(CC_FULL); continue }
         // v4.45.6（CC許願：回覆文案改正＋開工即時回報）：寫一筆「開工回報」待補——CC 撿單時會先發「開工」
-        await send(`✅ 已收進 CC 收件匣（待辦 ${docCC.list.filter(x => x.status === 'open').length} 件）。CC 在線時最快 20 秒內開工，開工跟完成都會即時回報你；沒在線就先排隊，下次開工第一件處理。`)
+        await send(`✅ 已收進 CC 收件匣（待辦 ${nOpen} 件）。CC 在線時最快 20 秒內開工，開工跟完成會盡量即時回報你（實際進度以收件匣為準，也可以問 DD）；沒在線就先排隊，下次開工第一件處理。`)
         continue
       }
       // 1.34b) v4.71.5 「存素材庫 ＋Pinterest 連結」（張良 2026-10-12「做 存＆貼連結」）：操作者傳 Pinterest 釘圖／圖版連結＋「素材庫」字樣 → 直接存進行銷大師素材庫
