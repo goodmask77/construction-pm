@@ -13,7 +13,7 @@ import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords, abgdOwnerOf } from './mail-sync.js'
-import { incTx } from './_inckv.js' // v4.71.158 交接異常月檔（異常通知域）依歸屬版本比對寫
+import { incTx, obsStamp } from './_inckv.js' // v4.71.158 交接異常月檔（異常通知域）依歸屬版本比對寫
 import { snapshotRecipeCosts } from './_recipe.js'
 import { orderedKvGet } from './_jsonborder.js' // abgd 食譜 F10：快照算法讀到的鍵順序與新殼一致
 import { EPS, OFF } from './_bossfeeds.js' // 批次 3：每小時同步後，價格／換算／配方有變就寫食譜成本快照（永不改寫）
@@ -24,6 +24,7 @@ const REQ_BUDGET = 35, SLEEP_MS = 1100, PAGE_LIMIT = 200
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const tpeToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const daysBetween = (a, b) => { const out = []; for (let d = a; d <= b; d = addDays(d, 1)) out.push(d); return out }
 const monthsBetween = (a, b) => { const out = []; let m = a.slice(0, 7); while (m <= b.slice(0, 7)) { out.push(m); const d = new Date(m + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); m = d.toISOString().slice(0, 7) } return out }
 
 // 入庫消毒（2026-10-04 阿桑自己提醒「我這邊被塞亂碼你那邊也會收到」＝小夏問卷客人文字沒過濾會直通他家 DB）：
@@ -160,9 +161,22 @@ export default async function handler(req, res) {
     const months = allowDelete ? monthsBetween(from, to) : Object.keys(byM)
     for (const m of months) {
       const id = `sp_finance_pm_boss_${E.slug}_${m.replace('-', '')}`
-      const obsT = obsAt || new Date().toISOString() // 這批來源資料的抓取時間（關卡 3 OpenAI A1：重疊執行時，較舊的那批晚寫不得蓋掉較新的）
+      const obsT = obsAt || obsStamp() // 這批來源資料的抓取時間（關卡 3 OpenAI A1：重疊執行時，較舊的那批晚寫不得蓋掉較新的）
       const apply = (doc) => { if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { const d = E.df(r); if (d >= from && d <= to && !((byM[m] || {})[k])) delete doc.rows[k] } Object.assign(doc.rows, byM[m] || {}); doc.updatedAt = new Date().toISOString(); return doc } // 窗內沒再出現＝來源已刪
-      if (E.slug === 'inc') { await incTx(id, (cur) => (cur && cur.obsAt && cur.obsAt > obsT ? { write: false } : { write: true, doc: { ...apply(cur ? { ...cur, rows: { ...(cur.rows || {}) } } : { rows: {} }), obsAt: obsT } }), `boss同步 ${E.slug} ${m}`); continue } // 交接異常：依歸屬版本比對寫（重讀重算）
+      if (E.slug === 'inc') { // 交接異常：依歸屬版本比對寫（重讀重算）；每天各記觀測時間 obsD，只動「這批比文件裡那天更新」的日子（關卡 3 OpenAI 第二輪 A1：不同日期窗逆序提交不漏列）
+        const days = allowDelete ? daysBetween(from > m + '-01' ? from : m + '-01', to < m + '-31' ? to : m + '-31').filter(d => d.slice(0, 7) === m) : [...new Set(Object.values(byM[m] || {}).map(r => E.df(r)))]
+        await incTx(id, (cur) => {
+          const doc = cur ? { ...cur, rows: { ...(cur.rows || {}) }, obsD: { ...(cur.obsD || {}) } } : { rows: {}, obsD: {} }
+          const ok = new Set(days.filter(d => !(doc.obsD[d] && doc.obsD[d] > obsT)))
+          if (!ok.size) return { write: false }
+          if (allowDelete) for (const [k, r] of Object.entries(doc.rows)) { if (ok.has(E.df(r)) && !((byM[m] || {})[k])) delete doc.rows[k] } // 窗內沒再出現＝來源已刪（只限這批較新的日子）
+          for (const [k, r] of Object.entries(byM[m] || {})) if (ok.has(E.df(r))) doc.rows[k] = r
+          for (const d of ok) doc.obsD[d] = obsT
+          doc.updatedAt = new Date().toISOString()
+          return { write: true, doc }
+        }, `boss同步 ${E.slug} ${m}`)
+        continue
+      } // 交接異常：依歸屬版本比對寫（重讀重算）
       const doc = apply((await kvGet(id)) || { rows: {} })
       await kvPut(id, doc, `boss同步 ${E.slug} ${m}`)
     }
@@ -181,13 +195,13 @@ export default async function handler(req, res) {
         } else if (state.bf[E.slug] !== 'done') { // 首次回填（分段 366 天；成功一段推進一段）
           const from = state.bf[E.slug] || '2026-01-01'
           const to0 = addDays(from, 365), to = to0 > today ? (E.fwd ? addDays(today, E.fwd) : today) : to0
-          const obsAt = new Date().toISOString(); const rows = await fetchRange(E, from, to)
+          const obsAt = obsStamp(); const rows = await fetchRange(E, from, to)
           await writeRows(E, rows, from, to, false, obsAt) // 回填不刪
           state.bf[E.slug] = to >= today ? 'done' : addDays(to, 1)
           done.push(`${E.slug}:回填${from}~${to}:${rows.length}`)
         } else { // 增量窗：整段重拉 upsert＋刪除偵測
           const from = addDays(today, -E.back), to = E.fwd ? addDays(today, E.fwd) : today
-          const obsAt = new Date().toISOString(); const rows = await fetchRange(E, from, to)
+          const obsAt = obsStamp(); const rows = await fetchRange(E, from, to)
           await writeRows(E, rows, from, to, true, obsAt)
           done.push(`${E.slug}:${rows.length}`)
         }
