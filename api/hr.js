@@ -233,7 +233,7 @@ export default async function handler(req, res) {
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {
           // v4.71.187 關卡 3 第四輪：照搬家前的順序「讀→發→登記」；登記改版本比對合併（只加這次發的人、不蓋別人登記的），其他行為同搬家前
-          const nd = (await kvGet('sp_crew_pm_hr_notif')) || {}
+          const nd = (await crewRun('遲到通知讀去重', () => kvGet('sp_crew_pm_hr_notif'))) || {} // 去重決策讀正本（新殼正本時不讀寫回延遲的副本；關卡 3 第五輪 OpenAI A2）
           const keys0 = nd.date === today ? (nd.keys || {}) : {}
           const fresh = Object.values(days[today]).filter(r => r.late > 0 && !keys0[r.name + '|late'])
           if (fresh.length) {
