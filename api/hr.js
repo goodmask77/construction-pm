@@ -4,6 +4,7 @@
 // 存檔：sp_crew_pm_hr_att_YYYY-MM = { days: { 日期: { 工號: 精簡紀錄 } } }（月檔合併、重跑冪等）
 // 機密界線：出勤資料只進主 App（帳號權限管），不進 /prep 共用金鑰頁
 import { kvGet, kvPut } from './mail-sync.js'
+import { crewRun, crewTx } from './_crewkv.js' // v4.71.187 人資月檔屬夥伴名冊域：每份「讀→合併→寫」各自包在情境（撞版本只重做那一份；抓 NUEiP 在情境外）
 
 const CO = (process.env.NUEIP_COMPANY || '').trim()
 const ID = (process.env.NUEIP_USER || '').trim()
@@ -132,7 +133,7 @@ export async function fetchPayroll(from, to) {
 export async function storePayroll(from, to) {
   const d = await fetchPayroll(from, to)
   const doc = { from, to, events: d.events, persons: d.persons, updatedAt: new Date().toISOString() }
-  await kvPut('sp_crew_pm_hr_pay', doc, 'NUEiP薪資同步(' + d.events.length + '筆)')
+  await crewRun('NUEiP薪資同步', () => kvPut('sp_crew_pm_hr_pay', doc, 'NUEiP薪資同步(' + d.events.length + '筆)'))
   return { events: d.events.length, persons: Object.keys(d.persons).length }
 }
 // 班表寫月檔 sp_crew_pm_hr_sched_YYYY-MM = { days: { 日期: [列…] } }（同日整天覆蓋＝以最新為準）
@@ -142,10 +143,12 @@ async function storeShifts(days) {
   const rep = {}
   for (const [mo, part] of Object.entries(byMo)) {
     const id = 'sp_crew_pm_hr_sched_' + mo
-    const doc = (await kvGet(id)) || { days: {} }
-    for (const [d, list] of Object.entries(part)) doc.days[d] = list
-    doc.updatedAt = new Date().toISOString()
-    await kvPut(id, doc, 'NUEiP班表同步')
+    await crewRun('NUEiP班表同步', async () => {
+      const doc = (await kvGet(id)) || { days: {} }
+      for (const [d, list] of Object.entries(part)) doc.days[d] = list
+      doc.updatedAt = new Date().toISOString()
+      await kvPut(id, doc, 'NUEiP班表同步')
+    })
     rep[mo] = Object.keys(part).length
   }
   return rep
@@ -158,10 +161,12 @@ async function store(days) {
   const rep = {}
   for (const [mo, part] of Object.entries(byMo)) {
     const id = 'sp_crew_pm_hr_att_' + mo
-    const doc = (await kvGet(id)) || { days: {} }
-    for (const [d, users] of Object.entries(part)) doc.days[d] = users
-    doc.updatedAt = new Date().toISOString()
-    await kvPut(id, doc, 'NUEiP出勤同步')
+    await crewRun('NUEiP出勤同步', async () => {
+      const doc = (await kvGet(id)) || { days: {} }
+      for (const [d, users] of Object.entries(part)) doc.days[d] = users
+      doc.updatedAt = new Date().toISOString()
+      await kvPut(id, doc, 'NUEiP出勤同步')
+    })
     rep[mo] = Object.keys(part).length
   }
   return rep
@@ -200,7 +205,7 @@ export default async function handler(req, res) {
       const fs9 = await fetchShifts(fromS, toS)
       const daysS = fs9.days
       const repS = await storeShifts(daysS)
-      if (fromS <= today && today <= toS && (fs9.staff || []).length) await kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單') // 只有「涵蓋今天」的同步才更新在職名單（歷史回補不能蓋）
+      if (fromS <= today && today <= toS && (fs9.staff || []).length) await crewRun('NUEiP在職名單', () => kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單')) // 只有「涵蓋今天」的同步才更新在職名單（歷史回補不能蓋）
       let nS = 0; for (const d of Object.keys(daysS)) nS += daysS[d].length
       return res.status(200).json({ ok: true, from: fromS, to: toS, personDays: nS, months: repS, staff: (fs9.staff || []).length })
     }
@@ -222,18 +227,23 @@ export default async function handler(req, res) {
         const push = async (txt, src) => { for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++ } } }
         if (hourTW >= 22) {
           // 每日收班順手同步 NUEiP 班表（前7天~後35天；改班/新增人員隔天自動跟上）
-          try { const fs9 = await fetchShifts(addD(today, -7), addD(today, 35)); await storeShifts(fs9.days); if ((fs9.staff || []).length) await kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單') } catch (_) {}
+          try { const fs9 = await fetchShifts(addD(today, -7), addD(today, 35)); await storeShifts(fs9.days); if ((fs9.staff || []).length) await crewRun('NUEiP在職名單', () => kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單')) } catch (_) {}
           try { await storePayroll('2026-06-01', today) } catch (e) { console.log('payroll sync err', e?.message) } // v4.46.0 每日收班同步工資發放明細（發薪日後自動跟上）
           const lines = anomalies(days[today])
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {
-          const nd = (await kvGet('sp_crew_pm_hr_notif')) || {}
-          if (nd.date !== today) { nd.date = today; nd.keys = {} }
-          const fresh = Object.values(days[today]).filter(r => r.late > 0 && !nd.keys[r.name + '|late'])
+          // v4.71.187 先登記再發（版本比對寫）：兩個排程同時跑也只有搶到登記的那個會發；發送失敗＝這則不補（寧可少發不重發）
+          const fresh = await crewTx('sp_crew_pm_hr_notif', (cur) => {
+            const nd = cur ? JSON.parse(JSON.stringify(cur)) : {}
+            if (nd.date !== today) { nd.date = today; nd.keys = {} }
+            nd.keys = nd.keys || {}
+            const fr = Object.values(days[today]).filter(r => r.late > 0 && !nd.keys[r.name + '|late'])
+            if (!fr.length) return { write: false, value: [] }
+            fr.forEach(r => { nd.keys[r.name + '|late'] = 1 })
+            return { write: true, doc: nd, value: fr }
+          }, '遲到即時通知去重', 'NUEiP遲到通知')
           if (fresh.length) {
             await push(`⏰ 遲到打卡（即時）\n${fresh.map(r => `・${r.name}（${r.dept}）班 ${r.work}｜上班卡 ${(r.on || [])[0] || '—'}｜遲到 ${r.late} 分`).join('\n')}`, 'NUEiP遲到即時')
-            fresh.forEach(r => { nd.keys[r.name + '|late'] = 1 })
-            await kvPut('sp_crew_pm_hr_notif', nd, '遲到即時通知去重')
           }
         }
       } catch (_) {}

@@ -1,4 +1,5 @@
 import './_qpatch.js' // v4.71.10 DD 推播統一補額度尾巴
+import { CREW_RE, crewRun, crewHookGet, crewHookPut } from './_crewkv.js' // v4.71.187 夥伴名冊域：情境內版本化讀寫，情境外寫入拒絕
 // ── 入職 2.1 共用模組（張良 2026-07-22 拍板簡化）──
 // 「王小明報到」→ 不用邀請碼、不用末三碼：名冊有人=綁定、沒人=直接開帳號＋建「入職中」名冊卡，
 // 立刻回免密碼登入連結；資料改在 App 名冊卡自己填（機密檔案走私有桶）；管理員只做「審核」。
@@ -14,6 +15,7 @@ export const svc = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
 
 // ── kv（沿用 App 的 pm_documents data.v 格式）──
 export async function kvGet(id) {
+  if (CREW_RE.test(String(id))) { const v = await crewHookGet(id); if (v !== undefined) return v } // 夥伴名冊域：crewRun 情境內讀新版本（帶版本）；情境外照舊讀 GD 副本
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: svc })
     const rows = r.ok ? await r.json() : []
@@ -22,6 +24,7 @@ export async function kvGet(id) {
   return null
 }
 export async function kvSet(id, obj) {
+  if (CREW_RE.test(String(id))) { await crewHookPut(id, obj, 'onboard-bot'); return true } // 夥伴名冊域：依歸屬版本比對寫（失敗丟錯；撞版本丟 stale 讓 crewRun 整段重做）
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST', headers: { ...svc, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'onboard-bot', updated_at: new Date().toISOString() }),
@@ -143,13 +146,22 @@ export const saveRoster = (doc) => kvSet(ROSTER_KEY, doc)
 export const usernameOf = (p) => (String(p.phone || '').replace(/\D/g, '') || 'u' + String(p.id).replace(/[^a-z0-9]/gi, '').toLowerCase())
 
 // 綁定＋開帳號＋回登入連結（共用：既有員工綁定 / 新人開卡）
-async function bindPerson(uid, roster, p, reply, isNew) {
-  const acct = await ensureAccount(usernameOf(p), p.name, 'staff')
-  if (acct.error) { await reply('帳號開通失敗：' + acct.error + '，請聯絡管理員。'); return true }
-  p.lineUserId = uid
-  p.account = String(acct.displayName || '').trim() || p.account || p.name // meFromRoster 用 account===display_name 對身分（trim 防空白字串把欄位洗掉）
-  await saveRoster(roster)
-  const link = await loginLink(acct.email)
+async function bindPerson(uid, p, reply, isNew, apply) { // apply(roster)：在最新名冊上重套一次（新人＝加卡、既有＝找到本人），回該人；回 null＝狀況變了
+  let acctErr = '', pDone = null, acctEmail = ''
+  await crewRun('LINE報到', async () => {
+    const roster = await loadRoster()
+    const q = apply(roster)
+    if (!q) { acctErr = '名冊剛被別人改過，請再輸入一次「本名＋報到」。'; return }
+    const acct = await ensureAccount(usernameOf(q), q.name, 'staff') // 已存在就沿用（重做安全）
+    if (acct.error) { acctErr = '帳號開通失敗：' + acct.error + '，請聯絡管理員。'; return }
+    q.lineUserId = uid
+    q.account = String(acct.displayName || '').trim() || q.account || q.name // meFromRoster 用 account===display_name 對身分（trim 防空白字串把欄位洗掉）
+    await saveRoster(roster)
+    pDone = { ...q }; acctErr = ''; acctEmail = acct.email
+  })
+  if (!pDone) { await reply(acctErr || '報到沒成功，請稍後再試。'); return true }
+  p = pDone
+  const link = await loginLink(acctEmail)
   await reply(isNew
     ? `${p.name} 歡迎加入 GROUN:D！🎉 帳號開好了。\n點下面連結進入夥伴中心（1小時內有效、登入後手機保持登入）：\n${link || '（連結產生失敗，稍後輸入「登入」再試）'}\n\n進去後打開「今日」頁最上面的「入職資料卡」，把基本資料填一填、證件拍照上傳、線上簽勞動契約——可以分次慢慢完成。`
     : `綁定完成 ✅ ${p.name}，歡迎使用夥伴中心！\n點這個連結直接登入（1小時內有效、登入後手機保持登入）：\n${link || '（連結產生失敗，稍後輸入「登入」再試）'}\n\n以後要再登入，跟我說「登入」就好。`)
@@ -190,7 +202,7 @@ export async function handleOnboardEvent(ev) {
   if (hits.length === 1) {
     const p = hits[0]
     if (p.lineUserId && p.lineUserId !== uid) { await reply('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); return true }
-    return await bindPerson(uid, roster, p, reply, !!p.onboarding)
+    return await bindPerson(uid, p, reply, !!p.onboarding, (r) => { const q = r.people.find(x => x.id === p.id && (x.status || '在職') !== '離職'); return q && (!q.lineUserId || q.lineUserId === uid) ? q : null })
   }
   // 名冊沒有 → 新人：直接開卡＋開帳號（入職中，等資料填完管理員審核）
   const np = {
@@ -199,12 +211,16 @@ export async function handleOnboardEvent(ev) {
     onboarding: true, onboardAt: new Date().toISOString(), // 入職中：名冊「待審核」區會列出
     signToken: 'sg-' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8), // 契約簽署一次性連結
   }
-  roster.people.push(np)
-  return await bindPerson(uid, roster, np, reply, true)
+  return await bindPerson(uid, np, reply, true, (r) => { if (r.people.some(x => x.lineUserId === uid && (x.status || '在職') !== '離職')) return null; let q = r.people.find(x => x.id === np.id); if (!q) { q = { ...np }; r.people.push(q) } return q })
 }
 
 // ── 契約簽署（App 入職卡/簽署頁用）──
 export async function completeSign(token, signName, ip) {
+  const out = await crewRun('契約簽署', () => completeSign0(token, signName, ip))
+  if (out && out.ok) await notifyOps(`✍ 「${out.name}」已完成勞動契約線上簽署。`)
+  return out
+}
+async function completeSign0(token, signName, ip) {
   const roster = await loadRoster()
   const p = roster.people.find(x => x.signToken === token)
   if (!p) return { error: '連結無效' }
@@ -216,29 +232,36 @@ export async function completeSign(token, signName, ip) {
   p.contractSigned = signedAt
   p.contractDoc = [...(p.contractDoc || []), { name: '勞動契約(線上簽)', path, private: true, ts: signedAt }]
   await saveRoster(roster)
-  await notifyOps(`✍ 「${p.name}」已完成勞動契約線上簽署。`)
   return { ok: true, name: p.name }
 }
 
 // ── 審核（App 名冊待審核區 → onboard.js 驗完管理員身分後呼叫）──
 export async function approveApp(personId, dept, byName, startDate) {
-  const roster = await loadRoster()
-  const p = roster.people.find(x => x.id === personId && x.onboarding)
+  const p = await crewRun('入職審核', async () => {
+    const roster = await loadRoster()
+    const p0 = roster.people.find(x => x.id === personId && x.onboarding)
+    if (!p0) return null
+    delete p0.onboarding
+    if (dept) p0.dept = dept
+    if (!p0.startDate) p0.startDate = startDate || new Date().toISOString().slice(0, 10)
+    p0.approvedBy = byName; p0.approvedAt = new Date().toISOString()
+    await saveRoster(roster)
+    return { ...p0 }
+  })
   if (!p) return { error: '找不到這位入職中的夥伴' }
-  delete p.onboarding
-  if (dept) p.dept = dept
-  if (!p.startDate) p.startDate = startDate || new Date().toISOString().slice(0, 10)
-  p.approvedBy = byName; p.approvedAt = new Date().toISOString()
-  await saveRoster(roster)
   await linePush(p.lineUserId, `🎉 ${p.name}，你的入職審核通過了！正式歡迎加入 GROUN:D。\n每天打開「今日」就能看到你的班、訓練與待辦。`)
   return { ok: true }
 }
 export async function rejectApp(personId, reason, byName) {
-  const roster = await loadRoster()
-  const p = roster.people.find(x => x.id === personId && x.onboarding)
+  const p = await crewRun('入職退回', async () => {
+    const roster = await loadRoster()
+    const p0 = roster.people.find(x => x.id === personId && x.onboarding)
+    if (!p0) return null
+    roster.people = roster.people.filter(x => x.id !== personId)
+    await saveRoster(roster)
+    return { ...p0 }
+  })
   if (!p) return { error: '找不到這位入職中的夥伴' }
-  roster.people = roster.people.filter(x => x.id !== personId)
-  await saveRoster(roster)
   await deleteAccountByEmail(`${usernameOf(p)}@ground.local`.toLowerCase()) // 帳號一併清掉
   await linePush(p.lineUserId, `你的入職申請被退回${reason ? '：' + reason : ''}。\n如有疑問請直接聯絡店長；要重新申請再輸入「你的本名＋報到」。`)
   return { ok: true }

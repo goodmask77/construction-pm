@@ -5,6 +5,7 @@
 // GET  ?action=docurl&path=...  → (Bearer=登入者) 主管/本人 → 短效簽名連結
 // POST ?action=approve|reject   → (Bearer 管理員/主管) {personId, dept?, reason?}
 import { SB_URL, SB_KEY, svc, loadRoster, saveRoster, signedUrl, uploadPrivate } from './_onboard.js'
+import { crewRun } from './_crewkv.js' // v4.71.187 名冊寫入包在夥伴名冊情境（版本比對寫）
 import { DOC_LABOR_CONTRACT } from '../src/shift/docs.js'
 
 async function whoAmI(req) { // 驗登入者 → {id, role, name} 或 null
@@ -93,18 +94,23 @@ export default async function handler(req, res) {
       if (!m) return res.status(400).json({ error: '檔案格式錯誤' })
       const buf = Buffer.from(m[2], 'base64')
       if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: '檔案太大（上限 12MB）' })
-      const roster = await loadRoster()
-      const p = roster.people.find(x => x.id === personId)
-      if (!p) return res.status(404).json({ error: '找不到人員' })
-      if (!isMgr(me) && p.account !== me.name) return res.status(403).json({ error: '只有主管或本人可以上傳' })
-      const safe = String(filename || 'file').replace(/[^\w.一-鿿-]/g, '_').slice(0, 60)
-      const path = `roster/${p.id}/${fieldKey}-${Date.now().toString(36)}-${safe}`
-      const ok = await uploadPrivate(path, buf, m[1])
-      if (!ok) return res.status(500).json({ error: '儲存失敗，請再試一次' })
-      const entry = { name: safe, path, private: true, ts: new Date().toISOString(), by: me.name }
-      p[fieldKey] = [...(Array.isArray(p[fieldKey]) ? p[fieldKey] : []), entry]
-      await saveRoster(roster)
-      return res.status(200).json({ ok: true, entry })
+      let up = null // 檔案只傳一次（撞版本整段重做時不重傳）
+      const out = await crewRun('名冊上傳(' + me.name + ')', async () => {
+        const roster = await loadRoster()
+        const p = roster.people.find(x => x.id === personId)
+        if (!p) return { st: 404, body: { error: '找不到人員' } }
+        if (!isMgr(me) && p.account !== me.name) return { st: 403, body: { error: '只有主管或本人可以上傳' } }
+        if (!up) {
+          const safe = String(filename || 'file').replace(/[^\w.一-鿿-]/g, '_').slice(0, 60)
+          const path = `roster/${p.id}/${fieldKey}-${Date.now().toString(36)}-${safe}`
+          if (!(await uploadPrivate(path, buf, m[1]))) return { st: 500, body: { error: '儲存失敗，請再試一次' } }
+          up = { name: safe, path, private: true, ts: new Date().toISOString(), by: me.name }
+        }
+        p[fieldKey] = [...(Array.isArray(p[fieldKey]) ? p[fieldKey] : []), up]
+        await saveRoster(roster)
+        return { st: 200, body: { ok: true, entry: up } }
+      })
+      return res.status(out.st).json(out.body)
     }
 
     // ── 私密文件短效連結（主管/本人）──

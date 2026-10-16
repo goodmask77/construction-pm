@@ -11,6 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
+import { CREW_RE, crewTx } from './_crewkv.js' // v4.71.187 夥伴名冊／人資域：DD 的寫入一律走 crewEd（每次重讀最新、撞版本重做這一步；回覆 LINE 在存檔之後）
 import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬新殼：讀寫依歸屬選路
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
@@ -62,9 +63,12 @@ async function ccInboxAdd(text, tag) {
 }
 // v4.70.40 單鍵讀取（原本沒有這個函式：loadEmText 從 v4.43.7 起呼叫 kvGet 一直 ReferenceError 被 try 吞掉＝DD 從沒看過 EM 包場資料；query_orders 也用）
 async function kvGet(id) { return (await kvGetMany([id]))[id] || null }
+// 夥伴名冊域編輯：fn(doc) 直接改 doc；回 false＝不寫；其他回傳值＝結果（undefined 當 true）
+const crewEd = (key, fn, dflt) => crewTx(key, async (cur) => { const d = cur || JSON.parse(JSON.stringify(dflt || {})); const v = await fn(d); return v === false ? { write: false, value: false } : { write: true, doc: d, value: v === undefined ? true : v } }, 'D哥', 'DD')
 const abgdLockedHits = [] // abgd 搬家：這次請求裡被資料庫閘門擋下的鍵（回話要講，不假存檔）
 async function kvSet(id, valueObj) {
   if (!SB_URL || !SB_KEY) return false
+  if (CREW_RE.test(String(id))) { console.log('[kvSet] 夥伴名冊域要走 crewEd（程式漏改）', id); abgdLockedHits.push(id); return false } // 不直接寫 GD 表（漏包要看得見）
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, {
       method: 'POST',
@@ -2511,9 +2515,7 @@ export default async function handler(req, res) {
                   for (const [tk2, v2] of Object.entries(bdDoc.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) delete bdDoc.tokens[tk2]
                   delete (bdDoc.byUid || {})[uidR]
                   await kvSet('sp_finance_pm_prep_bind', bdDoc)
-                  const rosR = kvB['sp_crew_kb_roster'] || { people: [] }
-                  const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR)
-                  if (pR && pR.lineUserId === uidR) { delete pR.lineUserId; await kvSet('sp_crew_kb_roster', rosR) }
+                  await crewEd('sp_crew_kb_roster', (rosR) => { const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR); if (!(pR && pR.lineUserId === uidR)) return false; delete pR.lineUserId }, { people: [] })
                   unb = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
                 }
               } catch (_) {}
@@ -2548,16 +2550,18 @@ export default async function handler(req, res) {
               const { uploadPrivate } = await import('./_onboard.js')
               const pathD = `hrdocs/${/A Beach/.test(ctxD.co) ? 'ab' : 'gd'}/${encodeURIComponent(ctxD.name)}/${ctxD.key}-${Date.now().toString(36)}.${extD}`
               if (bufD.length <= 15 * 1024 * 1024 && await uploadPrivate(pathD, bufD, ctD)) {
-                const docMD = (await kvGetMany(['sp_crew_pm_hr_master']))['sp_crew_pm_hr_master'] || { rows: [] }
-                const rowD = (docMD.rows || []).find(r9 => r9.co === ctxD.co && r9.name === ctxD.name)
-                if (rowD) {
+                const nFD = await crewEd('sp_crew_pm_hr_master', (docMD) => {
+                  const rowD = (docMD.rows || []).find(r9 => r9.co === ctxD.co && r9.name === ctxD.name)
+                  if (!rowD) return false
                   rowD.docs = rowD.docs || {}; rowD.docs[ctxD.key] = rowD.docs[ctxD.key] || { files: [] }
                   rowD.docs[ctxD.key].files.push({ path: pathD, ext: extD, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), by: ctxD.by })
                   docMD.log = [{ by: ctxD.by, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD上傳 ${ctxD.name} ${ctxD.key}` }, ...(docMD.log || [])].slice(0, 80)
                   docMD.updatedAt = new Date().toISOString()
-                  await kvSet('sp_crew_pm_hr_master', docMD)
-                  ctxD.ts = Date.now(); await kvSet('pm_hrdoc_pending', pendD) // 連傳多張=每張都續 15 分鐘
-                  if (ev.replyToken) await lineReply(ev.replyToken, `✅ 已歸檔：${ctxD.name}・${ctxD.label}（第 ${rowD.docs[ctxD.key].files.length} 份）\n夥伴名冊 → 點他的「📎 文件」就看得到。`)
+                  return rowD.docs[ctxD.key].files.length
+                }, { rows: [] })
+                if (nFD) {
+                  ctxD.ts = Date.now(); await kvSet('pm_hrdoc_pending', pendD) // 連傳多張=每張都續 15 分鐘（DD 對話暫存，留在 GD 不搬：傳圖緊接著就要讀到）
+                  if (ev.replyToken) await lineReply(ev.replyToken, `✅ 已歸檔：${ctxD.name}・${ctxD.label}（第 ${nFD} 份）\n夥伴名冊 → 點他的「📎 文件」就看得到。`)
                   continue
                 }
               }
@@ -2721,33 +2725,36 @@ export default async function handler(req, res) {
         const appKey = mBind[1].toUpperCase() === 'AB' ? 'AB' : (mBind[1] === '看板' ? '看板' : 'GD')
         if (!BIND_APPS[appKey]) { await send('「' + appKey + '」的 App 還沒開通，目前可以綁定：GD（營運看板）。'); continue }
         try {
-          const kvb = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_prep_bind'])
-          const rosterDoc2 = kvb['sp_crew_kb_roster'] || { people: [] }
-          const ppl = (rosterDoc2.people || []).filter(p => !p.endDate)
-          const byNameOrNick = (s) => { const q = String(s || '').trim().toLowerCase(); return q ? ppl.find(p => (p.name || '').toLowerCase() === q || (p.nick || '').toLowerCase() === q) : null }
-          let rp = ppl.find(p => p.lineUserId === userId)
-          let note2 = ''
-          if (!rp && mBind[2]) { // 帶名字版：本名或綽號都認；名冊沒這人→自動建入職卡（v4.56.0 張良「整合成一步,只要/prep」）
-            const cand = byNameOrNick(mBind[2])
-            if (cand && cand.lineUserId && cand.lineUserId !== userId) { await send('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); continue }
-            if (cand) { cand.lineUserId = userId; await kvSet('sp_crew_kb_roster', rosterDoc2); rp = cand }
-            else { // 名冊找不到＝新夥伴：自動建「入職中」名冊卡並綁定（onboarding待審核+權限守門+下方isNewBind通知老闆審核卡），不再卡住要他先報到
-              const newP = { id: 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: mBind[2].trim(), nick: '', dept: '', role: 'staff', status: '在職', onboarding: true, onboardAt: new Date().toISOString(), lineUserId: userId, gd: 1 }
-              rosterDoc2.people.push(newP); await kvSet('sp_crew_kb_roster', rosterDoc2); rp = newP
-              note2 = '\n\n（你是新夥伴，已自動建好名冊卡、待店長核准。基本資料／證件／簽約之後在 App 名冊卡補就好。）'
+          const kvb = await kvGetMany(['sp_finance_pm_prep_bind'])
+          // v4.71.187 名冊綁定＝一次版本比對寫（每次重讀最新名冊再判斷；撞到別人同時改就重做這一步）；回覆在存檔之後
+          let lnB = null
+          const bR = await crewTx('sp_crew_kb_roster', async (cur) => {
+            const rosterDoc2 = cur || { people: [] }; rosterDoc2.people = rosterDoc2.people || []
+            const ppl = rosterDoc2.people.filter(p => !p.endDate)
+            const byNameOrNick = (s) => { const q = String(s || '').trim().toLowerCase(); return q ? ppl.find(p => (p.name || '').toLowerCase() === q || (p.nick || '').toLowerCase() === q) : null }
+            let rp = ppl.find(p => p.lineUserId === userId), note2 = '', w = false
+            if (!rp && mBind[2]) { // 帶名字版：本名或綽號都認；名冊沒這人→自動建入職卡（v4.56.0 張良「整合成一步,只要/prep」）
+              const cand = byNameOrNick(mBind[2])
+              if (cand && cand.lineUserId && cand.lineUserId !== userId) return { write: false, value: { err: '這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。' } }
+              if (cand) { cand.lineUserId = userId; rp = cand; w = true }
+              else { // 名冊找不到＝新夥伴：自動建「入職中」名冊卡並綁定（onboarding待審核+權限守門+下方isNewBind通知老闆審核卡），不再卡住要他先報到
+                const newP = { id: 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: mBind[2].trim(), nick: '', dept: '', role: 'staff', status: '在職', onboarding: true, onboardAt: new Date().toISOString(), lineUserId: userId, gd: 1 }
+                rosterDoc2.people.push(newP); rp = newP; w = true
+                note2 = '\n\n（你是新夥伴，已自動建好名冊卡、待店長核准。基本資料／證件／簽約之後在 App 名冊卡補就好。）'
+              }
             }
-          }
-          if (!rp) { // 一句「綁定GD」→ 自動用 LINE 名稱
-            const ln = await getLineProfile(userId)
-            const cand = byNameOrNick(ln)
-            if (cand && (!cand.lineUserId || cand.lineUserId === userId)) { cand.lineUserId = userId; await kvSet('sp_crew_kb_roster', rosterDoc2); rp = cand }
-            // LINE 名稱對不到名冊＝不再將就綁（張良 2026-10-01：夏👌這種名字辨識不了誰是誰）→ 要求帶本名
-            else { await send('為了確認你是誰，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。'); continue }
-          }
-          if (rp.id) { // 綁定的人自動標成 GD 人員（名冊可再取消；張良 2026-09-21）
-            const pgd = (rosterDoc2.people || []).find(p => p.id === rp.id)
-            if (pgd && !pgd.gd) { pgd.gd = 1; await kvSet('sp_crew_kb_roster', rosterDoc2) }
-          }
+            if (!rp) { // 一句「綁定GD」→ 自動用 LINE 名稱
+              if (lnB === null) lnB = (await getLineProfile(userId)) || ''
+              const cand = byNameOrNick(lnB)
+              if (cand && (!cand.lineUserId || cand.lineUserId === userId)) { cand.lineUserId = userId; rp = cand; w = true }
+              // LINE 名稱對不到名冊＝不再將就綁（張良 2026-10-01：夏👌這種名字辨識不了誰是誰）→ 要求帶本名
+              else return { write: false, value: { err: '為了確認你是誰，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。' } }
+            }
+            if (rp.id && !rp.gd) { rp.gd = 1; w = true } // 綁定的人自動標成 GD 人員（名冊可再取消；張良 2026-09-21）
+            return { write: w, doc: rosterDoc2, value: { rp, note2, doc: rosterDoc2 } }
+          }, 'D哥', 'DD綁定')
+          if (bR.err) { await send(bR.err); continue }
+          const rp = bR.rp, note2 = bR.note2, rosterDoc2 = bR.doc
           const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
           let tk2 = bind.byUid[userId]
           const isNewBind = !tk2
@@ -2817,14 +2824,17 @@ export default async function handler(req, res) {
           const pendE2 = (await kvGetMany(['pm_emr_confirm']))['pm_emr_confirm'] || {}
           const cE = pendE2[userId]
           if (cE && Date.now() - cE.ts < 10 * 60e3) {
-            const docE2 = (await kvGetMany(['sp_crew_pm_hr_master']))['sp_crew_pm_hr_master'] || { rows: [] }
-            const rowE2 = (docE2.rows || []).find(r9 => r9.co === cE.co && r9.name === cE.name)
-            if (rowE2) {
-              const bE2 = rowE2.emer || '（空）'
+            const bE2r = await crewEd('sp_crew_pm_hr_master', (docE2) => {
+              const rowE2 = (docE2.rows || []).find(r9 => r9.co === cE.co && r9.name === cE.name)
+              if (!rowE2) return false
+              const b9 = rowE2.emer || '（空）'
               rowE2.emer = cE.val
               docE2.log = [{ by: cE.by, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD改 ${cE.name} emer(已確認)` }, ...(docE2.log || [])].slice(0, 80)
               docE2.updatedAt = new Date().toISOString()
-              await kvSet('sp_crew_pm_hr_master', docE2)
+              return { b: b9 }
+            }, { rows: [] })
+            if (bE2r) {
+              const bE2 = bE2r.b
               delete pendE2[userId]; await kvSet('pm_emr_confirm', pendE2)
               await send(`✅ 已更新 ${cE.name} 的緊急聯絡人：\n${bE2} → ${cE.val}`)
               continue
@@ -2842,15 +2852,17 @@ export default async function handler(req, res) {
           const tkM9 = (bindM9.byUid || {})[userId]
           const meM9 = tkM9 ? ((bindM9.tokens || {})[tkM9] || {}).name : null
           if (!meM9) { await send('先綁定才知道你是誰——私訊我「綁定GD 本名」。'); continue }
-          const docM9 = kvM9['sp_crew_pm_hr_master'] || { rows: [] }
-          const rowM9 = (docM9.rows || []).find(r9 => r9.name === meM9)
-          if (!rowM9) { await send(`夥伴名冊裡找不到你（${meM9}）——跟張良說一聲加進名冊。`); continue }
-          const beforeM9 = rowM9.emer || '（空）'
-          rowM9.emer = mEmrMe[1].trim().slice(0, 60)
-          docM9.log = [{ by: meM9, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD改 ${meM9} emer(本人)` }, ...(docM9.log || [])].slice(0, 80)
-          docM9.updatedAt = new Date().toISOString()
-          await kvSet('sp_crew_pm_hr_master', docM9)
-          await send(`✅ 已更新「你本人（${meM9}）」的緊急聯絡人：\n${beforeM9} → ${rowM9.emer}`)
+          const rM9 = await crewEd('sp_crew_pm_hr_master', (docM9) => {
+            const rowM9 = (docM9.rows || []).find(r9 => r9.name === meM9)
+            if (!rowM9) return false
+            const b9 = rowM9.emer || '（空）'
+            rowM9.emer = mEmrMe[1].trim().slice(0, 60)
+            docM9.log = [{ by: meM9, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD改 ${meM9} emer(本人)` }, ...(docM9.log || [])].slice(0, 80)
+            docM9.updatedAt = new Date().toISOString()
+            return { b: b9, v: rowM9.emer }
+          }, { rows: [] })
+          if (!rM9) { await send(`夥伴名冊裡找不到你（${meM9}）——跟張良說一聲加進名冊。`); continue }
+          await send(`✅ 已更新「你本人（${meM9}）」的緊急聯絡人：\n${rM9.b} → ${rM9.v}`)
         } catch (_) { await send('更新出了點問題 🙏') }
         continue
       }
@@ -2886,13 +2898,20 @@ export default async function handler(req, res) {
             await send(`等等，先確認一下你的意思 🤔\n\n1️⃣ 「${rowR.name} 的」緊急聯絡人＝${valQ}\n　→ 回我「確認」就改\n\n2️⃣ 「你（${meR}）的」緊急聯絡人是 ${rowR.name}（${valQ}）\n　→ 打「我的緊急聯絡人 ${rowR.name} ${valQ}」\n\n（判斷依據：你不是${rowR.name}本人，而且內容只有電話、看不出聯絡人叫什麼）`)
             continue
           }
-          const before9 = rowR[fdK] || '（空）'
-          rowR[fdK] = valQ.slice(0, 60)
-          if (fdK === 'birth') rowR.age = Math.floor((Date.now() - new Date(rowR.birth).getTime()) / 31557600000)
-          const ts8R = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
-          docR.log = [{ by: meR, ts: ts8R, what: `DD改 ${rowR.name} ${fdK}` }, ...(docR.log || [])].slice(0, 80)
-          docR.updatedAt = new Date().toISOString()
-          await kvSet('sp_crew_pm_hr_master', docR)
+          const rR9 = await crewEd('sp_crew_pm_hr_master', (docR2) => {
+            const row2 = (docR2.rows || []).find(r9 => r9.co === rowR.co && r9.name === rowR.name)
+            if (!row2) return false
+            const b9 = row2[fdK] || '（空）'
+            row2[fdK] = valQ.slice(0, 60)
+            if (fdK === 'birth') row2.age = Math.floor((Date.now() - new Date(row2.birth).getTime()) / 31557600000)
+            const ts8R = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+            docR2.log = [{ by: meR, ts: ts8R, what: `DD改 ${row2.name} ${fdK}` }, ...(docR2.log || [])].slice(0, 80)
+            docR2.updatedAt = new Date().toISOString()
+            return { b: b9, row: { ...row2 } }
+          }, { rows: [] })
+          if (!rR9) { await send(`夥伴名冊找不到「${nmQ}」（可能剛被改名或刪除）。`); continue }
+          const before9 = rR9.b
+          Object.assign(rowR, rR9.row)
           await send(`✅ 已更新 ${rowR.name}（${/A Beach/.test(rowR.co) ? 'AB' : 'GD'}）的${mEmr ? '緊急聯絡人' : mRos[2]}：\n${before9} → ${rowR[fdK]}${fdK === 'birth' ? `（年齡自動改 ${rowR.age}）` : ''}${mEmr ? '\n\n（這是改「' + rowR.name + ' 的」緊急聯絡人欄；如果你是要登記自己的，打「我的緊急聯絡人 ' + rowR.name + ' ' + rowR[fdK] + '」我會掛你名下）' : ''}`)
         } catch (e) { await send('更新出了點問題，再試一次 🙏') }
         continue
