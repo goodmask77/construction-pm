@@ -16,7 +16,7 @@ import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
-import { ddClassify, ddShadow, DD_ROUTE_VER, ddOwner, ddRunPayload, ddForward, ddLedgerGet, ddLedgerMark } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交；v4.71.198 批 1：歸新殼的事件交出去不收回
+import { ddClassify, ddShadow, ddShadowReport, DD_ROUTE_VER, ddOwner, ddRunPayload, ddForward, ddLedgerGet, ddLedgerMark } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交；v4.71.198 批 1：歸新殼的事件交出去不收回
 import { ddInboxBegin, ddInboxOut, ddInboxFlush } from './_inbox.js' // v4.70.61 DD 的一對一私訊同步進統一收件匣（張良 10-11「增加DD」）：每個事件 Begin、每次回話 Out、回 200 前 Flush
 import { computePointsBoard, pointsRules } from './_points.js' // v4.70.79 積分中樞（與 /prep 排行榜 lb 口同一套算法；張良 2026-10-12「DD 又抓不到資料：我現在有多少積分」治本）
 import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
@@ -2489,6 +2489,7 @@ export default async function handler(req, res) {
 
   // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
   const shadowPs = [] // DD 搬家影子轉交（跟正式處理並行，回 200 前等完，最多 2.5 秒）
+  const shSel = new Map() // v4.71.211 這個請求內（處理函式區域變數）每則事件的入口抽樣結果承諾：抽樣一決定就完成，回報沿用同一個值
   for (const ev of events) {
     const tEv = Date.now(); aiAggReset() // v4.70.39 健康紀錄：這個事件從收到到回完花多久
     try {
@@ -2520,7 +2521,7 @@ export default async function handler(req, res) {
           continue
         }
         if (redelivX) ddHealthLog({ kind: 'redelivery_ok', type: ev.type }).catch(() => {})
-        if (firstX === true) shadowPs.push(ddShadow(ev, routeX, sigOK)) // 只第一次收到才轉影子（新殼端也以事件編號去重）
+        if (firstX === true) { let selR; shSel.set(evIdX, new Promise((r) => { selR = r })); shadowPs.push(ddShadow(ev, routeX, sigOK, selR).finally(() => selR(undefined))) } // 只第一次收到才轉影子（新殼端也以事件編號去重）；抽樣一決定就交給回報（不等轉交送完）
       } else if (redelivX) { console.log('skip redelivery (no id)'); continue }
       ddInboxBegin(ev, body.destination) // v4.70.61 一對一私訊（訊息／加好友／按鈕）存進收件匣 DD 帳號，跟下面 DD 自己的處理並行；群組事件不收
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
@@ -3268,10 +3269,13 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || !!(gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
+      const ldA = Date.now() // v4.71.211 7b：記資料讀取起訖（影子比對時判斷兩邊讀的時間差）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, pointsText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(secretOK), loadShiftText(), loadPunchText(), loadHrText(), secretOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId)), loadPointsText()])
+      const ldB = Date.now()
       if (isDM && TOKEN) fetch('https://api.line.me/v2/bot/chat/loading/start', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ chatId: userId, loadingSeconds: 60 }) }).catch(() => {}) // v4.70.43 1b：私訊顯示「輸入中」動畫（免費、不耗 reply token；群組沒有這功能）
       const secBox = { ab: { gid: isDM ? (op ? 'dm' : '') : gid, round: 0 } } // v4.71.206 本則對話自己一份：段落完整版（query_section 用）＋雙答比對範圍（v4.70.77：群組用 gid、操作者私訊用 'dm'，其他私訊不比）
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK, pointsText, secBox)
+      if (secBox.sec) shadowPs.push(ddShadowReport(ev.webhookEventId, { moneyOK, secretOK, canAct, isDM }, secBox.sec, { a: ldA, b: ldB }, shSel.get(String(ev.webhookEventId || '')))) // v4.71.211 DD 搬家 7b：回報第 0 輪實際用的段落（字數＋金鑰化雜湊）給新殼影子比對；不擋回話（逾時 1.5 秒）
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       // v4.38.1 假代查抓包（張良 2026-10-04「dd到底查不查得到」：DD 答應查九月婚禮包場說「稍等一下」卻沒輸出指令,使用者空等）：
       // 嘴上說要代查但沒帶 JSON → 系統退回去逼它只輸出指令（這輪不給使用者看）→ 查到再答
