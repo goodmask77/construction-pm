@@ -430,6 +430,14 @@ const ACTIONS = {
     if (!ibOk) return { ok: false, retry: true, error: '已回話，收件匣還沒記上（會再補）' }
     return { ok: true, via }
   },
+  async dd_query(a) { // v4.71.212 DD 搬家 7c-1b（唯讀）：新殼 AI 代查裡要 GD 才有的四種——訂位即時搜尋／常客排行（inline 登入金鑰在 GD）、會員（會員資料在 GD）、團體訂餐（GD 原函式）；回的就是 GD 原本代查的文字
+    const t = String(a.tool || '')
+    if (t === 'resv_name' || t === 'resv_top') { const LW = await import('./line-webhook.js'); return { text: String(t === 'resv_name' ? await LW.queryResvName(String(a.kw || '').slice(0, 60)) : await LW.queryResvTop(Math.min(100, Math.max(0, Number(a.n) || 0)))) } }
+    const M = await import('./_ddmember.js')
+    if (t === 'member') return { text: String(await M.queryMember({ kw: String(a.kw || '').slice(0, 60), secretOK: a.secretOK === true })) }
+    if (t === 'grporder') return { text: String(await M.queryGrporder({ kw: a.kw == null ? undefined : String(a.kw).slice(0, 60), id: a.id == null ? undefined : String(a.id).slice(0, 40), status: a.status == null ? undefined : String(a.status).slice(0, 20) })) }
+    throw new Error('不認得的代查：' + t)
+  },
   async dd_meta() { // v4.71.208 DD 搬家批 7a（唯讀）：AI 段落要的「舊主 App 帳號清單」與「DD 的 LINE 訊息額度」——這兩樣的金鑰／資料表只在 GD；讀不到＝null（新殼那段標「暫時讀不到」，不當成沒資料）
     const H = { authorization: 'Bearer ' + TK() }
     const [profiles, quota] = await Promise.all([
@@ -771,7 +779,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
