@@ -55,17 +55,49 @@ export function ddSigHeaders(method, path, body) { // 同新殼 lib/dd/sign.ts�
 }
 
 // 影子轉交：失敗只記 log（影子不影響正式處理）；最多等 2.5 秒
-export async function ddShadow(ev, route, sigOK) {
+// onSel：抽樣一決定就立刻回報結果（在送出之前；不用等轉交送完），呼叫端在同一個請求內交給 ddShadowReport，兩邊同一個值；沒決定到＝呼叫端自己補 undefined
+export async function ddShadow(ev, route, sigOK, onSel) {
+  let sel
+  const until = Date.now() + 4000; const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 4000) // v4.71.211 整體期限 4 秒（讀設定＋送出共用；關卡 7b 第三輪 A5）
   try {
     const eid = String(ev.webhookEventId || '')
     if (!eid || !(process.env.BRIDGE_SECRET || '').trim()) return
-    const cfg = await ddRoutesCfg(); if (cfg.shadow !== true) { if (!Object.keys(cfg).length) console.log('[dd] 影子略過：路由設定是空的（讀不到？）'); return }
+    let rt; const cfg = await Promise.race([ddRoutesCfg(), new Promise((res) => { rt = setTimeout(() => res(null), Math.max(1, until - Date.now())) })]); clearTimeout(rt)
+    if (!cfg || cfg.shadow !== true) { if (cfg && !Object.keys(cfg).length) console.log('[dd] 影子略過：路由設定是空的（讀不到？）'); return }
     const txt = ev.type === 'message' && ev.message && ev.message.type === 'text' ? String(ev.message.text || '') : ''
     const s = ev.source || {}
-    const body = JSON.stringify({ eventId: eid, mode: 'shadow', route, payload: { source: { type: s.type, userId: s.userId, groupId: s.groupId, roomId: s.roomId }, sigOK, gdRoute: route, type: ev.type, textLen: txt.length, textHash: txt ? crypto.createHash('sha256').update(txt).digest('hex').slice(0, 16) : '' } })
-    const r = await fetch(ABGD + '/api/dd/enqueue', { method: 'POST', headers: ddSigHeaders('POST', '/api/dd/enqueue', body), body, signal: AbortSignal.timeout(4000) })
-    if (!r.ok) console.log('[dd] 影子轉交失敗', r.status, (await r.text()).slice(0, 120)); else console.log('[dd] 影子轉交 ok', eid.slice(-6), route)
-  } catch (e) { console.log('[dd] 影子轉交失敗', e && e.message) }
+    const body = JSON.stringify({ eventId: eid, mode: 'shadow', route, payload: { source: { type: s.type, userId: s.userId, groupId: s.groupId, roomId: s.roomId }, sigOK, gdRoute: route, type: ev.type, aiShadow: (sel = route === 'ai' && shadowPick(eid, aiPct(cfg)), (typeof onSel === 'function' && onSel(sel)), sel), textLen: txt.length, textHash: txt ? shadowHash(eid, '_text', txt) : '' } }) // v4.71.211 文字雜湊改金鑰化＋綁事件編號（原本裸 sha256 短句可猜；關卡 7b 第二輪 A1）
+    const r = await fetch(ABGD + '/api/dd/enqueue', { method: 'POST', headers: ddSigHeaders('POST', '/api/dd/enqueue', body), body, signal: ac.signal })
+    if (!r.ok) console.log('[dd] 影子轉交失敗', r.status); else console.log('[dd] 影子轉交 ok', eid.slice(-6), route) // 只記狀態碼
+  } catch (e) { console.log('[dd] 影子轉交失敗', e && e.name) } finally { clearTimeout(tm) }
+  return sel
+}
+
+// v4.71.211 批 7b：AI 對話影子回報——GD 回答時（第 0 輪）實際用的每段資料「字數＋金鑰化雜湊」與權限，交給新殼跟它自己組的同一批比；不送原文
+//   雜湊＝HMAC-SHA256，子金鑰＝HKDF(BRIDGE_SECRET, "dd-shadow-hash-v1")（同新殼 lib/dd/ai/shadowhash.ts）；輸入 "v1\n事件\n段名\n原文"，取 32 碼
+//   抽樣：設定 aiPct（預設 100）；同一個判斷用在影子轉交（帶 aiShadow）與回報，兩邊選同一批；逾時 1.5 秒、失敗只記狀態碼
+let _shk = null
+const shKey = () => { const sec = (process.env.BRIDGE_SECRET || '').trim(); if (!sec) throw new Error('沒有 BRIDGE_SECRET：影子停用'); return (_shk ||= Buffer.from(crypto.hkdfSync('sha256', Buffer.from(sec, 'utf8'), Buffer.alloc(0), Buffer.from('dd-shadow-hash-v1', 'utf8'), 32))) } // 空金鑰一律停用（不產生人人算得出的值）
+export const shadowHash = (eid, sec, text) => crypto.createHmac('sha256', shKey()).update(`v1\n${eid}\n${sec}\n${text}`, 'utf8').digest('hex').slice(0, 32)
+export function shadowPick(eid, pct) { if (!(pct > 0)) return false; if (pct >= 100) return true; return parseInt(crypto.createHmac('sha256', shKey()).update(`pick\n${eid}`, 'utf8').digest('hex').slice(0, 8), 16) % 100 < pct }
+const aiPct = (cfg) => (Number.isFinite(Number(cfg.aiPct)) ? Number(cfg.aiPct) : 100)
+// 回報：整體期限 1.5 秒（含讀設定與送出；到期就放棄，不拖 webhook）；抽樣不在這裡判斷——入口（ddShadow）判一次、新殼以那次為準（母體＝被選中的）
+export async function ddShadowReport(eventId, scope, sec, t, selP) { // selP＝同一個請求裡入口抽樣結果的承諾（抽樣一決定就完成）
+  const until = Date.now() + 1500
+  const left = () => Math.max(1, until - Date.now())
+  const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 1500)
+  try {
+    const eid = String(eventId || '')
+    if (!/^[A-Za-z0-9_-]{8,80}$/.test(eid) || !(process.env.BRIDGE_SECRET || '').trim() || !sec) return
+    let rt; const cfg = await Promise.race([ddRoutesCfg(), new Promise((res) => { rt = setTimeout(() => res(null), left()) })]); clearTimeout(rt); if (!cfg || cfg.shadow !== true) return
+    const out = {}; for (const [k, txt] of Object.entries(sec)) out[k] = { n: String(txt || '').length, h: shadowHash(eid, k, String(txt || '')) }
+    let st; const selV = selP != null ? await Promise.race([Promise.resolve(selP).catch(() => undefined), new Promise((res) => { st = setTimeout(() => res(undefined), left()) })]) : undefined; if (st) clearTimeout(st) // 同步傳 false 也算入口有結果
+    if (selP != null && typeof selV !== 'boolean') { console.log('[dd] 影子回報略過：入口抽樣到期前沒決定'); return } // 入口有轉交但沒在期限內決定＝這次不送（不自己重算，免得跟入口不同）
+    const sel = typeof selV === 'boolean' ? selV : shadowPick(eid, aiPct(cfg)) // 入口那次的結果；只有入口根本沒轉交（例：重送不是第一次）才用同一個函式算
+    const body = JSON.stringify({ eventId: eid, report: { v: 2, round: 0, sel, scope: { moneyOK: scope.moneyOK === true, secretOK: scope.secretOK === true, canAct: scope.canAct === true, isDM: scope.isDM === true }, sec: out, t: { a: Math.round(Number(t && t.a) || 0), b: Math.round(Number(t && t.b) || 0) } } })
+    const r = await fetch(ABGD + '/api/dd/shadow-report', { method: 'POST', headers: ddSigHeaders('POST', '/api/dd/shadow-report', body), body, signal: ac.signal })
+    if (!r.ok) console.log('[dd] 影子回報失敗', r.status)
+  } catch (e) { console.log('[dd] 影子回報失敗', e && e.name) } finally { clearTimeout(tm) }
 }
 
 // ── 批 1：歸屬決定＋正式轉交（docs/ABGD_DD_PLAN.md v2.1 一節）──
