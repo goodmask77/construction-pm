@@ -41,9 +41,9 @@ export function ddClassify(ev) {
 
 let cfgP = null
 export async function ddRoutesCfg() { // 每個請求讀一次（模組層快取 30 秒；讀不到＝影子關）
-  if (cfgP && cfgP.t > Date.now() - 30e3) return cfgP.v
-  let v = {}
-  try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_ddroutes&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: AbortSignal.timeout(3000) }); if (!r.ok) console.log('[dd] 讀路由設定失敗', r.status); const rows = r.ok ? await r.json() : []; v = rows[0] && rows[0].data && rows[0].data.v ? JSON.parse(rows[0].data.v) : {} } catch (e) { console.log('[dd] 讀路由設定失敗', e && e.message); v = {} }
+  if (cfgP && cfgP.t > Date.now() - (cfgP.v && cfgP.v.__err ? 5e3 : 30e3)) return cfgP.v // 讀取失敗只快取 5 秒（v4.71.220）
+  let v = { __err: true } // 讀不到＝標記錯誤（操作者 AI 不落到 GD 舊引擎；v4.71.220）
+  try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_ddroutes&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: AbortSignal.timeout(3000) }); if (!r.ok) console.log('[dd] 讀路由設定失敗', r.status); else { const rows = await r.json(); const x = rows[0] && rows[0].data && typeof rows[0].data.v === 'string' ? JSON.parse(rows[0].data.v) : null; v = x && typeof x === 'object' && !Array.isArray(x) ? x : { __err: true } } } catch (e) { console.log('[dd] 讀路由設定失敗', e && e.message); v = { __err: true } }
   cfgP = { t: Date.now(), v }; return v
 }
 
@@ -147,18 +147,17 @@ const GATES = {
     if (!(ev.type === 'message' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
     const m = ev.message || {}; if (m.type !== 'text') return false
     const t = String(m.text || '').trim(); if (!t || BEFORE_MEMO.test(t)) return false
-    const cfg = await ddRoutesCfg()
-    if (cfg.aiMaint === true) return false
-    // v4.71.219 批 7d-1a：操作者走另一份試點名單 aiOpSet＋路由開關 routes.aiop（新殼用 7d 處理器，可寫團隊任務）；非操作者照 7c（aiSet）
-    if ((await ctx.operators())[ev.source.userId || '']) return !!(cfg.routes && cfg.routes.aiop === true) && ddAiOpInSet(cfg, ev.source.userId)
-    return ddAiInSet(cfg, ev.source.userId)
+    const cfg = await ddRoutesCfg(); const rt = cfg.routes || {}
+    // v4.71.220 批 7d-1a：7c 與 7d 開關分開（互不牽動）——操作者＝routes.aiop＋ai7Maint＋aiOpSet；非操作者＝routes.ai＋aiMaint＋aiSet
+    if ((await ctx.operators())[ev.source.userId || '']) return rt.aiop === true && cfg.ai7Maint !== true && !cfg.ai7Switch && ddAiOpRoutable(cfg, ev.source.userId)
+    return rt.ai === true && cfg.aiMaint !== true && ddAiInSet(cfg, ev.source.userId)
   },
   // v4.71.219 批 7d-1a 確認卡按鈕（cf7|確認編號|驗證碼|ok／no）：私訊＋驗簽成功＋操作者＋在 aiOpSet＋routes.aiop；驗證碼與批次狀態由新殼判斷
   aicf: async (ev, sigOK, ctx) => {
     if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
     if (!/^cf7\|[A-Za-z0-9_-]{22}\|[A-Za-z0-9_-]{24}\|(ok|no)$/.test(String((ev.postback && ev.postback.data) || ''))) return false
     const cfg = await ddRoutesCfg()
-    if (!(cfg.routes && cfg.routes.aiop === true) || !ddAiOpInSet(cfg, ev.source.userId)) return false
+    if (!(cfg.routes && cfg.routes.aiop === true) || cfg.ai7Maint === true || cfg.ai7Switch || !ddAiOpRoutable(cfg, ev.source.userId)) return false
     return !!(await ctx.operators())[ev.source.userId || '']
   },
   // 記事本：私訊＋操作者＋驗簽成功＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
@@ -175,12 +174,19 @@ const GATES = {
 }
 // v4.71.217 DD 搬家 7c-3b：AI 私訊切換集合（設定 sp_finance_pm_ddroutes.aiSet＝{convs:['dm_U…'], epoch, at}；維護時段腳本寫入）
 // v4.71.219 批 7d-1a：操作者私訊試點名單（sp_finance_pm_ddroutes.aiOpSet＝{convs:['dm_U…']}；7d 世代 ai7Epoch 由切換腳本寫）
-export function ddAiOpInSet(cfg, userId) { const set = cfg && cfg.aiOpSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && typeof userId === 'string' && /^U[0-9a-f]{32}$/.test(userId) && set.convs.includes('dm_' + userId)) }
+//   v4.71.220：切換進行中（ai7Switch.convs）的人也算在內（攔截 GD 舊引擎用；正式路由仍只認 aiOpSet＋routes.aiop＋ai7Maint 關）
+export function ddAiOpInSet(cfg, userId) {
+  if (typeof userId !== 'string' || !/^U[0-9a-f]{32}$/.test(userId)) return false
+  const set = cfg && cfg.aiOpSet, sw = cfg && cfg.ai7Switch
+  return !!((set && typeof set === 'object' && Array.isArray(set.convs) && set.convs.includes('dm_' + userId)) || (sw && typeof sw === 'object' && Array.isArray(sw.convs) && sw.convs.includes('dm_' + userId)))
+}
+const ddAiOpRoutable = (cfg, userId) => { const set = cfg && cfg.aiOpSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && set.convs.includes('dm_' + userId)) }
 export function ddAiInSet(cfg, userId) { const set = cfg && cfg.aiSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && typeof userId === 'string' && /^U[0-9a-f]{32}$/.test(userId) && set.convs.includes('dm_' + userId)) }
 export async function ddOwner(ev, route, sigOK, ctx) {
   try {
     const cfg = await ddRoutesCfg()
-    if (!cfg.routes || cfg.routes[route] !== true || !GATES[route]) return 'gd'
+    const rt = cfg.routes || {}
+    if (!GATES[route] || !(rt[route] === true || (route === 'ai' && rt.aiop === true))) return 'gd' // ai 路由：7c（routes.ai）或 7d（routes.aiop）任一開著就進閘門，閘門再依身分分流
     return (await GATES[route](ev, sigOK, ctx)) ? 'abgd' : 'gd'
   } catch (_) { return 'gd' } // 判斷不了＝GD 照舊（還沒交出去，GD 做是安全的）
 }
