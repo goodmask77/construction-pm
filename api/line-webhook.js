@@ -16,7 +16,7 @@ import { abgdKv, delTaskClean } from './_abgdkv.js' // v4.71.116 團隊任務搬
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
 import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
-import { ddClassify, ddShadow, ddShadowReport, DD_ROUTE_VER, ddOwner, ddRunPayload, ddForward, ddLedgerGet, ddLedgerMark } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交；v4.71.198 批 1：歸新殼的事件交出去不收回
+import { ddClassify, ddShadow, ddShadowReport, DD_ROUTE_VER, ddOwner, ddRunPayload, ddForward, ddLedgerGet, ddLedgerMark, ddRoutesCfg, ddAiInSet } from './_ddroute.js' // v4.71.197 DD 搬家第 0 批：分類＋台帳歸屬＋影子轉交；v4.71.198 批 1：歸新殼的事件交出去不收回
 import { ddInboxBegin, ddInboxOut, ddInboxFlush } from './_inbox.js' // v4.70.61 DD 的一對一私訊同步進統一收件匣（張良 10-11「增加DD」）：每個事件 Begin、每次回話 Out、回 200 前 Flush
 import { computePointsBoard, pointsRules } from './_points.js' // v4.70.79 積分中樞（與 /prep 排行榜 lb 口同一套算法；張良 2026-10-12「DD 又抓不到資料：我現在有多少積分」治本）
 import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
@@ -2472,6 +2472,24 @@ export default async function handler(req, res) {
   // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
   // v4.70.44 探針一律要金鑰（原 ?probe=crew 沒守門＝任何人打網址就看到夥伴資料頭 800 字）；?probe=sections 回每段資料字數＋開頭（正式站不經 LINE 驗 DD 資料載入）
   const probeKeyOK = (() => { const a = (process.env.MENU_PROBE_KEY || '').trim(), k = String(req.query?.key || ''); return !!(a && k === a) })()
+  // v4.71.217 DD 搬家 7c-3b 試跑口（30 題人工檢查用）：POST、金鑰放標頭 x-probe-key；設定 sp_finance_pm_ddroutes.aiDryOn===true 才開（預設關）、
+  //   uid 要在 aiDryUids 名單裡、不在切換集合、沒有切換進行中（避免跟正式對話搶同一個對話鎖）；盡力記一筆不含內容的健康紀錄（第一輪 OpenAI A4／A5）
+  //   新殼照算、叫真模型，但不建意圖、不送 LINE、不寫對話紀錄與 CC；答案只存在新殼資料庫（這裡不回答案）
+  if (req.query?.ddaidry !== undefined) {
+    const a = (process.env.MENU_PROBE_KEY || '').trim(), k = String((req.headers && req.headers['x-probe-key']) || '')
+    if (req.method !== 'POST' || !a || k !== a) return res.status(403).json({ ok: false })
+    const rc = await ddRoutesCfg()
+    if (rc.aiDryOn !== true) return res.status(403).json({ ok: false, error: '試跑口沒開' })
+    let b = null; try { const rw = await readRaw(req); b = JSON.parse(rw && rw.length ? rw.toString('utf8') : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || null))) } catch (_) { b = null } // bodyParser 關著：自己讀原始內容
+    const uid = String((b && b.uid) || ''), q = String((b && b.text) || '').slice(0, 500).trim()
+    if (!/^U[0-9a-f]{32}$/.test(uid) || !q) return res.status(400).json({ ok: false, error: '參數不對' })
+    if (!Array.isArray(rc.aiDryUids) || !rc.aiDryUids.includes(uid)) return res.status(403).json({ ok: false, error: '這個人不在試跑名單' })
+    if (ddAiInSet(rc, uid) || rc.aiSwitch) return res.status(409).json({ ok: false, error: '這個人在切換集合裡、或切換進行中，不試跑' }) // 不論路由開關（切換等待期間也擋；第二輪 OpenAI A5）
+    const eid = 'dry' + crypto.randomBytes(9).toString('hex')
+    await Promise.race([ddHealthLog({ kind: 'info', err: 'DD 新殼試跑一題（人工檢查）' }).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]) // 盡力記錄（最多等 2 秒；不保證每次都有）
+    const ok = await ddForward(eid, { route: 'ai', sigOK: true, type: 'message', source: { type: 'user', userId: uid }, text: q, messageType: 'text', dry: true, ts: Date.now() })
+    return res.status(ok ? 200 : 502).json({ ok, eventId: eid })
+  }
   if (req.method === 'GET' && req.query?.probe === 'crew') {
     if (!probeKeyOK) return res.status(403).json({ ok: false })
     const t = (await loadCrewText(true)) + (await loadShiftText()) + (await loadHrText())
@@ -3334,6 +3352,9 @@ export default async function handler(req, res) {
         continue
       }
 
+      // v4.71.217 DD 搬家 7c-3b 維護時段：切換集合內的私訊、走到 AI 這一步＝GD 也不回答（新殼也不接）、回固定訊息（不叫模型、不寫對話紀錄）
+      //   切換前後各 330 秒用（設計 v5 第 2 節）；其他指令（日誌、報到、緊急聯絡人…）照常由上面的分支處理
+      if (isDM) { const rcM = await ddRoutesCfg(); if (rcM.aiMaint === true && ddAiInSet(rcM, userId)) { await send('系統更新中，請 5 分鐘後再問我 🙏'); await ddHealthLog({ kind: 'info', err: 'DD 維護時段：集合內私訊回固定訊息' }).catch(() => {}); continue } } // 紀錄等寫完（serverless 回應後會凍結；第三輪 Gemini B2）
       // 金額/財務權限：私訊(操作者)可看；群組只有「內部群(預設群) 或 設定 money:true」才可看金額，外部群一律擋
       let moneyOK = true
       // v4.70.70 個資（身分證/銀行/薪資/保險）另一道門 secretOK：只有「私訊」且發話者是操作者／審核人／身分證名單上的人才給；

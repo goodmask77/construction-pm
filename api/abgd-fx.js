@@ -540,6 +540,13 @@ const ACTIONS = {
     const qOk = quota && quota[0] && typeof quota[0] === 'object' && ((quota[0].type === 'limited' && Number.isFinite(quota[0].value)) || quota[0].type === 'none') && quota[1] && typeof quota[1] === 'object' && Number.isFinite(quota[1].totalUsage)
     return { profiles: Array.isArray(profiles) ? profiles.map((p) => ({ display_name: p && p.display_name, role: p && p.role, role_template: p && p.role_template })) : null, quota: qOk ? [{ type: quota[0].type, ...(quota[0].type === 'limited' ? { value: quota[0].value } : {}) }, { totalUsage: quota[1].totalUsage }] : null }
   },
+  async dd_health(a) { // v4.71.217 DD 搬家 7c-3b：新殼把重要狀況寫進 GD 的 DD 健康紀錄（健康頁看得到）；只收固定代碼（GD 這邊換成說明文字），不收任何自由文字（第一輪 OpenAI A6）
+    const CODES = { job_dead: '新殼 AI 工作放棄（要人工看）', finfail: '新殼 AI 工作結束標記沒寫上（會被重新領取、只補送）', send_gaveup: '新殼 AI 送出結果不明、超過期限放棄（要人工看）', cc_failed: 'DD 查不到資料自動記給 CC 沒記上（新殼）', notice_late: '新殼 AI 短訊太晚沒送' }
+    if (!Object.hasOwn(CODES, a.code)) throw new Error('不認得的健康紀錄代碼')
+    const { ddHealthLog } = await import('./_ddhealth.js')
+    await ddHealthLog({ kind: 'error', from: 'abgd', code: a.code, err: CODES[a.code], route: 'ai' })
+    return { ok: true }
+  },
   async dd_redrive() { // v4.71.198 新殼每分鐘排程呼叫：補送沒送到新殼的 DD 事件（簽章＝不掛公開網址）
     const dl = Date.now() + 35_000 // 整段期限（新殼這次呼叫等 40 秒，留 5 秒回應）
     const { ddRedrive } = await import('./_ddroute.js')
@@ -870,7 +877,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'dd_chat_get' || b.action === 'dd_ai' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'dd_health' || b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'dd_chat_get' || b.action === 'dd_ai' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
