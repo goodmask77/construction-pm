@@ -3136,6 +3136,20 @@ export default async function handler(req, res) {
       const mDocQ = isDM && !mDoc && text.match(/^文件\s*(\S{2,10})\s*$/) // 只打「文件 姓名」=回收件狀態
       if (mDocQ) {
         try {
+          // v4.71.215 個資漏洞修正（DD 搬家盤點發現）：原本任何人私訊「文件 姓名」都能查任何夥伴的入職文件收件狀態（連沒綁定的陌生人）——改成跟上傳同一套權限：綁定＋審核人或名冊角色主管
+          //   先驗權限、通過才讀人資主檔；審核人名單缺失或格式不對＝不靠名單授權（不退回寫死的名字）；名冊、綁定資料型別不對＝不授權（審查 A1／A2）
+          const kvA = await kvGetMany(['sp_finance_pm_sop_def', 'sp_finance_pm_prep_bind', 'sp_crew_kb_roster'])
+          const isObjQ = (v) => !!v && typeof v === 'object' && !Array.isArray(v) // 綁定資料要是一般物件、用自有欄位查（陣列／原型鏈欄位不算；第三輪 A3）
+          const bindQ = isObjQ(kvA['sp_finance_pm_prep_bind']) ? kvA['sp_finance_pm_prep_bind'] : {}
+          const tkQ = isObjQ(bindQ.byUid) && Object.hasOwn(bindQ.byUid, userId) ? bindQ.byUid[userId] : null
+          const recQ = typeof tkQ === 'string' && tkQ.trim() && isObjQ(bindQ.tokens) && Object.hasOwn(bindQ.tokens, tkQ) ? bindQ.tokens[tkQ] : null // 空白 token＝不算綁定（第二輪 A1）
+          const meQ0 = isObjQ(recQ) ? recQ.name : null
+          const meQ = typeof meQ0 === 'string' && meQ0.trim() ? meQ0 : null
+          const aprQ0 = ((kvA['sp_finance_pm_sop_def'] || {}).ground || {}).approvers
+          const aprQ = Array.isArray(aprQ0) ? aprQ0.filter(x => typeof x === 'string' && x) : []
+          const pplQ = ((kvA['sp_crew_kb_roster'] || {}).people)
+          const roleQ = meQ && Array.isArray(pplQ) ? ((pplQ.find(p9 => p9 && p9.name === meQ) || {}).gdRole) : ''
+          if (!meQ || !Array.isArray(pplQ) || !(aprQ.includes(meQ) || roleQ === '主管')) { await send('入職文件查詢只開放主管使用 🙏'); continue } // 名冊格式不對＝整個拒絕（第二輪 A2）
           const kvQ = await kvGetMany(['sp_crew_pm_hr_master'])
           const rowsQ = (kvQ['sp_crew_pm_hr_master'] || {}).rows || []
           const psnQ = rowsQ.filter(r9 => r9.name.includes(mDocQ[1]) || mDocQ[1].includes(r9.name))
