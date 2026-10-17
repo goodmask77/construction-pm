@@ -1242,7 +1242,8 @@ async function loadPosText() {
     const flags = kv['sp_finance_pm_pos_flags']
     if (flags && flags.items && Object.keys(flags.items).length) {
       lines.push('【POS 日別標記（老闆確認過的非營運事件，警示已排除）】')
-      Object.entries(flags.items).slice(-20).forEach(([k, f]) => { const [d8, , kind] = k.split('::'); lines.push(`  - ${d8} ${kind === 'waste' ? '退菜/Void' : '折扣'}：${f.type}${f.note ? `（${f.note}）` : ''}｜排除${Number(f.amt) > 0 ? 'NT$' + Number(f.amt).toLocaleString() : '整天全額'}`) })
+      // v4.71.210 先照鍵（開頭是日期）排再取最後 20 筆：不靠物件寫入順序（新殼讀到的資料庫物件會重排鍵，DD 搬家關卡 OpenAI A1）
+      Object.entries(flags.items).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).slice(-20).forEach(([k, f]) => { const [d8, , kind] = k.split('::'); lines.push(`  - ${d8} ${kind === 'waste' ? '退菜/Void' : '折扣'}：${f.type}${f.note ? `（${f.note}）` : ''}｜排除${Number(f.amt) > 0 ? 'NT$' + Number(f.amt).toLocaleString() : '整天全額'}`) })
     }
     return lines.join('\n')
   } catch (_) { return '' }
@@ -1263,11 +1264,12 @@ async function loadBossText() {
       K('sched', ym), K('sched', nextYm), K('att', ym), K('att', prevYm), K('ot', ym), K('ot', prevYm),
       K('inc', ym), K('inc', prevYm), K('prep', ym), K('rout', ym), K('temp', ym),
     ])
-    const rowsOf = (...ks) => ks.flatMap(k => Object.values((kv[k] || {}).rows || {}))
+    const rowsVals = (o) => Object.entries(o || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, v]) => v) // v4.71.210 逐列資料先照主鍵排（之後同分排序、取前幾筆才固定；不靠物件寫入順序）
+    const rowsOf = (...ks) => ks.flatMap(k => rowsVals((kv[k] || {}).rows))
     const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
     const lines = ['【A Beach OPS（阿桑系統 boss-api，每小時自動同步；null=沒資料不是0）】']
     // 歷史月營收（/revenue/monthly 2026-10-04 阿桑新增：iCHEF 時代 2021-02 開店起；「日」明細 2026-04 起才有，更早只有月彙總）
-    const revm = Object.values((kv['sp_finance_pm_boss_revm'] || {}).rows || {}).sort((a, b) => (a.month < b.month ? -1 : 1))
+    const revm = rowsVals((kv['sp_finance_pm_boss_revm'] || {}).rows).sort((a, b) => (a.month < b.month ? -1 : 1))
     if (revm.length) {
       const byY = {}
       revm.forEach(m => { const y = m.month.slice(0, 4); const o = byY[y] = byY[y] || { rev: 0, mo: 0 }; o.rev += Number(m.revenue) || 0; o.mo++ })
@@ -1301,7 +1303,7 @@ async function loadBossText() {
       gords.sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1)).slice(0, 8).forEach(o => lines.push(`    - ${String(o.created_at).slice(0, 10)} ${o.supplier || '(未填)'}｜${o.status}｜${o.line_count}項 ${nt(o.total_amount)}${o.unpriced_lines > 0 ? `（${o.unpriced_lines}項沒單價,金額低估）` : ''}`))
     }
     // AB 菜單成本（估算值；cost_complete=false=配方缺價成本偏低不可盡信）
-    const menu = Object.values((kv['sp_finance_pm_boss_menu'] || {}).rows || {}).filter(m => m.is_active)
+    const menu = rowsVals((kv['sp_finance_pm_boss_menu'] || {}).rows).filter(m => m.is_active)
     if (menu.length) {
       const costed = menu.filter(m => m.cost != null)
       lines.push(`  ◇ AB 菜單成本估算：上架 ${menu.length} 道、有配方 ${costed.length} 道（幾乎全部 cost_complete=false＝成本偏低僅供參考）；成本率最高：` + costed.sort((a, b) => (b.cost_ratio || 0) - (a.cost_ratio || 0)).slice(0, 5).map(m => `${m.name}${Math.round((m.cost_ratio || 0) * 100)}%`).join('、'))

@@ -42,8 +42,9 @@ export async function bossGenericText(ym) {
     const kv = await kvGetMany(feeds.map(E => feedKey(E, ym)))
     const L = []
     for (const E of feeds) {
-      const rows = Object.values((kv[feedKey(E, ym)] || {}).rows || {}); if (!rows.length) continue
-      const cols = Object.keys(rows[0] || {}).slice(0, 10).join('/')
+      // v4.71.210 逐列先照主鍵排、欄位名照字母排再取前 10 個：不靠物件寫入順序（DD 搬家關卡 OpenAI A1）
+      const rows = Object.entries((kv[feedKey(E, ym)] || {}).rows || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, v]) => v); if (!rows.length) continue
+      const cols = Object.keys(rows[0] || {}).sort().slice(0, 10).join('/')
       L.push(`  ◇ ${LABELS[E.slug] || E.ep}（阿桑系統 ${E.ep}，${E.snapshot ? '快照' : '本月'} ${rows.length} 筆；欄位：${cols}）→ 內容用 query_boss feed="${E.slug}" 代查，不要說沒有這份資料`)
     }
     return L
@@ -57,7 +58,7 @@ export async function queryBoss(feed, month, kw, limit) {
   const ym = E.snapshot ? '' : String(month || '').replace('-', '')
   if (!E.snapshot && !/^\d{6}$/.test(ym)) return `（${LABELS[E.slug] || E.ep} 是月檔，要給 "month":"YYYY-MM"）`
   const key = feedKey(E, ym); const doc = (await kvGetMany([key]))[key]
-  let rows = Object.values((doc || {}).rows || {})
+  let rows = Object.entries((doc || {}).rows || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, v]) => v) // v4.71.210 先照主鍵排再篩、取前 N 筆（不靠物件寫入順序）
   const k = String(kw || '').trim(); if (k) rows = rows.filter(r => JSON.stringify(r).includes(k))
   const n = Math.min(Math.max(1, Number(limit) || 80), 200)
   const L = [`◆ ${LABELS[E.slug] || E.ep}${E.snapshot ? '（快照）' : `（${month}）`}${k ? `關鍵字「${k}」` : ''} 共 ${rows.length} 筆${rows.length > n ? `，只列前 ${n} 筆（要更多加關鍵字縮範圍）` : ''}（系統代查；${OFF.has(E.slug) ? '⚠️這個來源已停更，資料是舊的' : '阿桑系統每小時同步'}${(doc || {}).updatedAt ? `，最新到 ${String(doc.updatedAt).slice(0, 16).replace('T', ' ')}` : ''}）`]
