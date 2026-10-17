@@ -141,6 +141,17 @@ const GATES = {
     const { abgdOwner } = await import('./_abgdkv.js')
     return (await abgdOwner('pm_cc_inbox')) === 'abgd'
   },
+  // v4.71.217 AI 私訊（批 7c-3b）：私訊＋驗簽成功＋文字＋分類是 ai（ddClassify 沒被其他指令接走）＋沒帶到 GD 在 AI 之前會接走的關鍵字（BEFORE_MEMO；
+  //   10-17 盤點：對綁定非操作者，GD 在 AI 前的攔截全是看文字、沒有會吃掉任意文字的等待狀態，且都被 BEFORE_MEMO 涵蓋）＋在切換集合內＋不在維護時段＋不是操作者（集合只收綁定非操作者，這裡再擋一次）
+  ai: async (ev, sigOK, ctx) => {
+    if (!(ev.type === 'message' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
+    const m = ev.message || {}; if (m.type !== 'text') return false
+    const t = String(m.text || '').trim(); if (!t || BEFORE_MEMO.test(t)) return false
+    const cfg = await ddRoutesCfg()
+    if (cfg.aiMaint === true || !ddAiInSet(cfg, ev.source.userId)) return false
+    if ((await ctx.operators())[ev.source.userId || '']) return false
+    return true
+  },
   // 記事本：私訊＋操作者＋驗簽成功＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
   memo: async (ev, sigOK, ctx) => {
     if (!(ev.source && ev.source.type === 'user' && sigOK === true)) return false
@@ -153,6 +164,8 @@ const GATES = {
     return (await abgdOwner('pm_bot_memory')) === 'abgd'
   },
 }
+// v4.71.217 DD 搬家 7c-3b：AI 私訊切換集合（設定 sp_finance_pm_ddroutes.aiSet＝{convs:['dm_U…'], epoch, at}；維護時段腳本寫入）
+export function ddAiInSet(cfg, userId) { const set = cfg && cfg.aiSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && typeof userId === 'string' && /^U[0-9a-f]{32}$/.test(userId) && set.convs.includes('dm_' + userId)) }
 export async function ddOwner(ev, route, sigOK, ctx) {
   try {
     const cfg = await ddRoutesCfg()
