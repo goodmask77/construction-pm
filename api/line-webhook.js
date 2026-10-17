@@ -2654,6 +2654,7 @@ export default async function handler(req, res) {
           const op0 = (await getOperators())[uid0]
           const rep0 = (t) => ev.replyToken ? lineReply(ev.replyToken, t) : Promise.resolve()
           if (!op0) { await rep0('這按鈕只有授權操作者能用喔。'); continue }
+          { const rc0 = await ddRoutesCfg(); if (rc0 && rc0.__err === true) { await rep0('系統忙，請稍後再按一次 🙏'); continue } } // 設定讀不到＝不知道是不是 7d 試點，保守不執行舊確認
           if (ddAiOpInSet(await ddRoutesCfg(), uid0)) { await rep0('這個確認已失效（DD 已改用新版確認卡），沒有執行。'); continue } // 7d 試點操作者：GD 舊確認一律不執行（在取待確認資料前）
           const pend0 = await getPending(uid0)
           if (!pend0) { await rep0('沒有等待確認的操作（可能超過 10 分鐘失效了）。要做什麼再跟我說一次 🙏'); continue }
@@ -3337,7 +3338,7 @@ export default async function handler(req, res) {
       // v2.5.9 群組也能確認（群組訊息要點名才進得來，先剝掉「DD／D哥」前綴再比對；
       // 群組只認「確認/執行」等明確字眼——隨口回別人「好」不能誤觸執行）
       if (canAct) {
-        const pend = ddAiOpInSet(await ddRoutesCfg(), userId) ? null : await getPending(userId) // v4.71.219 7d 試點操作者（私訊或群組）：GD 舊待確認不執行（在取待確認資料前）
+        const rcP = await ddRoutesCfg(); const pend = (rcP && rcP.__err === true) || ddAiOpInSet(rcP, userId) ? null : await getPending(userId) // v4.71.219 7d 試點操作者（私訊或群組）：GD 舊待確認不執行（在取待確認資料前）
         if (pend) {
           const bare = isDM ? text : text.replace(/^(@\S+|dd|d哥)[\s,，:：]*/i, '').trim()
           const isConfirm = isDM
@@ -3370,7 +3371,8 @@ export default async function handler(req, res) {
       // v4.71.217 DD 搬家 7c-3b 維護時段：切換集合內的私訊、走到 AI 這一步＝GD 也不回答（新殼也不接）、回固定訊息（不叫模型、不寫對話紀錄）
       //   切換前後各 330 秒用（設計 v5 第 2 節）；其他指令（日誌、報到、緊急聯絡人…）照常由上面的分支處理
       // v4.71.219 批 7d-1a：試點操作者走到 AI 這一步（沒轉給新殼：帶到 GD 指令關鍵字、維護中…）＝GD 舊引擎（有寫入權限）一律不處理
-      if (isDM) { const rcO = await ddRoutesCfg(); if (ddAiOpInSet(rcO, userId)) { await send(rcO.aiMaint === true ? '系統更新中，請 5 分鐘後再問我 🙏' : /^(DD\s*)?(確認|取消|確定|執行)\s*$/i.test(String(text || '').trim()) ? '要確認或取消，請按確認卡上的按鈕（打字不會執行）。' : '這句帶到系統指令的字（例如確認、連結、文件），新版 DD 這次沒有處理，請換個說法再說一次。'); await ddHealthLog({ kind: 'info', err: 'DD 7d 試點操作者：GD 不處理 AI（固定訊息）' }).catch(() => {}); continue } }
+      if (isDM && canAct) { const rcE = await ddRoutesCfg(); if (rcE && rcE.__err === true) { await send('系統忙，請稍後再問我一次 🙏'); await ddHealthLog({ kind: 'error', err: 'DD 路由設定讀不到：操作者 AI 不走 GD 舊引擎（固定訊息）' }).catch(() => {}); continue } } // v4.71.220 讀不到設定＝不知道是不是 7d 試點，保守不寫
+      if (isDM) { const rcO = await ddRoutesCfg(); if (ddAiOpInSet(rcO, userId)) { await send(rcO.ai7Maint === true || rcO.ai7Switch ? '系統更新中，請 5 分鐘後再問我 🙏' : /^(DD\s*)?(確認|取消|確定|執行)\s*$/i.test(String(text || '').trim()) ? '要確認或取消，請按確認卡上的按鈕（打字不會執行）。' : '這句帶到系統指令的字（例如確認、連結、文件），新版 DD 這次沒有處理，請換個說法再說一次。'); await ddHealthLog({ kind: 'info', err: 'DD 7d 試點操作者：GD 不處理 AI（固定訊息）' }).catch(() => {}); continue } }
       if (isDM) { const rcM = await ddRoutesCfg(); if (rcM.aiMaint === true && ddAiInSet(rcM, userId)) { await send('系統更新中，請 5 分鐘後再問我 🙏'); await ddHealthLog({ kind: 'info', err: 'DD 維護時段：集合內私訊回固定訊息' }).catch(() => {}); continue } } // 紀錄等寫完（serverless 回應後會凍結；第三輪 Gemini B2）
       // 金額/財務權限：私訊(操作者)可看；群組只有「內部群(預設群) 或 設定 money:true」才可看金額，外部群一律擋
       let moneyOK = true
