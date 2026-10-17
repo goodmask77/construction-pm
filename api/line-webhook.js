@@ -2238,6 +2238,7 @@ async function addMemoriesAuto(facts, by, budgetMs = 4000) {
   return memTx((list) => { const add = ents.filter(e => !list.some(m => m.text === e.text)); return add.length ? { next: [...list, ...add].slice(-100), value: add } : { next: null, value: [] } }, budgetMs, true)
 }
 export { addMemory, addMemoriesAuto, removeMemory } // 測試用
+export { queryResvName, queryResvTop } // v4.71.212 DD 搬家 7c-1b：新殼代查經 GD 代發口 dd_query 用（inline 登入金鑰只在 GD）
 export async function pushChat(convId, userText, assistantText) { // export：v4.71.198 新殼 DD 回話後由 GD 代發口 dd_send 寫對話記憶（dd 域正本仍在 GD）
   try {
     const { h, sum: oldSum } = await loadConv(convId)
