@@ -20,7 +20,7 @@ const BEFORE_MEMO = /心得|日誌|補充|上班|下班|回饋|投票|推播|出
 export function ddClassify(ev) {
   const t = ev && ev.type
   if (t === 'unsend' || t === 'join' || t === 'leave' || t === 'follow' || t === 'unfollow' || t === 'memberJoined' || t === 'memberLeft') return t.toLowerCase()
-  if (t === 'postback') { const d = String((ev.postback && ev.postback.data) || ''); if (/^cf\|/.test(d)) return 'pb_confirm'; if (/^pi\|/.test(d)) return 'pb_issue'; if (/^bd\|/.test(d)) return 'pb_bind'; if (/^tk\|/.test(d)) return 'tkcard'; return 'pb_card' }
+  if (t === 'postback') { const d = String((ev.postback && ev.postback.data) || ''); if (/^cf7\|/.test(d)) return 'aicf'; if (/^cf\|/.test(d)) return 'pb_confirm'; if (/^pi\|/.test(d)) return 'pb_issue'; if (/^bd\|/.test(d)) return 'pb_bind'; if (/^tk\|/.test(d)) return 'tkcard'; return 'pb_card' }
   if (t !== 'message') return 'other'
   const m = ev.message || {}
   if (m.type === 'image' || m.type === 'file' || m.type === 'video') return 'media'
@@ -148,9 +148,18 @@ const GATES = {
     const m = ev.message || {}; if (m.type !== 'text') return false
     const t = String(m.text || '').trim(); if (!t || BEFORE_MEMO.test(t)) return false
     const cfg = await ddRoutesCfg()
-    if (cfg.aiMaint === true || !ddAiInSet(cfg, ev.source.userId)) return false
-    if ((await ctx.operators())[ev.source.userId || '']) return false
-    return true
+    if (cfg.aiMaint === true) return false
+    // v4.71.219 批 7d-1a：操作者走另一份試點名單 aiOpSet＋路由開關 routes.aiop（新殼用 7d 處理器，可寫團隊任務）；非操作者照 7c（aiSet）
+    if ((await ctx.operators())[ev.source.userId || '']) return !!(cfg.routes && cfg.routes.aiop === true) && ddAiOpInSet(cfg, ev.source.userId)
+    return ddAiInSet(cfg, ev.source.userId)
+  },
+  // v4.71.219 批 7d-1a 確認卡按鈕（cf7|確認編號|驗證碼|ok／no）：私訊＋驗簽成功＋操作者＋在 aiOpSet＋routes.aiop；驗證碼與批次狀態由新殼判斷
+  aicf: async (ev, sigOK, ctx) => {
+    if (!(ev.type === 'postback' && ev.source && ev.source.type === 'user' && sigOK === true)) return false
+    if (!/^cf7\|[A-Za-z0-9_-]{22}\|[A-Za-z0-9_-]{24}\|(ok|no)$/.test(String((ev.postback && ev.postback.data) || ''))) return false
+    const cfg = await ddRoutesCfg()
+    if (!(cfg.routes && cfg.routes.aiop === true) || !ddAiOpInSet(cfg, ev.source.userId)) return false
+    return !!(await ctx.operators())[ev.source.userId || '']
   },
   // 記事本：私訊＋操作者＋驗簽成功＋三條其一＋沒有帶到前面指令的關鍵字＋記事本正本已在新殼（pm_bot_memory 歸屬＝abgd）
   memo: async (ev, sigOK, ctx) => {
@@ -165,6 +174,8 @@ const GATES = {
   },
 }
 // v4.71.217 DD 搬家 7c-3b：AI 私訊切換集合（設定 sp_finance_pm_ddroutes.aiSet＝{convs:['dm_U…'], epoch, at}；維護時段腳本寫入）
+// v4.71.219 批 7d-1a：操作者私訊試點名單（sp_finance_pm_ddroutes.aiOpSet＝{convs:['dm_U…']}；7d 世代 ai7Epoch 由切換腳本寫）
+export function ddAiOpInSet(cfg, userId) { const set = cfg && cfg.aiOpSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && typeof userId === 'string' && /^U[0-9a-f]{32}$/.test(userId) && set.convs.includes('dm_' + userId)) }
 export function ddAiInSet(cfg, userId) { const set = cfg && cfg.aiSet; return !!(set && typeof set === 'object' && Array.isArray(set.convs) && typeof userId === 'string' && /^U[0-9a-f]{32}$/.test(userId) && set.convs.includes('dm_' + userId)) }
 export async function ddOwner(ev, route, sigOK, ctx) {
   try {
@@ -173,9 +184,9 @@ export async function ddOwner(ev, route, sigOK, ctx) {
     return (await GATES[route](ev, sigOK, ctx)) ? 'abgd' : 'gd'
   } catch (_) { return 'gd' } // 判斷不了＝GD 照舊（還沒交出去，GD 做是安全的）
 }
-export function ddRunPayload(ev, route, sigOK) {
+export function ddRunPayload(ev, route, sigOK, extra) { // extra：7d 操作者事件帶 {op, gdAt, aiEpoch}（一起存進台帳 p、補送時同一份）
   const s = ev.source || {}, m = ev.message || {}
-  return { route, sigOK, type: ev.type, source: { type: s.type, userId: s.userId, groupId: s.groupId, roomId: s.roomId }, text: m.type === 'text' ? String(m.text || '').slice(0, 5000) : '', messageType: m.type || '', replyToken: ev.replyToken || '', replyBefore: Number(ev.timestamp || Date.now()) + 50e3, postback: ev.postback ? { data: String(ev.postback.data || ''), params: ev.postback.params || null } : null, ts: Number(ev.timestamp || Date.now()) }
+  return { ...(extra && typeof extra === 'object' ? extra : {}), route, sigOK, type: ev.type, source: { type: s.type, userId: s.userId, groupId: s.groupId, roomId: s.roomId }, text: m.type === 'text' ? String(m.text || '').slice(0, 5000) : '', messageType: m.type || '', replyToken: ev.replyToken || '', replyBefore: Number(ev.timestamp || Date.now()) + 50e3, postback: ev.postback ? { data: String(ev.postback.data || ''), params: ev.postback.params || null } : null, ts: Number(ev.timestamp || Date.now()) }
 }
 export async function ddForward(eventId, payload) {
   const body = JSON.stringify({ eventId, mode: 'run', route: payload.route, payload })

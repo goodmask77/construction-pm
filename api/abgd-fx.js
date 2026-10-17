@@ -57,6 +57,12 @@ const ctx = new AsyncLocalStorage() // 每個請求自己的事件 idem（同時
 const retryKey = (to) => { const h = crypto.createHash('sha1').update((ctx.getStore() || '') + '|' + to).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
 // 由任意字串推出固定 UUID（LINE 重試鍵要 UUID 格式）：同一件事不論哪邊、按幾次都同一把鍵，LINE 24 小時內擋重複
 export const fixedKey = (s) => { const h = crypto.createHash('sha1').update(String(s)).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}` }
+async function kvStrict(id) { // 讀不到（HTTP 錯、逾時）＝丟錯；不存在＝null
+  const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: svc, signal: AbortSignal.timeout(5000) })
+  if (!r.ok) throw new Error('讀 ' + id + ' 失敗 HTTP ' + r.status)
+  const row = (await r.json())[0]; if (!row || !row.data || row.data.v == null) return null
+  try { return JSON.parse(row.data.v) } catch (_) { throw new Error(id + ' 內容不是 JSON') }
+}
 async function linePush(to, messages, key) { // key：指定固定重試鍵（跨系統同一件事共用）；沒給就用事件＋收件人推導
   const tk = TK(); if (!tk || !to) return false
   const h = { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }
@@ -494,6 +500,68 @@ const ACTIONS = {
     if (!ibOk) return { ok: false, retry: true, error: '已回話，收件匣還沒記上（會再補）' }
     return { ok: true, via, state: isAi ? 'sent' : undefined }
   },
+  // v4.71.219 DD 批 7d-1a：權限與設定一律嚴格讀（讀不到＝丟錯讓新殼重試；不當成「沒權限」——kvGet 讀錯會回 null）
+  // v4.71.219 DD 批 7d-1a：授權憑證（唯讀；新殼落筆團隊任務前要）——每次重讀 GD 正本（操作者名單；操作者在 GD 可改所有空間任務，7d-1a 只開團隊空間）
+  //   t0＝讀取開始、讀超過 3 秒不簽；exp＝t0＋30 秒（以讀取開始計，不重新起算）；簽章金鑰＝HKDF(BRIDGE_SECRET, 'dd-cred-v1')，欄位固定順序（同新殼 lib/dd/ai7/cred.ts）
+  async dd_cred(a) {
+    const t0 = Date.now()
+    const F = ['action_id', 'origin_rid', 'type', 'key', 'expected_version', 'owner_epoch', 'resolved_hash']
+    for (const k of F) if (a[k] === undefined || a[k] === null) throw new Error('缺欄位 ' + k)
+    if (!/^[0-9a-f]{64}$/.test(String(a.action_id)) || !/^[0-9a-f]{64}$/.test(String(a.resolved_hash)) || !/^U[0-9a-f]{32}$/.test(String(a.origin_rid))) throw new Error('欄位格式不對')
+    if (!['add_task', 'update_task', 'delete_task'].includes(String(a.type)) || !/^sp_team_pm_task_[A-Za-z0-9_-]{1,64}$/.test(String(a.key))) throw new Error('只簽團隊任務三種操作')
+    if (!Number.isSafeInteger(a.expected_version) || a.expected_version < 0 || !Number.isSafeInteger(a.owner_epoch)) throw new Error('版本格式不對')
+    const ops = await kvStrict('pm_bot_operators')
+    const t1 = Date.now()
+    if (t1 - t0 > 3000) throw new Error('讀權限超過 3 秒（不簽）')
+    if (!ops || typeof ops !== 'object' || Array.isArray(ops)) throw new Error('操作者名單不存在或格式不對（不簽、也不當成撤權）')
+    if (!Object.hasOwn(ops, String(a.origin_rid))) return { ok: false, denied: true } // 只有讀到有效名單、而且確實不在名單＝撤權
+    const me = ops[String(a.origin_rid)]; if (!me || typeof me !== 'object' || Array.isArray(me)) throw new Error('操作者名單成員格式不對（不簽、也不當成撤權）')
+    const cred = { action_id: String(a.action_id), origin_rid: String(a.origin_rid), type: String(a.type), domain: 'tasks', key: String(a.key), space: 'team', expected_version: a.expected_version, owner_epoch: a.owner_epoch, resolved_hash: String(a.resolved_hash), iat: new Date(t0).toISOString(), exp: new Date(t0 + 30e3).toISOString() }
+    const sec = (process.env.BRIDGE_SECRET || '').trim(); if (!sec) throw new Error('沒有 BRIDGE_SECRET')
+    const key = Buffer.from(crypto.hkdfSync('sha256', Buffer.from(sec, 'utf8'), Buffer.alloc(0), Buffer.from('dd-cred-v1', 'utf8'), 32))
+    const base = ['action_id', 'origin_rid', 'type', 'domain', 'key', 'space', 'expected_version', 'owner_epoch', 'resolved_hash', 'iat', 'exp'].map((k) => k + '=' + String(cred[k])).join('\n')
+    return { ok: true, cred, sig: crypto.createHmac('sha256', key).update(base, 'utf8').digest('base64url') }
+  },
+  // v4.71.219 DD 批 7d-1a：新殼 7d 通知送出（kind：card 確認卡／result 結果／cancelled／answer 無動作回答／apology／reply 確認卡回覆）
+  //   idem＝'ai7:'+send_id（新殼決定性 UUID）；LINE push 帶固定重試鍵（send_id）；只有 LINE 200／409 才算送出
+  //   閘門每次重讀 GD 正本：收件人必須是操作者；暫停（aiMute）＝稍後再送（不快取）；card 另要 7d 世代相符、在試點名單、未過 valid_until；超過 retry_until 不送
+  //   送出後補寫對話紀錄（以 send_id 為事件編號去重）；寫不上＝回可重試（重試時 push 收據已在＝不再呼叫 LINE、只補紀錄）
+  async ai7_msg(a, idem) {
+    const to = String(a.to || ''), sid = String(a.send_id || ''), kind = String(a.kind || '')
+    if (!/^U[0-9a-f]{32}$/.test(to) || !/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/.test(sid) || idem !== 'ai7:' + sid) return { ok: true, code: 'reject_perm', error: '收件人或編號格式不對' }
+    if (!['card', 'result', 'cancelled', 'answer', 'apology', 'reply'].includes(kind)) return { ok: true, code: 'reject_perm', error: '通知種類不對' }
+    const msgs = Array.isArray(a.messages) ? a.messages.filter((m) => m && typeof m === 'object' && (m.type === 'text' || m.type === 'template' || m.type === 'flex')).slice(0, 5) : []
+    if (!msgs.length || msgs.length !== a.messages.length || msgs.some((m) => m.type === 'text' && String(m.text || '').length > 4800)) return { ok: true, code: 'reject_perm', error: '訊息格式不對' }
+    const chat = a.chat && typeof a.chat === 'object' ? a.chat : null
+    if (chat && !(chat.conv === 'dm_' + to && typeof chat.a === 'string' && chat.a.length <= 20000)) return { ok: true, code: 'reject_perm', error: '對話紀錄格式不對' }
+    const writeChat = async () => {
+      if (!chat) return true
+      try { const cr = await once(idem + ':chat', async () => { const { pushChat } = await import('./line-webhook.js'); const w = await pushChat(String(chat.conv), String(chat.q || ''), String(chat.a || ''), { id: sid, sc: { m: true, s: chat.s === true, v: 1 }, st: 'sent', noSum: true }); return w && w.ok ? { ok: true } : { ok: false, retry: true } }); return !!(cr && cr.ok !== false) } catch (_) { return false }
+    }
+    const pk = await peekOnce(idem + ':push', 'push')
+    if (pk === 'busy') return { ok: false, retry: true, code: 'transient', error: '推播正在處理中' }
+    if (pk && pk.done && pk.done.via === 'push') return (await writeChat()) ? { ok: true, code: 'ok', via: 'push', prior: true } : { ok: false, retry: true, code: 'transient', error: '已送出，對話紀錄還沒記上' }
+    if (pk && pk.done && pk.done.unknown && pk.done.bad) return { ok: true, code: 'reject_perm', error: '推播收據損壞，需人工查核' }
+    // 結果不明（處理中超過 5 分鐘）：往下走、用同一重試鍵再送（LINE 24 小時內同鍵不會重複受理）
+    const [cfg, ops] = await Promise.all([kvStrict('sp_finance_pm_ddroutes'), kvStrict('pm_bot_operators')])
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg) || !ops || typeof ops !== 'object' || Array.isArray(ops)) return { ok: false, retry: true, code: 'transient', error: '路由設定或操作者名單不存在／格式不對（稍後重試，不當成沒權限）' }
+    if (!(Number(a.retry_until) > Date.now())) return { ok: true, code: 'reject_perm', error: '超過重試期限' }
+    if (cfg && cfg.aiMute === true) return { ok: false, retry: true, code: 'muted', error: '暫停中' }
+    if (!Object.hasOwn(ops, to)) return { ok: true, code: 'reject_perm', error: '收件人不是操作者' }
+    if (!ops[to] || typeof ops[to] !== 'object' || Array.isArray(ops[to])) return { ok: false, retry: true, code: 'transient', error: '操作者名單成員格式不對（稍後重試，不當成沒權限）' }
+    if (kind === 'card') {
+      const { ddAiOpInSet } = await import('./_ddroute.js')
+      if (Number(a.ai_epoch) !== (Number(cfg && cfg.ai7Epoch) || 1) || !ddAiOpInSet(cfg, to) || !(Number(a.valid_until) > Date.now())) return { ok: true, code: 'reject_card', error: '確認卡已失效（世代、名單或期限）' }
+    }
+    const pr = await once(idem + ':push', async () => {
+      const ok = await linePush(to, msgs, sid)
+      if (!ok) return { ok: false, retry: true }
+      try { await logPush(to, 1, 'DD 新殼 7d 通知（' + kind + '）') } catch (_) {}
+      return { ok: true, via: 'push' }
+    })
+    if (!pr || pr.ok === false) return { ok: false, retry: true, code: 'transient', error: pr && pr.busy ? '推播正在處理中' : '推播失敗' }
+    return (await writeChat()) ? { ok: true, code: 'ok', via: 'push' } : { ok: false, retry: true, code: 'transient', error: '已送出，對話紀錄還沒記上' }
+  },
   async dd_chat_get(a) { // v4.71.213 DD 搬家 7c-2（唯讀）：新殼每輪讀對話紀錄正本（GD 表，不經鏡像＝沒有落後）；只收私訊對話編號
     const conv = String(a.conv || '')
     if (!/^dm_U[0-9a-f]{32}$/.test(conv)) throw new Error('對話編號格式不對')
@@ -877,7 +945,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'dd_health' || b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'dd_chat_get' || b.action === 'dd_ai' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'dd_cred' || b.action === 'dd_health' || b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'dd_chat_get' || b.action === 'dd_ai' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c
