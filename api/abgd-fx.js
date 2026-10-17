@@ -363,6 +363,39 @@ const ACTIONS = {
     const msgs = Array.isArray(a.messages) ? a.messages.filter((m) => m && typeof m === 'object' && typeof m.type === 'string').slice(0, 5) : []
     if (!msgs.length) return { ok: false, retry: false, error: '沒有訊息' }
     const { ddHealthLog } = await import('./_ddhealth.js')
+    // v4.71.213 DD 搬家 7c-2：新殼 AI 回答（kind=ai_answer）才有的檢查——送 LINE 前一刻：期限、暫停開關（ddroutes.aiMute）、用 GD 正本重驗收件人權限（綁定、不是操作者、機密權限）
+    //   不符＝不送、回 state（denied／cancelled，不重試）；其他路由（批 1～6）行為不變
+    const isAi = a.kind === 'ai_answer'
+    // 第一輪審查：AI 回答一定要帶對話紀錄，且對話編號就是收件人的私訊（不能寫到別人的對話）
+    if (isAi && !(a.chat && typeof a.chat === 'object' && a.chat.conv === 'dm_' + to && typeof a.chat.a === 'string')) return { ok: false, retry: false, error: 'AI 回答的對話紀錄格式不對' }
+    // 第二輪審查：送出去的跟記進對話紀錄的必須是同一份（文字訊息依序以換行接起來＝chat.a），不能送 A 記 B
+    if (isAi && a.chat.a !== msgs.filter((m) => m.type === 'text').map((m) => String(m.text || '')).join('\n')) return { ok: false, retry: false, error: 'AI 回答的送出內容與紀錄內容不一致' }
+    if (isAi && msgs.some((m) => m.type === 'text' && String(m.text || '').length > 4800)) return { ok: false, retry: false, error: 'AI 回答單則超過 4800 字（會被截斷，不送）' } // 第三輪 OpenAI N4：送出時不會再截字
+    // GD 正本查收件人身分：bound＝名冊綁定、op＝操作者、s＝機密權限（GD 自己算，不信新殼帶來的標記）；每次閘門都重讀（第三輪 OpenAI P3：改推播前要看到最新的撤權／暫停）
+    const aiFacts = async () => {
+      const [cfg, roster, ops, sop, idl] = await Promise.all(['sp_finance_pm_ddroutes', 'sp_crew_kb_roster', 'pm_bot_operators', 'sp_finance_pm_sop_def', 'sp_finance_pm_hr_idlock'].map((k) => kvGet(k)))
+      const me = ((roster && Array.isArray(roster.people)) ? roster.people : []).find((p) => p && typeof p.lineUserId === 'string' && p.lineUserId && p.lineUserId === to)
+      const apr = (((sop || {}).ground || {}).approvers || ['張良瑋']); const lock = ((idl || {}).rids) || []
+      return { mute: !!(cfg && cfg.aiMute === true), bound: !!me, op: !!(ops && typeof ops === 'object' && ops[to]), s: !!(me && (apr.includes(me.name) || lock.includes(me.id))) }
+    }
+    const aiGate = async () => {
+      if (!isAi) return null
+      const f = await aiFacts() // 先讀完資料再看期限（讀很慢時不會讓過期的回答溜出去）
+      if (!(Number(a.deadline) > 0) || Date.now() > Number(a.deadline)) return 'cancelled'
+      if (f.mute) return 'cancelled'
+      const nd = a.need && typeof a.need === 'object' ? a.need : null
+      if (!nd || String(nd.uid || '') !== to || !to.startsWith('U')) return 'denied'
+      if (!f.bound || f.op) return 'denied' // 7c 只回綁定、不是操作者的人
+      if (nd.s === true && !f.s) return 'denied'
+      return null
+    }
+    // 權限標記＝這則回答「內容」的敏感等級（第四輪定義）：m＝含金額（7c 只回綁定、非操作者＝能看金額才會走到送出）、s＝新殼宣告有用到機密資料（need.s，閘門已用 GD 正本驗過收件人有機密權限）、v＝1
+    //   由這次的請求內容決定，同一事件重試永遠一樣（不用另外凍結，也不會跟已寫入的內容衝突）；不採用新殼自己帶的 sc
+    const aiSc = () => ({ m: true, s: !!(a.need && a.need.s === true), v: 1 })
+    const aiChat = async (st) => { // AI 回答寫對話紀錄（帶事件編號、權限標記、送達狀態）；寫不上＝回 false（動作回可重試，只補紀錄）
+      if (!isAi) return true
+      try { const cr = await once(idem + ':chat', async () => { const { pushChat } = await import('./line-webhook.js'); const w = await pushChat(String(a.chat.conv), String(a.chat.q || ''), String(a.chat.a || ''), { id: String(a.chat.id || idem), sc: aiSc(), st, noSum: true }); return w && w.ok ? { ok: true } : { ok: false, retry: true } }); return !(cr && cr.ok === false) } catch (_) { return false }
+    }
     // 收件匣記這則回答（子事件只寫一次；存不上也排不進待補存＝回 false）；md＝reply／push／unknown（結果不明也要留紀錄，第四輪 OpenAI A1）
     const ibNote = async (md) => {
       if (!to.startsWith('U')) return true
@@ -371,6 +404,27 @@ const ACTIONS = {
         return !(ibr && ibr.ok === false)
       } catch (_) { return false }
     }
+    // 第二輪審查：已有收據＝明確分流，這條路上絕不再呼叫 LINE：送出（reply 或 push 成功）＝只補收件匣與紀錄；結果不明＝記不明；訊息被拒＝失敗
+    let aiPrior = null
+    if (isAi) {
+      const [p1, p2] = await Promise.all([peekOnce(idem + ':reply'), peekOnce(idem + ':push', 'push')])
+      if (p1 === 'busy' || p2 === 'busy') return { ok: false, retry: true, error: '回覆正在處理中' }
+      const d1 = p1 && p1.done, d2 = p2 && p2.done
+      aiPrior = (d1 && d1.via === 'reply') ? 'reply' : (d2 && d2.via === 'push') ? 'push' : ((d1 && d1.unknown) || (d2 && d2.unknown)) ? 'unknown' : (d1 && d1.badmsg) ? 'badmsg' : null // reply 只是 token 失效（還沒 push）＝照一般流程：過閘門再改推播
+      if (aiPrior === 'badmsg') return { ok: false, retry: false, state: 'failed', error: '訊息格式錯（LINE 拒收，之前已試過）' }
+      if (aiPrior === 'unknown') {
+        if (!(await ibNote('unknown'))) return { ok: false, retry: true, error: '回覆結果不明，收件匣還沒記上（只補收件匣）' }
+        if (!(await aiChat('unknown'))) return { ok: false, retry: true, error: '回覆結果不明，對話紀錄還沒記上（只補紀錄）' }
+        return { ok: false, retry: false, state: 'unknown', error: '回覆結果不明（不自動補發，避免重複）' }
+      }
+      if (aiPrior === 'reply' || aiPrior === 'push') {
+        const ib1 = await ibNote(aiPrior)
+        if (!(await aiChat('sent'))) return { ok: false, retry: true, state: 'sent', error: '已送出，對話紀錄還沒記上（只補紀錄）' }
+        if (!ib1) return { ok: false, retry: true, error: '已回話，收件匣還沒記上（會再補）' }
+        return { ok: true, via: aiPrior, state: 'sent' }
+      }
+    }
+    if (!aiPrior) { const g0 = await aiGate(); if (g0) { ddHealthLog({ kind: 'error', from: 'abgd', err: 'DD AI 回答不送（' + g0 + '）' }).catch(() => {}); return { ok: false, retry: false, state: g0, error: g0 === 'denied' ? '收件人權限不符' : '已過期限或暫停中' } }}
     let via = ''
     // 事件超過 20 小時（LINE 重試鍵只保 24 小時）：之後不論收據狀態都不再呼叫 LINE——沒有確定送出的，當結果不明處理（只補收件匣）（第五輪 OpenAI A1-1）
     const tooOld = Date.now() - Number(a.ts || 0) > 20 * 3600e3
@@ -396,11 +450,12 @@ const ACTIONS = {
         if (r && r.busy) return { ok: false, retry: true, error: '回覆正在處理中' }
       }
       if (r && r.via) via = 'reply'
-      else if (r && r.badmsg) { ddHealthLog({ kind: 'error', from: 'abgd', err: 'DD 回話訊息格式錯：' + r.msg }).catch(() => {}); return { ok: false, retry: false, error: '訊息格式錯（LINE 拒收）：' + r.msg } }
+      else if (r && r.badmsg) { ddHealthLog({ kind: 'error', from: 'abgd', err: 'DD 回話訊息格式錯：' + r.msg }).catch(() => {}); return { ok: false, retry: false, state: isAi ? 'failed' : undefined, error: '訊息格式錯（LINE 拒收）：' + r.msg } }
       else if (r && r.unknown) { // 結果不明：絕不再發；收件匣照樣記一筆（標結果不明），記不上就回可重試（重試不會發 LINE，只補收件匣）
         ddHealthLog({ kind: 'reply', from: 'abgd', ok: 0, unknown: 1, status: r.status || 0 }).catch(() => {})
         if (!(await ibNote('unknown'))) return { ok: false, retry: true, error: '回覆結果不明，收件匣還沒記上（只補收件匣）' }
-        return { ok: false, retry: false, error: '回覆結果不明（不自動補發，避免重複）' }
+        if (!(await aiChat('unknown'))) return { ok: false, retry: true, error: '回覆結果不明，對話紀錄還沒記上（只補紀錄）' }
+        return { ok: false, retry: false, state: isAi ? 'unknown' : undefined, error: '回覆結果不明（不自動補發，避免重複）' }
       }
     }
     if (!via && tooOld) { // 太舊：push 收據若在（成功）就照成功；否則不呼叫 LINE
@@ -412,6 +467,7 @@ const ACTIONS = {
         return { ok: false, retry: false, error: '事件超過 20 小時、沒有確定送出：不再發（避免超過 LINE 防重期限後重複）' }
       }
     }
+    if (!via && !aiPrior) { const g1 = await aiGate(); if (g1) return { ok: false, retry: false, state: g1, error: '改推播前：已過期限、暫停中或權限不符' } } // AI 回答：改推播前再檢查一次（reply 那次可能花了時間）
     if (!via) { // push 也有自己的完成收據：重試時看到已送就不再呼叫 LINE（第四輪 OpenAI A1；LINE 重試鍵只保 24 小時，佇列最多重試 5 次、退避上限 10 分鐘＝1 小時內結束）
       const pr = await once(idem + ':push', async () => {
         const ok = await linePush(to, msgs.map((m) => (m.type === 'text' ? { ...m, text: String(m.text || '').slice(0, 4800) } : m)), idem)
@@ -424,11 +480,31 @@ const ACTIONS = {
     }
     // 統一收件匣記 DD 這則回答（關卡 Gemini A3／OpenAI A11；同 GD lineReply 的 ddInboxOut；固定時間＝補送不會變兩則）
     const ibOk = await ibNote(via) // 存不上也排不進待補存＝這次回話不算完成（第三輪 OpenAI A1）
-    if (a.chat && a.chat.conv) { try { await once(idem + ':chat', async () => { const { pushChat } = await import('./line-webhook.js'); await pushChat(String(a.chat.conv), String(a.chat.q || ''), String(a.chat.a || '')); return { ok: true } }) } catch (_) {} }
+    if (isAi) { if (!(await aiChat('sent'))) return { ok: false, retry: true, state: 'sent', error: '已送出，對話紀錄還沒記上（只補紀錄）' } }
+    else if (a.chat && a.chat.conv) { try { await once(idem + ':chat', async () => { const { pushChat } = await import('./line-webhook.js'); await pushChat(String(a.chat.conv), String(a.chat.q || ''), String(a.chat.a || '')); return { ok: true } }) } catch (_) {} }
     ddHealthLog({ kind: 'reply', from: 'abgd', dm: to.startsWith('U') ? 1 : 0, ok: 1, send: via, route: String(a.route || '').slice(0, 20), ib: ibOk ? 1 : 0 }).catch(() => {})
     // 收件匣沒記上：整個動作回「可重試」——新殼佇列會用同一編號再呼叫；重試時 reply 子紀錄已是成功＝不重發、push 用同一重試鍵＝LINE 擋重複、對話記憶子事件已完成＝不重寫，只補收件匣
     if (!ibOk) return { ok: false, retry: true, error: '已回話，收件匣還沒記上（會再補）' }
-    return { ok: true, via }
+    return { ok: true, via, state: isAi ? 'sent' : undefined }
+  },
+  async dd_chat_get(a) { // v4.71.213 DD 搬家 7c-2（唯讀）：新殼每輪讀對話紀錄正本（GD 表，不經鏡像＝沒有落後）；只收私訊對話編號
+    const conv = String(a.conv || '')
+    if (!/^dm_U[0-9a-f]{32}$/.test(conv)) throw new Error('對話編號格式不對')
+    // 第一輪審查：用資料庫同一個快照讀（清單＋摘要＋版本；含舊整包懶讀），不會讀到裁一半的狀態；讀不到＝丟錯（新殼這輪不回答，不拿空紀錄硬答）
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_chat_get`, { method: 'POST', headers: { ...svc, 'content-type': 'application/json' }, body: JSON.stringify({ p_conv: conv }), signal: AbortSignal.timeout(6000) })
+    if (!r.ok) throw new Error('對話紀錄讀不到（' + r.status + '）')
+    const g = await r.json()
+    if (!g || !Array.isArray(g.list) || typeof g.sum !== 'string') throw new Error('對話紀錄格式不對')
+    return { list: g.list, sum: g.sum, rev: Number(g.rev) || 0, pending: g.pending === true } // pending＝還有待補寫（新殼 7c-3 決定這輪要不要等）
+  },
+  async dd_ai(a) { // v4.71.213 DD 搬家 7c-2（唯讀路徑；去重在新殼模型呼叫台帳）：走 GD answer() 同一個 aiCallAB('dd')（同供應商、模型、備援、用量紀錄）；超過期限不叫
+    const dl = Number(a.deadline) || 0, left = dl - Date.now()
+    if (!(left > 25_000)) return { expired: true }
+    if (typeof a.system !== 'string' || !Array.isArray(a.messages) || !a.messages.length || a.messages.length > 80 || Buffer.byteLength(JSON.stringify(a)) > 600_000) throw new Error('送 AI 的內容格式不對')
+    for (const m of a.messages) if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') throw new Error('訊息格式不對')
+    const { aiCallAB } = await import('./_ai.js')
+    const r = await aiCallAB('dd', { system: a.system, messages: a.messages, maxTokens: 3000, cache: true, effort: 'low', timeoutMs: Math.min(90_000, left - 10_000), deadline: dl - 10_000 }, null) // 絕對期限：備援也不會超過（第八輪 OpenAI A33）
+    return { text: String(r.text || ''), provider: r.provider || '', model: r.model || '' }
   },
   async dd_query(a) { // v4.71.212 DD 搬家 7c-1b（唯讀）：新殼 AI 代查裡要 GD 才有的四種——訂位即時搜尋／常客排行（inline 登入金鑰在 GD）、會員（會員資料在 GD）、團體訂餐（GD 原函式）；回的就是 GD 原本代查的文字
     const t = String(a.tool || '')
@@ -452,8 +528,10 @@ const ACTIONS = {
     return { profiles: Array.isArray(profiles) ? profiles.map((p) => ({ display_name: p && p.display_name, role: p && p.role, role_template: p && p.role_template })) : null, quota: qOk ? [{ type: quota[0].type, ...(quota[0].type === 'limited' ? { value: quota[0].value } : {}) }, { totalUsage: quota[1].totalUsage }] : null }
   },
   async dd_redrive() { // v4.71.198 新殼每分鐘排程呼叫：補送沒送到新殼的 DD 事件（簽章＝不掛公開網址）
+    const dl = Date.now() + 35_000 // 整段期限（新殼這次呼叫等 40 秒，留 5 秒回應）
     const { ddRedrive } = await import('./_ddroute.js')
     const out = await ddRedrive(async (t, eid) => { const to = String(process.env.LINE_BOSS_USER || 'Uf7ce4fb9191cd3055247204e0cb6b4fc').trim(); return await linePush(to, [{ type: 'text', text: String(t).slice(0, 1000) }], 'ddgiveup:' + eid) }) // 回 true＝通知送出（固定重試鍵＝同一事件只一則）
+    try { const LW = await import('./line-webhook.js'); await LW.chatRetryRun(dl) } catch (_) {} // v4.71.213 對話紀錄維護（補寫＋摘要待辦）：搭這個每分鐘、有簽章的排程（不掛公開網址）；放在補送之後、自己有時間上限（新殼這次呼叫等 40 秒）
     return { ok: true, ...out }
   },
   async boss_dm(a) { // 私訊老闆（固定收件人 LINE_BOSS_USER，不收任意 userId）：新殼排程摘要（例：每日菜商報價同步）用；有 idem＝重試不重發
@@ -779,7 +857,7 @@ export default async function handler(req, res) {
   let b; try { b = JSON.parse(raw) } catch (_) { return res.status(400).json({ ok: false }) }
   const fn = ACTIONS[b.action]
   if (!fn) return res.status(400).json({ ok: false, error: '未知動作 ' + b.action })
-  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
+  const readOnly = b.action === 'dd_redrive' || b.action === 'dd_meta' || b.action === 'dd_query' || b.action === 'dd_chat_get' || b.action === 'dd_ai' || b.action === 'meet_meta' || b.action === 'fb_meta' || b.action === 'ai_call' || b.action === 'menu_ai_gen' || b.action === 'mailhub_op' || b.action === 'tn_groups' || b.action === 'anim_pref' || b.action === 'inbox_op' || b.action === 'inbox_quota' || b.action === 'inbox_drain' || b.action === 'gorder_read' || b.action === 'points_read' || b.action === 'points_drain' || b.action === 'social_read' || b.action === 'social_meta' || b.action === 'inline_read' || b.action === 'board_read' || b.action === 'page_read' // mailhub_op：寫入走自己的版本比對／命令收據，不用事件佔位
   if (readOnly) { try { return res.status(200).json({ ok: true, result: await fn(b.args || {}) }) } catch (e) { return res.status(500).json({ ok: false, error: String(e?.message || e).slice(0, 200) }) } }
   if (!b.idem) return res.status(400).json({ ok: false, error: '缺 idem' })
   let c

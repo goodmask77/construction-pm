@@ -153,20 +153,27 @@ async function callOnce({ provider, model }, { system, messages, maxTokens, cach
 // ── 對外：文字呼叫（含設定解析＋備援鏈）──
 // aiCall('social', { system, messages, maxTokens, cache }) → { text, provider, model, usage, tried:[...] }
 // opts.override={provider,model} 直接指定（測試／本機腳本用，跳過 KV 設定）；opts.noFallback=true 不退備援（測試用）
+// opts.deadline（毫秒時間點，v4.71.213）：每次嘗試的逾時取剩餘時間（到點真的中止請求，含讀回應本文）；剩不到 3 秒就不再開新的嘗試（第一次也不開：來不及收完回應）；
+//   讀設定最多等 min(2 秒, 剩餘的 1/4)（太慢＝用預設路由）、記用量最多等 min(1.5 秒, 剩餘)（到期就不等，用量紀錄盡力而為）
+const dlWait = (p, ms, fb) => { let t; return Promise.race([p, new Promise((res) => { t = setTimeout(() => res(fb), Math.max(0, ms)) })]).finally(() => clearTimeout(t)) }
 export async function aiCall(route, opts = {}) {
-  const cfg = opts.override ? null : await aiCfgGet()
+  const dl = opts.deadline ? Number(opts.deadline) : 0
+  // opts._cfg（內部）：上一層（aiCallAB）已經讀過的設定（null＝讀逾時、用預設路由）——不重讀，免得兩次等待疊加
+  const cfg = opts.override ? null : ('_cfg' in opts ? opts._cfg : (dl ? await dlWait(aiCfgGet().catch(() => null), Math.min(2000, (dl - Date.now()) / 4), null) : await aiCfgGet()))
   const chain = opts.noFallback && opts.override ? [opts.override] : resolve(route, cfg, opts.override)
   const tried = []; let lastErr = null
   for (const c of chain) {
     if (!c.model) continue
+    const rem = opts.deadline ? Number(opts.deadline) - Date.now() : null
+    if (rem !== null && rem < 3000) { lastErr = new Error('AI 呼叫期限已到（不再試備援）'); break }
     try {
-      const r = await callOnce(c, opts)
-      if (!opts.noLog) await logUsage({ route, provider: c.provider, model: c.model, usage: r.usage, cfg })
+      const r = await callOnce(c, rem !== null ? { ...opts, timeoutMs: Math.min(opts.timeoutMs || 120000, rem) } : opts)
+      if (!opts.noLog) { const lg = logUsage({ route, provider: c.provider, model: c.model, usage: r.usage, cfg }).catch(() => {}); if (dl) await dlWait(lg, Math.min(1500, dl - Date.now()), undefined); else await lg }
       return { ...r, provider: c.provider, model: c.model, tried }
     } catch (e) {
       lastErr = e; tried.push({ provider: c.provider, model: c.model, err: String(e.message || e).slice(0, 200) })
       console.log('[ai]', route, c.provider, c.model, 'failed:', String(e.message || e).slice(0, 200))
-      if (!opts.noLog && !e.nokey) await logUsage({ route, provider: c.provider, model: c.model, err: 1, cfg })
+      if (!opts.noLog && !e.nokey) { const lg = logUsage({ route, provider: c.provider, model: c.model, err: 1, cfg }).catch(() => {}); if (dl) await dlWait(lg, Math.min(1500, dl - Date.now()), undefined); else await lg }
     }
   }
   throw Object.assign(new Error((lastErr && lastErr.message) || 'AI 全部失敗'), { tried })
@@ -461,8 +468,11 @@ export async function aiAbVerdict(route, id, v, who) {
 const abBrief = (r) => r.err ? { err: r.err, ms: r.ms } : { provider: r.provider, model: r.model, text: String(r.text || '').slice(0, 2500), ms: r.ms, ot: +((r.usage || {}).output_tokens || (r.usage || {}).completion_tokens || 0) || 0, fb: (r.tried || []).length }
 // aiCallAB(route, opts, ctx={gid, q, round})：ctx.gid 不在比對名單＝跟 aiCall 一樣；在名單＝兩邊並行各答一次、記紀錄、回「reply 指定那邊」（它壞了就回另一邊，D哥不會啞）
 export async function aiCallAB(route, opts, ctx) {
-  const cfg = await aiCfgGet(); const ab = (cfg.ab || {})[route] || null
   const scope = ctx && ctx.gid
+  if (!scope) return aiCall(route, opts) // 沒有對話範圍＝不可能雙答：不必先讀設定（v4.71.213：新殼 dd_ai 帶期限，少一次不受期限的讀取）
+  const cfg0 = opts && opts.deadline ? await dlWait(aiCfgGet().catch(() => null), Math.min(2000, (Number(opts.deadline) - Date.now()) / 4), null) : await aiCfgGet() // 有期限：設定讀太慢＝這次不雙答
+  const cfg = cfg0 || {}; const ab = (cfg.ab || {})[route] || null
+  opts = { ...opts, _cfg: cfg0 } // 往下傳：一般呼叫不再重讀設定
   if (!ab || !ab.on || !ab.provider || !scope || !(ab.gids || []).includes(scope)) return aiCall(route, opts)
   const run = async (o, tag) => { const t = Date.now(); try { const r = await aiCall(tag, o); return { ...r, ms: Date.now() - t } } catch (e) { return { err: String(e.message || e).slice(0, 200), ms: Date.now() - t, tried: e.tried || [] } } }
   const [A, B] = await Promise.all([run(opts, route), run({ ...opts, override: { provider: ab.provider, model: ab.model || defaultModel(ab.provider, 'text') }, noFallback: true }, route + '-ab')])

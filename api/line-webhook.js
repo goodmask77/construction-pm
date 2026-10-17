@@ -2197,17 +2197,17 @@ async function getLineProfile(userId) { try { const r = await fetch('https://api
 const chatKey = (c) => 'pm_bot_chat_' + c
 const chatSumKey = (c) => 'pm_bot_chatsum_' + c
 async function loadConv(convId) {
-  const m = await kvGetMany([chatKey(convId), chatSumKey(convId)])
-  let h = m[chatKey(convId)], sum = m[chatSumKey(convId)]
-  if (!h || sum == null) {
-    const old = await kvGetMany(['pm_bot_chats', 'pm_bot_chatsum'])
-    if (!h) { const o = asObj(old['pm_bot_chats'])[convId]; h = { list: Array.isArray(o) ? o : [] } }
-    if (sum == null) sum = { text: String(asObj(old['pm_bot_chatsum'])[convId] || '') }
-  }
-  return { h: Array.isArray(h.list) ? h.list : [], sum: String((sum && sum.text) || '') }
+  // v4.71.213 第一輪／第二輪審查：只用資料庫一致讀取（清單＋摘要同一個狀態；含舊整包懶讀）；讀不到或格式壞＝丟錯（不退回分次讀，不把壞資料當空的）
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/pm_chat_get`, { method: 'POST', headers: { ...sbHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ p_conv: String(convId) }), signal: AbortSignal.timeout(6000) })
+  if (!r.ok) throw new Error('對話紀錄讀不到（' + r.status + '）')
+  const g = await r.json()
+  if (!g || !Array.isArray(g.list) || typeof g.sum !== 'string') throw new Error('對話紀錄格式不對')
+  return { h: g.list, sum: g.sum }
 }
 async function getChatHistory(convId) {
-  const { h: all, sum } = await loadConv(convId)
+  let all, sum
+  try { ({ h: all, sum } = await loadConv(convId)) } // GD 自己的回答流程：讀不到＝這次不帶對話記憶照樣回答（同改版前讀失敗的效果）並記健康紀錄；新殼 dd_chat_get 則是讀不到就不回答
+  catch (e) { ddHealthLog({ kind: 'error', err: '對話記憶讀不到（這次不帶）：' + String(e && e.message || '').slice(0, 60) }).catch(() => {}); return [] }
   const h = all.filter(x => x && (x.role === 'user' || x.role === 'assistant') && x.content).slice(-60)
   if (sum) {
     // 摘要以一問一答塞在最前面，維持 user/assistant 交錯
@@ -2219,16 +2219,18 @@ async function getChatHistory(convId) {
   }
   return h
 }
-// 舊對話溢出時：把「既有摘要＋要被擠掉的舊對話」合併成新摘要（用便宜的 Haiku；失敗就保留舊摘要，不丟資料）
-async function summarizeOverflow(oldSummary, dropped) {
-  if (!dropped.length) return oldSummary || ''
+// 舊對話溢出時：把「既有摘要＋要被擠掉的舊對話」合併成新摘要（用便宜的 Haiku）
+// v4.71.213：失敗回 null（原本回舊摘要＝會被當新摘要提交、把那批舊對話裁掉＝記憶不見）；deadline＝期限（AI 中樞每次嘗試的逾時取剩餘時間、到點中止、不再開備援）
+async function summarizeOverflow(oldSummary, dropped, deadline) {
+  if (!dropped.length) return null
   const convo = dropped.map(x => (x.role === 'user' ? '使用者' : 'DD') + '：' + x.content).join('\n')
   const prompt = `你在維護一份 LINE 對話的「長期摘要」。把【既有摘要】和【即將被移出逐字記憶的舊對話】合併成更新版摘要：保留仍重要的事實、決定、數字、金額、日期、待辦、使用者偏好與習慣；閒聊丟掉。600字內、條列。只輸出摘要本身，不要開場白。\n\n【既有摘要】\n${oldSummary || '（無）'}\n\n【舊對話】\n${convo}`
   try { // v4.70.29 走 AI 中樞 route=summary（預設 Haiku）
     const { aiCall } = await import('./_ai.js')
-    const r = await aiCall('summary', { messages: [{ role: 'user', content: prompt }], maxTokens: 900, effort: 'low' })
-    return r.text || oldSummary || ''
-  } catch (_) { return oldSummary || '' }
+    const r = await aiCall('summary', { messages: [{ role: 'user', content: prompt }], maxTokens: 900, effort: 'low', ...(deadline ? { deadline } : {}) })
+    const t = String((r && r.text) || '').trim()
+    return t || null
+  } catch (_) { return null }
 }
 // 自動記住：同一則回答裡的幾句一次寫進同一筆（只試一次，見 memTx once）
 async function addMemoriesAuto(facts, by, budgetMs = 4000) {
@@ -2239,22 +2241,95 @@ async function addMemoriesAuto(facts, by, budgetMs = 4000) {
 }
 export { addMemory, addMemoriesAuto, removeMemory } // 測試用
 export { queryResvName, queryResvTop } // v4.71.212 DD 搬家 7c-1b：新殼代查經 GD 代發口 dd_query 用（inline 登入金鑰只在 GD）
-export async function pushChat(convId, userText, assistantText) { // export：v4.71.198 新殼 DD 回話後由 GD 代發口 dd_send 寫對話記憶（dd 域正本仍在 GD）
+// v4.71.213 DD 搬家 7c-2：對話紀錄改走 GD 資料庫原子函式 pm_chat_append（同對話一把列鎖、事件收據去重、清單不在這裡裁）；
+//   超過 60 則＝先摘要（鎖外叫模型）再 pm_chat_sum_put（最舊那幾則與舊摘要都沒變才同時寫摘要＋裁掉；變了＝不動、下次再摘）；
+//   回傳 {ok, dup, conflict}（不再吞錯）：呼叫端決定要不要重試；meta＝{id: 事件編號（同事件只加一次）, sc, st}（新殼 AI 回答帶權限標記與送達狀態）
+// 摘要收尾（鎖外叫模型）：最舊那幾則＋舊摘要 → 新摘要，再交 pm_chat_sum_put（雜湊都沒變才裁）；失敗不影響追加（清單沒裁，下次再摘）
+async function summarizeConv(convId, overflow, overflowHash, deadline) { // deadline（毫秒時間點）：給了就每一步都在期限內（模型逾時＝剩餘時間−3 秒；不夠就不做）
   try {
-    const { h, sum: oldSum } = await loadConv(convId)
-    h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
-    h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
-    let keep = h
-    if (h.length > 60) {
-      // 滿 30 輪：最舊的 6 輪不丟掉 → 濃縮進滾動摘要（回覆已送出後才跑，使用者無感）
-      const dropped = h.slice(0, h.length - 48)
-      const ns = (await summarizeOverflow(oldSum || '', dropped)).slice(0, 2400)
-      await kvSet(chatSumKey(convId), { text: ns, at: new Date().toISOString() })
-      keep = h.slice(-48)
-    }
-    await kvSet(chatKey(convId), { list: keep, at: new Date().toISOString() }) // 一個對話一鍵，不再 20 個對話擠一份文件
-  } catch (_) {}
+    if (!Array.isArray(overflow) || !overflow.length || typeof overflowHash !== 'string') return false
+    const left = () => (deadline ? deadline - Date.now() : 60000)
+    if (left() < 15000) return false
+    const { sum: oldSum } = await loadConv(convId)
+    if (left() < 12000) return false
+    const ns0 = await summarizeOverflow(oldSum || '', overflow, Date.now() + left() - 3000) // 模型期限＝整段期限前 3 秒（留時間提交）
+    if (!ns0) return false // 模型失敗或期限到：不提交（不裁），節流後再試
+    if (left() < 2500) return false // 剩不夠安全提交：不提交（下次再摘）
+    const ns = ns0.slice(0, 2400)
+    const r = await chatRpc('pm_chat_sum_put', { p_conv: convId, p_drop_n: overflow.length, p_drop_hash: overflowHash, p_oldsum_hash: crypto.createHash('md5').update(String(oldSum || ''), 'utf8').digest('hex'), p_text: ns }, Math.min(8000, left() - 500))
+    return !!(r && r.ok === true) // stale＝別人先動過，待辦還在、下次再摘
+  } catch (e) { console.log('[chat] 摘要沒寫上（下次再摘）', e && e.name); return false }
 }
+// RPC 呼叫：錯誤帶資料庫錯誤碼（code）；連線失敗／逾時標 net（結果不明——可能已寫進去，靠事件收據去重）
+async function chatRpc(fn, args, ms = 8000) {
+  let r, t
+  try { r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { ...sbHeaders, 'content-type': 'application/json' }, body: JSON.stringify(args), signal: AbortSignal.timeout(ms) }); t = await r.text() } // 讀本文中斷也算連線問題（第五輪 OpenAI A24）
+  catch (e) { const er = new Error(fn + ' 連線失敗或逾時'); er.net = true; throw er }
+  if (!r.ok) { let j = null; try { j = JSON.parse(t) } catch (_) {} const er = new Error(fn + ' HTTP ' + r.status + (j && j.code ? ' ' + j.code : '')); er.status = r.status; er.code = j && typeof j.code === 'string' ? j.code : ''; throw er }
+  try { return JSON.parse(t) } catch (_) { const er = new Error(fn + ' 回應壞掉（結果不明）'); er.net = true; throw er } // 成功卻解析不了＝結果不明（靠收據去重）
+}
+// 可以排隊重試的：連線失敗／逾時、資料庫暫時性錯誤碼（序列化／死鎖 40、資源 53、連線 08、取消／逾時 57、等鎖 55P03）、沒有錯誤碼的 5xx（閘道）；
+//   其他（格式不對 P0001、資料型別 22、權限 42 等確定性錯誤）＝不排隊，直接回失敗＋健康紀錄（第四輪 OpenAI A15）
+const chatTransient = (e) => !!(e && (e.net || /^(40|53|08|57)/.test(e.code || '') || e.code === '55P03' || (!e.code && Number(e.status) >= 500)))
+// v4.71.213 DD 搬家 7c-2：對話紀錄改走 GD 資料庫原子函式 pm_chat_append（同對話一把列鎖、事件收據去重、清單不在這裡裁；對話有待補或遇暫時性錯誤＝在同一把鎖內排進補寫佇列）；
+//   超過 60 則＝登記耐久摘要待辦，先試一次摘要（鎖外叫模型）再 pm_chat_sum_put；沒成功的由保溫排程領待辦再摘
+//   回傳 {ok, queued, dup, conflict, dead}（不吞錯）：ok＝已寫入或已耐久排進佇列；meta＝{id: 事件編號（同事件只加一次）, sc, st}
+//   記憶截字（使用者 900／DD 1400 字，GD 既有記憶政策）＝內容標 tr:true；完整原文在統一收件匣
+export async function pushChat(convId, userText, assistantText, meta) {
+  const t0p = Date.now()
+  try {
+    const m = meta && typeof meta === 'object' ? meta : {}
+    const ev = typeof m.id === 'string' && m.id.length >= 4 ? m.id.slice(0, 120) : 'gd_' + crypto.randomUUID()
+    const extra = { ...(typeof m.id === 'string' ? { id: m.id.slice(0, 120) } : {}), ...(m.sc && typeof m.sc === 'object' ? { sc: { m: m.sc.m === true, s: m.sc.s === true, v: Number(m.sc.v) || 1 } } : {}), ...(m.st === 'sent' || m.st === 'unknown' ? { st: m.st } : {}) }
+    const cut = (t, n) => { const x = String(t || ''); return x.length > n ? { content: x.slice(0, n), tr: true } : { content: x } }
+    const u = userText == null ? null : { role: 'user', ...cut(userText, 900), ...extra }
+    const a = assistantText == null ? null : { role: 'assistant', ...cut(assistantText, 1400), ...extra }
+    const P = { p_conv: String(convId), p_event: ev, p_user: u, p_assistant: a }
+    let r
+    try { r = await chatRpc('pm_chat_append', P) }
+    catch (e) {
+      if (!chatTransient(e)) { ddHealthLog({ kind: 'error', err: '對話紀錄寫入被拒（' + (e.code || e.status || '') + '）' }).catch(() => {}); return { ok: false, error: e.code || 'rejected' } }
+      // 暫時性（含結果不明）：另外排進佇列（同事件已寫過的，補寫時收據擋成 dup）
+      let q = null; try { q = await chatRpc('pm_chat_retry_put', { ...P, p_err: String(e.message || '').slice(0, 120) }, 5000) } catch (_) {}
+      if (q && q.ok === true) { ddHealthLog({ kind: 'error', err: '對話紀錄暫時沒寫上，已排補寫' }).catch(() => {}); return { ok: true, queued: true } }
+      ddHealthLog({ kind: 'error', err: q && q.conflict ? '對話紀錄補寫撞到同事件不同內容（沒排）' : q && q.dead ? '對話紀錄這則先前已放棄（沒排）' : '對話紀錄沒寫上，補寫佇列也存不進去' }).catch(() => {})
+      return { ok: false, queued: false, conflict: !!(q && q.conflict), dead: !!(q && q.dead) }
+    }
+    if (r && r.ok === true && r.queued === true) return { ok: true, queued: true } // 資料庫在同一把鎖內排好了（這個對話有待補，或遇暫時性錯誤）
+    if (!r || r.ok !== true) { ddHealthLog({ kind: 'error', err: r && r.conflict ? '對話紀錄同事件內容不同（沒寫）' : r && r.dead ? '對話紀錄這則先前已放棄（沒寫）' : '對話紀錄沒寫上' }).catch(() => {}); return { ok: false, conflict: !!(r && r.conflict), dead: !!(r && r.dead) } }
+    // 即時摘要（GD 自己的回答流程，回話已送出後）：整個 pushChat 從開頭算 25 秒期限、先領待辦（跟排程同一個節流；領不到＝不叫模型）；
+    //   新殼代發口路徑（meta.noSum）不做——代發口呼叫只等 20 秒，交給每分鐘的維護領待辦
+    if (Array.isArray(r.overflow) && r.overflow.length && !m.noSum && t0p + 25000 - Date.now() >= 15000) {
+      try { const tk = await chatRpc('pm_chat_sum_take', { p_limit: 1, p_conv: String(convId) }, 5000); const t0 = Array.isArray(tk) ? tk[0] : null; if (t0 && t0.conv === String(convId)) await summarizeConv(String(convId), t0.overflow, t0.overflow_hash, t0p + 25000) } catch (_) {}
+    }
+    return { ok: true, dup: r.dup === true }
+  } catch (e) { console.log('[chat] 對話紀錄沒寫上', e && e.message); return { ok: false } }
+}
+
+// v4.71.213 對話紀錄維護（新殼每分鐘經有簽章的 GD 代發口 dd_redrive 呼叫；不掛公開網址）；deadline＝整段的期限（毫秒時間點，從 dd_redrive 入口算）：
+//   ①補寫：先領一個對話（pm_chat_retry_claim，短交易提交）再補（pm_chat_retry_drain，最多 20 則）；補的那次失敗也不擋別的對話（領取留著 2 分鐘），最多 10 個對話
+//   ②摘要待辦：一次領一個（pm_chat_sum_take），確定時間夠（≥15 秒）才領；每個 RPC／模型呼叫的逾時都取剩餘時間
+async function chatRetryRun(deadline) {
+  const dl = Number(deadline) || Date.now() + 30000
+  const left = () => dl - Date.now()
+  let done = 0, dead = 0
+  for (let k = 0; k < 10 && left() > 8000; k++) {
+    let c = null; try { c = await chatRpc('pm_chat_retry_claim', {}, Math.min(5000, left() - 2000)) } catch (e) { ddHealthLog({ kind: 'error', err: '對話紀錄補寫領取失敗：' + String(e.message || '').slice(0, 60) }).catch(() => {}); break }
+    if (c && c.dead) { dead += c.dead; continue }
+    if (!c || !c.conv) break
+    try { const j = await chatRpc('pm_chat_retry_drain', { p_conv: c.conv }, Math.min(8000, left() - 2000)); done += (j && j.done) || 0; dead += (j && j.dead) || 0 }
+    catch (e) { ddHealthLog({ kind: 'error', err: '對話紀錄補寫這個對話失敗（2 分鐘後再試，先補別的）：' + String(e.message || '').slice(0, 50) }).catch(() => {}) } // 不中斷：領取已提交，下一圈會挑別的對話
+  }
+  if (dead > 0) ddHealthLog({ kind: 'error', err: '對話紀錄補寫放棄 ' + dead + ' 則（留在補寫表 dead）' }).catch(() => {})
+  for (let k = 0; k < 3 && left() > 15000; k++) {
+    let t = null; try { const list = await chatRpc('pm_chat_sum_take', { p_limit: 1, p_conv: null }, Math.min(5000, left() - 2000)); t = Array.isArray(list) ? list[0] : null } catch (_) { break }
+    if (!t || !t.conv) break
+    if (Number(t.n) > 200) ddHealthLog({ kind: 'error', err: '對話紀錄積壓 ' + t.n + ' 則（摘要追不上，已加速每分鐘摘一批）' }).catch(() => {}) // 監測：清單過長
+    await summarizeConv(String(t.conv), t.overflow, t.overflow_hash, dl)
+  }
+  return done
+}
+export { chatRetryRun } // 測試用
 
 // ── D哥的長期記事本（pm_bot_memory）：永久記得的事實，每次對話都先翻一遍 ──
 // v4.71.200 讀記事本依歸屬：正本在新殼＝讀新殼正本（剛記住／忘掉，下一句 AI 就讀得到，不等副本反推）；格式壞＝當空清單並記錄（不讓 AI 回答壞掉）
@@ -2554,11 +2629,11 @@ export default async function handler(req, res) {
               const results = await executeActions(pend0.actions, op0.name)
               await setPending(uid0, null)
               const done = '✅ 搞定！\n' + results.join('\n')
-              await rep0(done); await pushChat('dm_' + uid0, '（按了確認按鈕）', done)
+              await rep0(done); await pushChat('dm_' + uid0, '（按了確認按鈕）', done, { id: String(ev.webhookEventId || '') || undefined })
             } catch (e) { console.log('cf exec error', e?.message); await rep0('⚠️ 執行出錯（' + (e?.message || '未知錯誤') + '），沒有完成，請再試一次。') }
           } else {
             await setPending(uid0, null)
-            await rep0('好，取消了，沒有做任何更動。'); await pushChat('dm_' + uid0, '（按了取消按鈕）', '好，取消了，沒有做任何更動。')
+            await rep0('好，取消了，沒有做任何更動。'); await pushChat('dm_' + uid0, '（按了取消按鈕）', '好，取消了，沒有做任何更動。', { id: String(ev.webhookEventId || '') || undefined })
           }
           continue
         }
@@ -2801,7 +2876,7 @@ export default async function handler(req, res) {
       // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
       // hist＝存進對話記憶的版本（可跟送出的不同）。動作輪要存「含 json 指令」的原始回覆，
       // 不然記憶裡只剩「✅ 已直接記好」文字、沒有指令 → DD 回頭學自己的歷史，學會只寫✅不夾指令（2026-09-12 自導自演翻車根因）
-      const finish = async (t, extra, hist) => { await send(t, extra); await pushChat(convId, text, hist || t) }
+      const finish = async (t, extra, hist) => { await send(t, extra); await pushChat(convId, text, hist || t, { id: String(ev.webhookEventId || '') || undefined }) } // v4.71.213 帶事件編號（LINE 重送不重複記）
 
       // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
       // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
