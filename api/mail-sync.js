@@ -1513,6 +1513,27 @@ export default async function handler(req, res) {
     try { const { aiCfgSet } = await import('./_ai.js'); await aiCfgSet(String(b.key || ''), b.provider ? { provider: String(b.provider), model: String(b.model || '') } : null, adm.name); return res.status(200).json({ ok: true }) }
     catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
   }
+  // 🔑 金鑰複製口（v4.71.221 關卡 4：GD 的外部金鑰全是 Vercel「sensitive」看不到值，由 GD 伺服器自己把值寫進新殼 abgd 專案；值只在 GD 與 Vercel 之間傳，回應／紀錄都不含值，AI 碰不到）
+  // POST ?envcopy=<MENU_PROBE_KEY> body={token:<Vercel 帳號 token，只用這一次不存>, names:[…]}；只准白名單內的名稱、只寫 abgd 的 Production、類型 sensitive、同名已存在＝覆蓋成同值
+  if (req.method === 'POST' && req.query?.envcopy) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.envcopy) !== mk) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const ALLOW = ['LINE_OA_AB_TOKEN', 'LINE_OA_AB_SECRET', 'LINE_OA_GD_TOKEN', 'LINE_OA_GD_SECRET', 'LINE_OA_HR_TOKEN', 'LINE_OA_HR_SECRET', 'LINE_OA_DD_TOKEN', 'LINE_OA_DD_SECRET', 'META_APP_ID', 'META_APP_SECRET', 'SOCIAL_SCOPES', 'WEBPUSH_PUB', 'WEBPUSH_PRIV', 'LINE_CHANNEL_ACCESS_TOKEN', 'LINE_CHANNEL_SECRET', 'BOSS_API_BASE_URL', 'BOSS_API_KEY', 'PARTNER_API_KEY', 'INLINE_EMAIL', 'INLINE_PASS', 'NUEIP_USER', 'NUEIP_PASS', 'NUEIP_COMPANY', 'NUEIP_FUNCPASS', 'JOYA_USER', 'JOYA_PASS', 'JOYA_COMPANY', 'EATS_USER', 'EATS_PASS', 'EATS_DEVICE_COOKIE', 'MAIL_USER', 'MAIL_PASS', 'MAIL_ENC_KEY', 'EM_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY']
+    const tok = String(b.token || ''), names = Array.isArray(b.names) ? b.names.map(String) : []
+    if (!tok || !names.length || names.some(n => !ALLOW.includes(n))) return res.status(400).json({ ok: false, error: '缺 token／names，或名稱不在白名單' })
+    const PRJ = 'prj_VncBhSWitobdqlhnUDENptr1qVor', TEAM = 'team_CxLkJWl1OxgSgw9GUrBvL1bB' // abgd 專案
+    const out = {}
+    for (const n of names) {
+      const v = process.env[n]
+      if (v == null || v === '') { out[n] = 'GD 沒有值'; continue }
+      try {
+        const r = await fetch(`https://api.vercel.com/v10/projects/${PRJ}/env?upsert=true&teamId=${TEAM}`, { method: 'POST', headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json' }, body: JSON.stringify({ key: n, value: v, type: 'sensitive', target: ['production'] }) })
+        out[n] = r.ok ? 'ok' : 'HTTP ' + r.status
+      } catch (_) { out[n] = '連線失敗' }
+    }
+    return res.status(200).json({ ok: Object.values(out).every(x => x === 'ok'), out })
+  }
   // 🤖 AI 設定維護口（v4.70.30 CC 代填儲值／單價／匯率／路由，金鑰同其他維護口）：POST ?aiadmin=<MENU_PROBE_KEY> body={op:'budget'|'price'|'rate'|'route', ...}
   if (req.method === 'POST' && req.query?.aiadmin) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
