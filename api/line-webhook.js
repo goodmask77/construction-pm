@@ -3144,7 +3144,7 @@ export default async function handler(req, res) {
           const tkQ = isObjQ(bindQ.byUid) && Object.hasOwn(bindQ.byUid, userId) ? bindQ.byUid[userId] : null
           const recQ = typeof tkQ === 'string' && tkQ.trim() && isObjQ(bindQ.tokens) && Object.hasOwn(bindQ.tokens, tkQ) ? bindQ.tokens[tkQ] : null // 空白 token＝不算綁定（第二輪 A1）
           const meQ0 = isObjQ(recQ) ? recQ.name : null
-          const meQ = typeof meQ0 === 'string' && meQ0.trim() ? meQ0 : null
+          const meQ = typeof meQ0 === 'string' && meQ0.trim() ? meQ0.trim() : null
           const aprQ0 = ((kvA['sp_finance_pm_sop_def'] || {}).ground || {}).approvers
           const aprQ = Array.isArray(aprQ0) ? aprQ0.filter(x => typeof x === 'string' && x) : []
           const pplQ = ((kvA['sp_crew_kb_roster'] || {}).people)
@@ -3152,7 +3152,8 @@ export default async function handler(req, res) {
           if (!meQ || !Array.isArray(pplQ) || !(aprQ.includes(meQ) || roleQ === '主管')) { await send('入職文件查詢只開放主管使用 🙏'); continue } // 名冊格式不對＝整個拒絕（第二輪 A2）
           const kvQ = await kvGetMany(['sp_crew_pm_hr_master'])
           const rowsQ = (kvQ['sp_crew_pm_hr_master'] || {}).rows || []
-          const psnQ = rowsQ.filter(r9 => r9.name.includes(mDocQ[1]) || mDocQ[1].includes(r9.name))
+          const qQ = mDocQ[1].trim()
+          const psnQ = (Array.isArray(rowsQ) ? rowsQ : []).filter(r9 => { if (!r9 || typeof r9.name !== 'string') return false; const nQ = r9.name.trim(); return nQ !== '' && (nQ.includes(qQ) || qQ.includes(nQ)) }) // 人資主檔髒資料（null、沒名字、空名字、頭尾空白）不報錯、不誤配（Gemini 第四、五輪）
           if (psnQ.length !== 1) { await send(psnQ.length ? '同名多人，名字打完整一點。' : `夥伴名冊找不到「${mDocQ[1]}」。`); continue }
           const xQ = psnQ[0]
           const DSET = [['contract', '勞動契約'], ['idcard', '身分證影本'], ['bank', '存摺影本'], ['health', '體檢報告'], ['hygiene', '衛生教育訓練'], ...((+xQ.age || 99) < 18 ? [['guardian', '法代同意書（未成年）']] : [])]
