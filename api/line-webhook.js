@@ -613,6 +613,8 @@ export function tenureOf(d, nowMs) {
 // 原本整份名冊（含身分證／銀行／薪資／保險）都餵給 AI，只靠提示詞「只私訊回老闆」擋——AI 根本不知道發話的是誰。
 // 現在 secretOK=false（非操作者／非審核人／不在身分證名單）＝這些欄位在這裡就拔掉，AI 手上沒有就不可能說出去。
 const SECRET_FIELD_RE = /身分證|銀行|薪轉|保險|投保|勞保|健保|團保|生日碼|本薪|薪資|補助|津貼|帳號|存摺|工作證|特殊身份/ // 與 partner-api／rosterprobe 同一套黑名單
+// v4.71.209 一般視角改白名單（DD 搬家關卡 OpenAI A1）：只留這些公開欄，之後新增的欄位（例：緊急聯絡人、體檢）預設不給——黑名單照留雙重保險
+const PUBLIC_FIELD_RE = /^(?:員工編號(?:\(NUEiP\))?|部門(?:\/崗位)?|職稱|到職日|離職日|生日|電話|Email|備註|勞動契約|其他文件)$/i // 完整名稱比對（第二輪：只鎖開頭會讓「電話－緊急聯絡人」這種欄名過關）；名稱照正式名冊實際欄名
 async function loadCrewText(secretOK = false) {
   try {
     const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls', 'kb_journal']
@@ -634,7 +636,7 @@ async function loadCrewText(secretOK = false) {
       // 【100%資料鐵則】名冊全欄位（含薪資/保險/證件等機密）都要掌握；
       // 但機密欄位（薪資/身分證/保險/銀行）只在老闆（張良）的私訊裡回答，群組一律只回公開資訊（姓名/部門/到職/生日）。
       const rosterFieldsAll = (roster && Array.isArray(roster.fields) && roster.fields.length) ? roster.fields : null
-      const rosterFields = rosterFieldsAll && !secretOK ? rosterFieldsAll.filter(f => !SECRET_FIELD_RE.test(String(f.label || '')) && !/^(nid|idNo|bank|salary|insur|workPermit|special)/i.test(String(f.key || ''))) : rosterFieldsAll
+      const rosterFields = rosterFieldsAll && !secretOK ? rosterFieldsAll.filter(f => PUBLIC_FIELD_RE.test(String(f.label || '')) && !SECRET_FIELD_RE.test(String(f.label || '')) && !/^(nid|idNo|bank|salary|insur|workPermit|special)/i.test(String(f.key || ''))) : rosterFieldsAll
       out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。⚠️年資已由系統算好標在到職日後——回答滿幾年/年資問題「直接引用」，禁止自己心算日期差。${secretOK ? '含機密欄位：薪資/保險/證件/銀行——只在這個私訊回老闆/審核人，群組不透露' : '⚠️機密欄位（身分證/銀行/薪資/保險）系統已拔掉沒給你：有人問一律回「這是個資，請本人私訊張良或到 /prep 名冊看」，不要猜、不要說「我手上有」'}）】`)
       people.forEach(p => {
         const ten = tenureOf(p.startDate)
