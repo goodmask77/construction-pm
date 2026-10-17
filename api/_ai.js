@@ -165,7 +165,7 @@ export async function aiCall(route, opts = {}) {
   for (const c of chain) {
     if (!c.model) continue
     const rem = opts.deadline ? Number(opts.deadline) - Date.now() : null
-    if (rem !== null && rem < 3000) { lastErr = new Error('AI 呼叫期限已到（不再試備援）'); break }
+    if (rem !== null && rem < 3000) { lastErr = Object.assign(new Error('AI 呼叫期限已到（不再試備援）'), { code: 'AI_DEADLINE' }); break }
     try {
       const r = await callOnce(c, rem !== null ? { ...opts, timeoutMs: Math.min(opts.timeoutMs || 120000, rem) } : opts)
       if (!opts.noLog) { const lg = logUsage({ route, provider: c.provider, model: c.model, usage: r.usage, cfg }).catch(() => {}); if (dl) await dlWait(lg, Math.min(1500, dl - Date.now()), undefined); else await lg }
@@ -174,9 +174,10 @@ export async function aiCall(route, opts = {}) {
       lastErr = e; tried.push({ provider: c.provider, model: c.model, err: String(e.message || e).slice(0, 200) })
       console.log('[ai]', route, c.provider, c.model, 'failed:', String(e.message || e).slice(0, 200))
       if (!opts.noLog && !e.nokey) { const lg = logUsage({ route, provider: c.provider, model: c.model, err: 1, cfg }).catch(() => {}); if (dl) await dlWait(lg, Math.min(1500, dl - Date.now()), undefined); else await lg }
+      if (dl && dl - Date.now() < 3000) { lastErr = Object.assign(new Error('AI 呼叫期限已到（不再試備援）'), { code: 'AI_DEADLINE' }); break } // 這一家失敗時期限也耗盡了（含逾時被中止）＝期限到，不是「全部失敗」（7c-3a 第四輪 OpenAI A16）
     }
   }
-  throw Object.assign(new Error((lastErr && lastErr.message) || 'AI 全部失敗'), { tried })
+  throw Object.assign(new Error((lastErr && lastErr.message) || 'AI 全部失敗'), { tried, ...(lastErr && lastErr.code === 'AI_DEADLINE' ? { code: 'AI_DEADLINE' } : {}) }) // code：期限到（v4.71.214）
 }
 
 // ── 生圖：aiImage('image', { prompt, refImages:[{media_type,data}], aspect:'1:1'|'3:4'|'4:3'|'9:16'|'16:9' }) → { mime, data(base64), provider, model } ──

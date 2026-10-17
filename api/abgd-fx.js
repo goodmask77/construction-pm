@@ -366,6 +366,13 @@ const ACTIONS = {
     // v4.71.213 DD 搬家 7c-2：新殼 AI 回答（kind=ai_answer）才有的檢查——送 LINE 前一刻：期限、暫停開關（ddroutes.aiMute）、用 GD 正本重驗收件人權限（綁定、不是操作者、機密權限）
     //   不符＝不送、回 state（denied／cancelled，不重試）；其他路由（批 1～6）行為不變
     const isAi = a.kind === 'ai_answer'
+    // v4.71.214 DD 搬家 7c-3a：新殼 AI 處理不了時的固定短訊（kind=ai_notice：系統忙／權限調整中／資料太多）——只准一則 500 字內、不帶對話紀錄；
+    //   送 LINE 前檢查期限（新殼給 D＋300 秒）與暫停開關（aiMute），不符＝cancelled 不送；不寫對話紀錄（不進 DD 記憶）
+    if (a.kind === 'ai_notice') {
+      if (!to.startsWith('U') || a.chat || msgs.length !== 1 || msgs[0].type !== 'text' || String(msgs[0].text || '').length > 500) return { ok: false, retry: false, error: 'AI 短訊格式不對' }
+      const cfgN = await kvGet('sp_finance_pm_ddroutes')
+      if (!(Number(a.deadline) > Date.now()) || (cfgN && cfgN.aiMute === true)) return { ok: false, retry: false, state: 'cancelled', error: '短訊已過期限或暫停中' }
+    }
     // 第一輪審查：AI 回答一定要帶對話紀錄，且對話編號就是收件人的私訊（不能寫到別人的對話）
     if (isAi && !(a.chat && typeof a.chat === 'object' && a.chat.conv === 'dm_' + to && typeof a.chat.a === 'string')) return { ok: false, retry: false, error: 'AI 回答的對話紀錄格式不對' }
     // 第二輪審查：送出去的跟記進對話紀錄的必須是同一份（文字訊息依序以換行接起來＝chat.a），不能送 A 記 B
@@ -503,7 +510,13 @@ const ACTIONS = {
     if (typeof a.system !== 'string' || !Array.isArray(a.messages) || !a.messages.length || a.messages.length > 80 || Buffer.byteLength(JSON.stringify(a)) > 600_000) throw new Error('送 AI 的內容格式不對')
     for (const m of a.messages) if (!m || (m.role !== 'user' && m.role !== 'assistant') || typeof m.content !== 'string') throw new Error('訊息格式不對')
     const { aiCallAB } = await import('./_ai.js')
-    const r = await aiCallAB('dd', { system: a.system, messages: a.messages, maxTokens: 3000, cache: true, effort: 'low', timeoutMs: Math.min(90_000, left - 10_000), deadline: dl - 10_000 }, null) // 絕對期限：備援也不會超過（第八輪 OpenAI A33）
+    let r
+    try { r = await aiCallAB('dd', { system: a.system, messages: a.messages, maxTokens: 3000, cache: true, effort: 'low', timeoutMs: Math.min(90_000, left - 10_000), deadline: dl - 10_000 }, null) } // 絕對期限：備援也不會超過（第八輪 OpenAI A33）
+    catch (e) { // v4.71.214 7c-3a：分類——期限到＝expired；備援鏈每一家都明確失敗（aiCall 丟出帶 tried 清單的錯）＝model_all_failed；其他（程式錯誤等）＝照丟（新殼當結果不明）
+      if (e && e.code === 'AI_DEADLINE') return { expired: true } // AI 中樞穩定錯誤碼（第三輪 OpenAI A9）
+      if (e && Array.isArray(e.tried) && e.tried.length > 0) return { failed: true, code: 'model_all_failed' }
+      throw e
+    }
     return { text: String(r.text || ''), provider: r.provider || '', model: r.model || '' }
   },
   async dd_query(a) { // v4.71.212 DD 搬家 7c-1b（唯讀）：新殼 AI 代查裡要 GD 才有的四種——訂位即時搜尋／常客排行（inline 登入金鑰在 GD）、會員（會員資料在 GD）、團體訂餐（GD 原函式）；回的就是 GD 原本代查的文字
