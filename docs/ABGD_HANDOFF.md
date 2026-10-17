@@ -72,6 +72,7 @@
 - 現況（10-17 查證）：阿桑只有 GD 抓來的資料已搬進新殼（叫貨／結帳／菜單／商品主檔／異常，10-16 切）；小夏 EM 同步、Belle 試算表都還在 GD「待搬」；三人的系統本身都沒合併、交接紀錄沒有三人已開權限的紀錄。
 - **張良決定：GD 全部搬完之後，再做「四套功能資料對照表」**（每列：功能／GD、阿桑、Belle、小夏各有沒有／資料以誰為準／建議留哪個，給張良勾選），之後才排三套合併。已知重複：叫貨物料進價、財務、包場、異常通知。
 ## 五、待張良
+- **10-18 張良裁決**：①關卡 4 金鑰＝選 A「直接複製原值、不重新發行」，由張良在 Vercel 後台複製（AI 不碰正式金鑰；GD 這些變數是隱藏值，CLI 也讀不出）。新殼程式目前不讀任何外部金鑰，複製進去不會自己動，要等逐支切排程。第一批：LINE_OA_AB／GD／HR／DD 的 _TOKEN＋_SECRET、META_APP_ID、META_APP_SECRET、SOCIAL_SCOPES、WEBPUSH_PUB、WEBPUSH_PRIV、LINE_CHANNEL_ACCESS_TOKEN、LINE_CHANNEL_SECRET，只勾 Production。MAIL_ENC_KEY 一定要同值（換了舊信箱密碼全解不開）。GD 正式站沒有 SOCIAL_DRY_RUN、META_GRAPH_VERSION（盤點表誤列）。②7d 試點：張良說「不懂、沒影響就先不用管」→ 開關維持全關，不再追問，等之後要給 DD 改任務時再提。③7d 上線前 4 件事已白話說明，跟②一起擱置。④Gemini：10-18 實測仍「預付額度用完」；App 的「AI 生圖」主用和備援都是 Gemini，所以現在是壞的；「收件匣讀照片」會自動改用 Claude（能用、較貴）。已請張良決定加值或把生圖備援改 ChatGPT。
 - 實測：LINE 問題回報三顆按鈕、GD 首頁「等確認發布」、排行榜評星、新版 SOP 打勾拍照、新版班表排班。
 - 回饋切換後第一筆真實給分還沒核對。
 - 命名待回：core.memberships、sp_finance_pm_prep_routes、「abgd 集團（暫名）」、sp_finance_pm_sopsum_outbox、sp_finance_pm_pipub_log（已不用）。
